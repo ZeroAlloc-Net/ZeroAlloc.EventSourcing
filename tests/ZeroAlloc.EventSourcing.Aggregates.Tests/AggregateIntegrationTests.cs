@@ -12,23 +12,22 @@ namespace ZeroAlloc.EventSourcing.Aggregates.Tests;
 /// </summary>
 public class AggregateIntegrationTests
 {
-    private static (AggregateRepository<ProductAggregate, ProductId> repo, IEventStore store) BuildRepo()
+    private static AggregateRepository<ProductAggregate, ProductId> BuildRepo()
     {
         var adapter = new InMemoryEventStoreAdapter();
         var registry = new ProductAggregateEventTypeRegistry(); // source-generated
         var serializer = new JsonAggregateSerializer();         // from AggregateRepositoryTests.cs
         var store = new EventStore(adapter, serializer, registry);
-        var repo = new AggregateRepository<ProductAggregate, ProductId>(
+        return new AggregateRepository<ProductAggregate, ProductId>(
             store,
             () => new ProductAggregate(),
             id => new StreamId($"product-{id.Value}"));
-        return (repo, store);
     }
 
     [Fact]
     public async Task FullRoundtrip_CreateProduct_SaveAndLoad_StateRestored()
     {
-        var (repo, _) = BuildRepo();
+        var repo = BuildRepo();
         var id = new ProductId(Guid.NewGuid());
 
         // 1. Command
@@ -54,7 +53,7 @@ public class AggregateIntegrationTests
     [Fact]
     public async Task FullRoundtrip_MultipleEvents_AllStatesRestored()
     {
-        var (repo, _) = BuildRepo();
+        var repo = BuildRepo();
         var id = new ProductId(Guid.NewGuid());
 
         var product = new ProductAggregate();
@@ -62,7 +61,8 @@ public class AggregateIntegrationTests
         product.Create("Gadget");
         product.Discontinue();
 
-        await repo.SaveAsync(product, id);
+        var saveResult = await repo.SaveAsync(product, id);
+        saveResult.IsSuccess.Should().BeTrue();
 
         var loaded = (await repo.LoadAsync(id)).Value;
         loaded.State.IsCreated.Should().BeTrue();
@@ -73,7 +73,7 @@ public class AggregateIntegrationTests
     [Fact]
     public async Task FullRoundtrip_SaveTwice_SecondSaveFails_WithConflict()
     {
-        var (repo, _) = BuildRepo();
+        var repo = BuildRepo();
         var id = new ProductId(Guid.NewGuid());
 
         var p1 = new ProductAggregate();
@@ -94,15 +94,16 @@ public class AggregateIntegrationTests
     [Fact]
     public async Task FullRoundtrip_SaveUpdatesOriginalVersion_CanSaveAgain()
     {
-        var (repo, _) = BuildRepo();
+        var repo = BuildRepo();
         var id = new ProductId(Guid.NewGuid());
 
         var product = new ProductAggregate();
         product.SetId(id);
         product.Create("Widget");
         await repo.SaveAsync(product, id);
+        product.OriginalVersion.Value.Should().Be(1); // AcceptVersion must have run
 
-        // OriginalVersion should now be 1 — next save should succeed
+        // OriginalVersion is 1 — next save should succeed
         product.Discontinue();
         var result = await repo.SaveAsync(product, id);
         result.IsSuccess.Should().BeTrue();
