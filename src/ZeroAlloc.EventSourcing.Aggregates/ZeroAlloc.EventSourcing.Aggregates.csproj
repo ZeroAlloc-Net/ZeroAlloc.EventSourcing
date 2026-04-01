@@ -1,5 +1,14 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <ItemGroup>
+    <ProjectReference Include="..\ZeroAlloc.EventSourcing\ZeroAlloc.EventSourcing.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ZeroAlloc.Collections" />
+    <PackageReference Include="ZeroAlloc.Results" />
+  </ItemGroup>
+
   <PropertyGroup>
     <Description>Aggregate root support for ZeroAlloc.EventSourcing.</Description>
   </PropertyGroup>
