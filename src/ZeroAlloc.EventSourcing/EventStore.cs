@@ -40,7 +40,8 @@ public sealed class EventStore : IEventStore
             var typeName = _registry.GetTypeName(e.GetType());
             raw[i] = new RawEvent(
                 // Position is advisory — SQL adapters must assign their own positions via DB sequence/trigger and ignore this field.
-                new StreamPosition(expectedVersion.Value + i),
+                // Positions are 1-based: the first event in a stream is at position 1, matching the stream version after append.
+                new StreamPosition(expectedVersion.Value + i + 1),
                 typeName,
                 _serializer.Serialize(e),
                 EventMetadata.New(typeName));
