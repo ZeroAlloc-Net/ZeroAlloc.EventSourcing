@@ -39,7 +39,11 @@ public abstract class Aggregate<TId, TState> : IAggregate, IDisposable
     /// <summary>The version when this aggregate was loaded from the store. Used for optimistic concurrency on save.</summary>
     public StreamPosition OriginalVersion { get; private set; } = StreamPosition.Start;
 
-    /// <summary>The current aggregate state. Updated on every <see cref="Raise{TEvent}"/> and <see cref="IAggregate.ApplyHistoric"/>.</summary>
+    /// <summary>
+    /// The current aggregate state. Read-only externally — mutation only occurs via <see cref="Raise{TEvent}"/>
+    /// and <see cref="ApplyHistoric"/>. Exposed publicly so consumers can read state for queries and projections
+    /// without requiring a separate read model layer.
+    /// </summary>
     public TState State { get; private set; } = TState.Initial;
 
     /// <summary>
@@ -53,27 +57,26 @@ public abstract class Aggregate<TId, TState> : IAggregate, IDisposable
         Version = Version.Next();
     }
 
-    void IAggregate.ApplyHistoric(object @event, StreamPosition position)
+    /// <summary>Applies a historic event during stream replay. Does NOT add to the uncommitted queue.</summary>
+    internal void ApplyHistoric(object @event, StreamPosition position)
     {
         State = ApplyEvent(State, @event);
         Version = position;
         OriginalVersion = position;
     }
 
-    ReadOnlySpan<object> IAggregate.DequeueUncommitted()
+    /// <summary>Returns the uncommitted events as a span and clears the queue. Snapshots to array before clear for pool safety.</summary>
+    internal ReadOnlySpan<object> DequeueUncommitted()
     {
         if (_uncommitted.Count == 0) return ReadOnlySpan<object>.Empty;
-        var snapshot = _uncommitted.AsReadOnlySpan().ToArray(); // snapshot before clear
+        var snapshot = _uncommitted.AsReadOnlySpan().ToArray(); // snapshot before clear — pool buffer is returned by Clear()
         _uncommitted.Clear();
         return snapshot;
     }
 
-    // Internal convenience wrappers so tests and repository code can call without a cast
-    internal void ApplyHistoric(object @event, StreamPosition position) =>
-        ((IAggregate)this).ApplyHistoric(@event, position);
-
-    internal ReadOnlySpan<object> DequeueUncommitted() =>
-        ((IAggregate)this).DequeueUncommitted();
+    // Explicit interface implementations delegate to the internal methods above
+    void IAggregate.ApplyHistoric(object @event, StreamPosition position) => ApplyHistoric(@event, position);
+    ReadOnlySpan<object> IAggregate.DequeueUncommitted() => DequeueUncommitted();
 
     /// <summary>
     /// Routes an event to the correct state transition. Implemented by the source generator
