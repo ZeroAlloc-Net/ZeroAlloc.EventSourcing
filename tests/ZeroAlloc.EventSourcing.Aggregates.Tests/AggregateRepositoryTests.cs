@@ -53,7 +53,7 @@ public class AggregateRepositoryTests
     }
 
     [Fact]
-    public async Task Save_UncommittedQueueClearedAfterSave()
+    public async Task Save_SetsOriginalVersionAfterSave()
     {
         var (_, repo) = BuildRepo();
         var id = new OrderId(Guid.NewGuid());
@@ -65,8 +65,9 @@ public class AggregateRepositoryTests
         var result = await repo.SaveAsync(order, id);
 
         result.IsSuccess.Should().BeTrue();
-        // After save, uncommitted should be empty
+        // After save: uncommitted cleared, OriginalVersion reflects committed position
         order.DequeueUncommitted().Length.Should().Be(0);
+        order.OriginalVersion.Value.Should().Be(1);
     }
 
     [Fact]

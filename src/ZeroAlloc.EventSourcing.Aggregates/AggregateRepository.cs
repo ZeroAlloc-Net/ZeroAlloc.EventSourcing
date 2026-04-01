@@ -59,6 +59,9 @@ public sealed class AggregateRepository<TAggregate, TId> : IAggregateRepository<
         for (var i = 0; i < uncommitted.Length; i++)
             events[i] = uncommitted[i];
 
-        return await _store.AppendAsync(_streamIdFactory(id), events.AsMemory(), aggregate.OriginalVersion, ct).ConfigureAwait(false);
+        var result = await _store.AppendAsync(_streamIdFactory(id), events.AsMemory(), aggregate.OriginalVersion, ct).ConfigureAwait(false);
+        if (result.IsSuccess)
+            aggregate.AcceptVersion(result.Value.NextExpectedVersion);
+        return result;
     }
 }

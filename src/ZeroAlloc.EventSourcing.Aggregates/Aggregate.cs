@@ -12,6 +12,9 @@ public interface IAggregate
     /// <summary>Returns and clears the uncommitted event queue.</summary>
     internal ReadOnlySpan<object> DequeueUncommitted();
 
+    /// <summary>Updates <see cref="OriginalVersion"/> to <paramref name="position"/> after a successful save.</summary>
+    internal void AcceptVersion(StreamPosition position);
+
     /// <summary>The version at which this aggregate was loaded. Used for optimistic concurrency.</summary>
     StreamPosition OriginalVersion { get; }
 }
@@ -74,9 +77,12 @@ public abstract class Aggregate<TId, TState> : IAggregate, IDisposable
         return snapshot;
     }
 
+    internal void AcceptVersion(StreamPosition position) => OriginalVersion = position;
+
     // Explicit interface implementations delegate to the internal methods above
     void IAggregate.ApplyHistoric(object @event, StreamPosition position) => ApplyHistoric(@event, position);
     ReadOnlySpan<object> IAggregate.DequeueUncommitted() => DequeueUncommitted();
+    void IAggregate.AcceptVersion(StreamPosition position) => AcceptVersion(position);
 
     /// <summary>
     /// Routes an event to the correct state transition. Implemented by the source generator
