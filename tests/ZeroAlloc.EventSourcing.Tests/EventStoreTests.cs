@@ -5,7 +5,7 @@ using ZeroAlloc.EventSourcing.InMemory;
 namespace ZeroAlloc.EventSourcing.Tests;
 
 // Test event
-public record OrderPlaced(string OrderId, decimal Total);
+internal record OrderPlaced(string OrderId, decimal Total);
 
 // Minimal STJ serializer for tests
 internal sealed class JsonEventSerializer : IEventSerializer

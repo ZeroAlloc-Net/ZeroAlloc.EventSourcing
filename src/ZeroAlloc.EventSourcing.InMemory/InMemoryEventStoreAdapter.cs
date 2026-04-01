@@ -56,6 +56,8 @@ public sealed class InMemoryEventStoreAdapter : IEventStoreAdapter
         Func<RawEvent, CancellationToken, ValueTask> handler,
         CancellationToken ct = default)
     {
+        // GetOrAdd intentionally creates the stream if absent — subscribers may register before any events are appended.
+        // This differs from ReadAsync which uses TryGetValue and yields nothing for non-existent streams.
         var stream = _streams.GetOrAdd(id.Value, _ => new InMemoryStream());
 
         // sub is captured by the callback; the closure checks IsRunning before dispatching

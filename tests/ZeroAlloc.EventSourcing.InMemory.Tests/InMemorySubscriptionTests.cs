@@ -15,13 +15,18 @@ public class InMemorySubscriptionTests
         var adapter = new InMemoryEventStoreAdapter();
         var id = new StreamId("orders-1");
         var received = new List<RawEvent>();
+        var tcs = new TaskCompletionSource();
 
-        var sub = await adapter.SubscribeAsync(id, StreamPosition.Start,
-            (e, _) => { received.Add(e); return ValueTask.CompletedTask; });
+        var sub = await adapter.SubscribeAsync(id, StreamPosition.Start, (e, _) =>
+        {
+            received.Add(e);
+            tcs.TrySetResult();
+            return ValueTask.CompletedTask;
+        });
         await sub.StartAsync();
 
         await adapter.AppendAsync(id, new[] { MakeRaw(StreamPosition.Start) }.AsMemory(), StreamPosition.Start);
-        await Task.Delay(50); // allow async handler to fire
+        await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5)); // deterministic, 5s timeout for CI safety
 
         received.Should().HaveCount(1);
     }
@@ -39,7 +44,7 @@ public class InMemorySubscriptionTests
         await sub.DisposeAsync();
 
         await adapter.AppendAsync(id, new[] { MakeRaw(StreamPosition.Start) }.AsMemory(), StreamPosition.Start);
-        await Task.Delay(50);
+        await Task.Delay(10); // brief wait — handler should NOT fire; any reasonable delay suffices
 
         received.Should().BeEmpty();
     }

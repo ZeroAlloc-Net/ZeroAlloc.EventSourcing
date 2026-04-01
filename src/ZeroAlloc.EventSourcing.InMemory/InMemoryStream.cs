@@ -61,13 +61,10 @@ internal sealed class InMemoryStream
 
     /// <summary>
     /// Registers <paramref name="callback"/> to receive events as they are appended.
-    /// Returns the registered delegate so the caller can later unregister via <see cref="Unsubscribe"/>.
+    /// The caller already holds the callback reference and passes it back to <see cref="Unsubscribe"/> directly.
     /// </summary>
-    public AsyncEvent<RawEvent> Subscribe(AsyncEvent<RawEvent> callback)
-    {
-        _broadcast.Register(callback);
-        return callback;
-    }
+    public void Subscribe(AsyncEvent<RawEvent> callback)
+        => _broadcast.Register(callback);
 
     /// <summary>Unregisters a previously registered callback.</summary>
     public void Unsubscribe(AsyncEvent<RawEvent> callback)
