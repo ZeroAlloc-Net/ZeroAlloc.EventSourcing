@@ -1,0 +1,106 @@
+using FluentAssertions;
+using ZeroAlloc.EventSourcing;
+using ZeroAlloc.EventSourcing.Aggregates;
+
+namespace ZeroAlloc.EventSourcing.Aggregates.Tests;
+
+// --- test domain model ---
+
+public readonly record struct OrderId(Guid Value);
+
+public record OrderPlacedEvent(string OrderId, decimal Total);
+public record OrderShippedEvent(string TrackingNumber);
+
+public struct OrderState : IAggregateState<OrderState>
+{
+    public static OrderState Initial => default;
+    public bool IsPlaced { get; private set; }
+    public bool IsShipped { get; private set; }
+    public decimal Total { get; private set; }
+
+    internal OrderState Apply(OrderPlacedEvent e) => this with { IsPlaced = true, Total = e.Total };
+    internal OrderState Apply(OrderShippedEvent e) => this with { IsShipped = true };
+}
+
+// Concrete aggregate — manually implements ApplyEvent (generator does this in Task 5)
+public sealed partial class Order : Aggregate<OrderId, OrderState>
+{
+    public void Place(string orderId, decimal total) =>
+        Raise(new OrderPlacedEvent(orderId, total));
+
+    public void Ship(string tracking) =>
+        Raise(new OrderShippedEvent(tracking));
+
+    public void SetId(OrderId id) => Id = id;
+
+    protected override OrderState ApplyEvent(OrderState state, object @event) => @event switch
+    {
+        OrderPlacedEvent e => state.Apply(e),
+        OrderShippedEvent e => state.Apply(e),
+        _ => state
+    };
+}
+
+// --- tests ---
+
+public class AggregateTests
+{
+    [Fact]
+    public void NewAggregate_HasZeroVersion_AndInitialState()
+    {
+        var order = new Order();
+        order.Version.Should().Be(StreamPosition.Start);
+        order.OriginalVersion.Should().Be(StreamPosition.Start);
+        order.State.IsPlaced.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Raise_AddsToUncommittedAndUpdatesState()
+    {
+        var order = new Order();
+        order.Place("ORD-1", 99.99m);
+
+        var uncommitted = order.DequeueUncommitted();
+        uncommitted.Length.Should().Be(1);
+        uncommitted[0].Should().BeOfType<OrderPlacedEvent>();
+        order.State.IsPlaced.Should().BeTrue();
+        order.State.Total.Should().Be(99.99m);
+    }
+
+    [Fact]
+    public void DequeueUncommitted_ClearsTheQueue()
+    {
+        var order = new Order();
+        order.Place("ORD-1", 1m);
+
+        order.DequeueUncommitted(); // first dequeue
+        order.DequeueUncommitted().Length.Should().Be(0); // second should be empty
+    }
+
+    [Fact]
+    public void Raise_MultipleEvents_AllAppendedInOrder()
+    {
+        var order = new Order();
+        order.Place("ORD-1", 50m);
+        order.Ship("TRACK-123");
+
+        var uncommitted = order.DequeueUncommitted();
+        uncommitted.Length.Should().Be(2);
+        uncommitted[0].Should().BeOfType<OrderPlacedEvent>();
+        uncommitted[1].Should().BeOfType<OrderShippedEvent>();
+        order.State.IsShipped.Should().BeTrue();
+    }
+
+    [Fact]
+    public void ApplyHistoricEvent_UpdatesState_WithoutAddingToUncommitted()
+    {
+        var order = new Order();
+        // Simulate loading from store — applying historic event
+        order.ApplyHistoric(new OrderPlacedEvent("ORD-1", 75m), new StreamPosition(1));
+
+        order.State.IsPlaced.Should().BeTrue();
+        order.Version.Value.Should().Be(1);
+        order.OriginalVersion.Value.Should().Be(1);
+        order.DequeueUncommitted().Length.Should().Be(0); // not uncommitted
+    }
+}
