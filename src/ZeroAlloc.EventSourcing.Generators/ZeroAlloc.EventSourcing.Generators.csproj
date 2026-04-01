@@ -5,6 +5,7 @@
     <!-- Source generators must target a single framework; netstandard2.0 gives maximum Roslyn host compatibility -->
     <TargetFramework>netstandard2.0</TargetFramework>
     <TargetFrameworks></TargetFrameworks>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
   </PropertyGroup>
 
   <ItemGroup>
