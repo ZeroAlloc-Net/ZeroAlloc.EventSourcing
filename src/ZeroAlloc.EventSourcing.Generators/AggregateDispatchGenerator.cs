@@ -80,16 +80,15 @@ public sealed class AggregateDispatchGenerator : IIncrementalGenerator
         var stateType = baseType.TypeArguments[1] as INamedTypeSymbol;
         if (stateType is null) return null;
 
-        // Find internal or private Apply(TEvent) methods on the state struct.
-        // Both accessibilities are accepted: internal is the idiomatic choice, private also works
-        // because the generated code calls state.Apply(...) on the struct value (not on the aggregate),
-        // so accessibility is relative to the state type, not the call site.
+        // Find internal Apply(TEvent) methods on the state struct.
+        // Only internal accessibility is accepted: the generated ApplyEvent override lives in a partial
+        // class file that is a different type from the state struct, so private methods on the struct
+        // would produce a CS0122 inaccessible-member compiler error in the generated output.
         var applyMethods = stateType.GetMembers()
             .OfType<IMethodSymbol>()
             .Where(m => m.Name == "Apply"
                      && m.Parameters.Length == 1
-                     && (m.DeclaredAccessibility == Accessibility.Internal
-                      || m.DeclaredAccessibility == Accessibility.Private))
+                     && m.DeclaredAccessibility == Accessibility.Internal)
             .ToList();
 
         if (applyMethods.Count == 0) return null;

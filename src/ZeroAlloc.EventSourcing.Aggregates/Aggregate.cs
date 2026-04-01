@@ -91,6 +91,7 @@ public abstract class Aggregate<TId, TState> : IAggregate, IDisposable
     protected abstract TState ApplyEvent(TState state, object @event);
 
     /// <inheritdoc/>
+    /// <remarks>Not thread-safe. Aggregate ownership is expected to be single-threaded.</remarks>
     public void Dispose()
     {
         if (_disposed) return;
