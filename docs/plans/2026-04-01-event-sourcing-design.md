@@ -97,7 +97,7 @@ public interface IEventStore
 // Implemented by storage backends
 public interface IEventStoreAdapter
 {
-    ValueTask<AppendResult> AppendAsync(
+    ValueTask<Result<AppendResult, StoreError>> AppendAsync(
         StreamId id,
         ReadOnlyMemory<RawEvent> events,
         StreamPosition expectedVersion,

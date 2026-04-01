@@ -86,6 +86,31 @@ public class EventStoreTests
     }
 
     [Fact]
+    public async Task Subscribe_ReceivesDeserializedEventThroughFacade()
+    {
+        var adapter = new InMemoryEventStoreAdapter();
+        var store = new EventStore(adapter, new JsonEventSerializer(), new TestTypeRegistry());
+        var id = new StreamId("orders-1");
+        var received = new List<EventEnvelope>();
+        var tcs = new TaskCompletionSource();
+
+        var sub = await store.SubscribeAsync(id, StreamPosition.Start, (e, _) =>
+        {
+            received.Add(e);
+            tcs.TrySetResult();
+            return ValueTask.CompletedTask;
+        });
+        await sub.StartAsync();
+
+        await store.AppendAsync(id, new object[] { new OrderPlaced("ORD-002", 42m) }.AsMemory(), StreamPosition.Start);
+        await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        received.Should().HaveCount(1);
+        received[0].Event.Should().BeOfType<OrderPlaced>()
+            .Which.OrderId.Should().Be("ORD-002");
+    }
+
+    [Fact]
     public async Task Read_UnknownEventType_IsSkipped()
     {
         // Adapter has an event of type "UnknownEvent" not in the registry

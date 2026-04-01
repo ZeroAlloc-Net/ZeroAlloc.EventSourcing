@@ -31,6 +31,8 @@ public sealed class EventStore : IEventStore
         StreamPosition expectedVersion,
         CancellationToken ct = default)
     {
+        // Phase 1: allocates a RawEvent[] per append. Phase 3 should use ArrayPool<RawEvent> or stackalloc
+        // with an inline threshold to satisfy the zero-alloc mandate for production adapters.
         var raw = new RawEvent[events.Length];
         for (var i = 0; i < events.Length; i++)
         {

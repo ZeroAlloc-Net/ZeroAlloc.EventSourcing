@@ -60,6 +60,9 @@ public sealed class InMemoryEventStoreAdapter : IEventStoreAdapter
         // This differs from ReadAsync which uses TryGetValue and yields nothing for non-existent streams.
         var stream = _streams.GetOrAdd(id.Value, _ => new InMemoryStream());
 
+        // NOTE: 'sub' is null between stream.Subscribe(callback) and the assignment below.
+        // Any event delivered in this window will see sub?.IsRunning == false and be dropped.
+        // This is intentional — events before StartAsync() are always dropped by design.
         // sub is captured by the callback; the closure checks IsRunning before dispatching
         // so that events arriving before StartAsync or after DisposeAsync are silently dropped.
         InMemoryEventSubscription? sub = null;

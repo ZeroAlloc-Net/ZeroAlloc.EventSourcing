@@ -10,6 +10,8 @@ internal sealed class InMemoryStream
 {
     private readonly List<RawEvent> _events = new();
     private long _version = 0;
+    // AsyncEventHandler<T> is internally thread-safe via lock-free CAS (Interlocked.CompareExchange)
+    // for Register/Unregister/InvokeAsync — no external locking needed.
     private AsyncEventHandler<RawEvent> _broadcast = new(InvokeMode.Sequential);
 
     /// <summary>
@@ -75,6 +77,7 @@ internal sealed class InMemoryStream
     {
         lock (_events)
         {
+            // Cast is safe: InMemoryStream is a test double; streams with >int.MaxValue events are not a supported scenario.
             // Allocates a list snapshot intentionally — InMemoryStream is a test double, not a production adapter.
             return _events.Skip((int)fromPosition).ToList();
         }
