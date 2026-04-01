@@ -1,3 +1,5 @@
+using ZeroAlloc.AsyncEvents;
+
 namespace ZeroAlloc.EventSourcing.InMemory;
 
 /// <summary>
@@ -8,6 +10,7 @@ internal sealed class InMemoryStream
 {
     private readonly List<RawEvent> _events = new();
     private long _version = 0;
+    private AsyncEventHandler<RawEvent> _broadcast = new(InvokeMode.Sequential);
 
     /// <summary>
     /// Current version (number of events appended).
@@ -24,6 +27,7 @@ internal sealed class InMemoryStream
     /// </summary>
     public bool TryAppend(ReadOnlyMemory<RawEvent> incoming, long expectedVersion, out long newVersion)
     {
+        RawEvent[]? toFire = null;
         lock (_events)
         {
             if (_version != expectedVersion)
@@ -37,9 +41,37 @@ internal sealed class InMemoryStream
 
             _version += incoming.Length;
             newVersion = _version;
-            return true;
+
+            // Capture events to fire outside the lock
+            if (_broadcast.Count > 0)
+            {
+                toFire = incoming.ToArray();
+            }
         }
+
+        // Fire events outside the lock — fire-and-forget
+        if (toFire is not null)
+        {
+            foreach (var e in toFire)
+                _ = _broadcast.InvokeAsync(e);
+        }
+
+        return true;
     }
+
+    /// <summary>
+    /// Registers <paramref name="callback"/> to receive events as they are appended.
+    /// Returns the registered delegate so the caller can later unregister via <see cref="Unsubscribe"/>.
+    /// </summary>
+    public AsyncEvent<RawEvent> Subscribe(AsyncEvent<RawEvent> callback)
+    {
+        _broadcast.Register(callback);
+        return callback;
+    }
+
+    /// <summary>Unregisters a previously registered callback.</summary>
+    public void Unsubscribe(AsyncEvent<RawEvent> callback)
+        => _broadcast.Unregister(callback);
 
     /// <summary>Returns a snapshot of events starting at <paramref name="fromPosition"/>.</summary>
     public IEnumerable<RawEvent> ReadFrom(long fromPosition)

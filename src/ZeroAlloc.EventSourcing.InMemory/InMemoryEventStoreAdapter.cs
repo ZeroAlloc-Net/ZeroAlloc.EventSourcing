@@ -55,5 +55,20 @@ public sealed class InMemoryEventStoreAdapter : IEventStoreAdapter
         StreamPosition from,
         Func<RawEvent, CancellationToken, ValueTask> handler,
         CancellationToken ct = default)
-        => throw new NotImplementedException("Subscriptions are implemented in Task 5.");
+    {
+        var stream = _streams.GetOrAdd(id.Value, _ => new InMemoryStream());
+
+        // sub is captured by the callback; the closure checks IsRunning before dispatching
+        // so that events arriving before StartAsync or after DisposeAsync are silently dropped.
+        InMemoryEventSubscription? sub = null;
+        var callback = new ZeroAlloc.AsyncEvents.AsyncEvent<RawEvent>(async (e, token) =>
+        {
+            if (sub?.IsRunning == true)
+                await handler(e, token);
+        });
+
+        stream.Subscribe(callback);
+        sub = new InMemoryEventSubscription(stream, callback);
+        return ValueTask.FromResult<IEventSubscription>(sub);
+    }
 }
