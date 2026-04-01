@@ -42,6 +42,17 @@ public class SourceGeneratorTests
     }
 
     [Fact]
+    public void GeneratedApplyEvent_SecondArm_RoutesCorrectly()
+    {
+        var product = new ProductAggregate();
+        product.Create("Widget");
+        product.Discontinue();
+
+        product.State.IsDiscontinued.Should().BeTrue();
+        product.DequeueUncommitted().Length.Should().Be(2);
+    }
+
+    [Fact]
     public void GeneratedApplyEvent_UnknownEvent_ReturnStateUnchanged()
     {
         var product = new ProductAggregate();

@@ -28,7 +28,11 @@ public sealed class AggregateDispatchGenerator : IIncrementalGenerator
         context.RegisterSourceOutput(aggregates, static (ctx, info) =>
         {
             var source = EmitApplyEvent(info);
-            ctx.AddSource($"{info.ClassName}.ApplyEvent.g.cs", source);
+            // Qualify the hint name with the namespace to avoid collisions when two aggregates share a short name.
+            var hint = string.IsNullOrEmpty(info.Namespace)
+                ? $"{info.ClassName}.ApplyEvent.g.cs"
+                : $"{info.Namespace}.{info.ClassName}.ApplyEvent.g.cs";
+            ctx.AddSource(hint, source);
         });
     }
 
@@ -65,7 +69,10 @@ public sealed class AggregateDispatchGenerator : IIncrementalGenerator
         var stateType = baseType.TypeArguments[1] as INamedTypeSymbol;
         if (stateType is null) return null;
 
-        // Find Apply(TEvent) methods on the state struct
+        // Find internal or private Apply(TEvent) methods on the state struct.
+        // Both accessibilities are accepted: internal is the idiomatic choice, private also works
+        // because the generated code calls state.Apply(...) on the struct value (not on the aggregate),
+        // so accessibility is relative to the state type, not the call site.
         var applyMethods = stateType.GetMembers()
             .OfType<IMethodSymbol>()
             .Where(m => m.Name == "Apply"
