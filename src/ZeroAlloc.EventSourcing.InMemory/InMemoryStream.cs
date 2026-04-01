@@ -1,12 +1,21 @@
 namespace ZeroAlloc.EventSourcing.InMemory;
 
-/// <summary>Thread-safe, append-only event list for a single stream.</summary>
+/// <summary>
+/// Thread-safe, append-only event list for a single stream.
+/// This type is a test double — it is not intended for production use.
+/// </summary>
 internal sealed class InMemoryStream
 {
     private readonly List<RawEvent> _events = new();
     private long _version = 0;
 
-    /// <summary>Current version (number of events appended).</summary>
+    /// <summary>
+    /// Current version (number of events appended).
+    /// <c>Interlocked.Read</c> is used here because <c>long</c> reads are not atomic on 32-bit
+    /// platforms without it; all writes happen inside <c>lock (_events)</c>, which provides the
+    /// necessary memory barrier on the write side. Reads inside the lock use the plain field directly
+    /// (the lock itself guarantees visibility there).
+    /// </summary>
     public long Version => Interlocked.Read(ref _version);
 
     /// <summary>
@@ -37,6 +46,7 @@ internal sealed class InMemoryStream
     {
         lock (_events)
         {
+            // Allocates a list snapshot intentionally — InMemoryStream is a test double, not a production adapter.
             return _events.Skip((int)fromPosition).ToList();
         }
     }

@@ -5,7 +5,11 @@ using ZeroAlloc.Results;
 
 namespace ZeroAlloc.EventSourcing.InMemory;
 
-/// <summary>In-memory <see cref="IEventStoreAdapter"/> backed by a <see cref="ConcurrentDictionary{TKey,TValue}"/>. Intended for testing.</summary>
+/// <summary>
+/// In-memory <see cref="IEventStoreAdapter"/> backed by a <see cref="ConcurrentDictionary{TKey,TValue}"/>.
+/// This is a test double — it is not a production adapter. Allocations such as list snapshots in
+/// <see cref="InMemoryStream.ReadFrom"/> are intentional and acceptable in a test context.
+/// </summary>
 public sealed class InMemoryEventStoreAdapter : IEventStoreAdapter
 {
     private readonly ConcurrentDictionary<string, InMemoryStream> _streams = new();
