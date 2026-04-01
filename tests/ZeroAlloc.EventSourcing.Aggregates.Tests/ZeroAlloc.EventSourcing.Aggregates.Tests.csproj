@@ -5,6 +5,8 @@
     <TargetFramework>net9.0</TargetFramework>
     <TargetFrameworks></TargetFrameworks>
     <IsPackable>false</IsPackable>
+    <!-- Suppress CS1591: test classes don't need XML doc comments -->
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
   </PropertyGroup>
 
   <ItemGroup>
