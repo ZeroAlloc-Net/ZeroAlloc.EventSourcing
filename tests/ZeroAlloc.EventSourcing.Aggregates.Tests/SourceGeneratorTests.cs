@@ -61,3 +61,35 @@ public class SourceGeneratorTests
         product.State.IsCreated.Should().BeFalse();
     }
 }
+
+public class EventTypeRegistryTests
+{
+    [Fact]
+    public void GeneratedRegistry_ResolvesEventTypeByName()
+    {
+        // Generator emits ProductAggregateEventTypeRegistry
+        var registry = new ProductAggregateEventTypeRegistry();
+
+        registry.TryGetType("ProductCreated", out var type).Should().BeTrue();
+        type.Should().Be(typeof(ProductCreated));
+
+        registry.TryGetType("ProductDiscontinued", out var type2).Should().BeTrue();
+        type2.Should().Be(typeof(ProductDiscontinued));
+    }
+
+    [Fact]
+    public void GeneratedRegistry_GetTypeName_ReturnsShortName()
+    {
+        var registry = new ProductAggregateEventTypeRegistry();
+
+        registry.GetTypeName(typeof(ProductCreated)).Should().Be("ProductCreated");
+        registry.GetTypeName(typeof(ProductDiscontinued)).Should().Be("ProductDiscontinued");
+    }
+
+    [Fact]
+    public void GeneratedRegistry_UnknownType_ReturnsFalse()
+    {
+        var registry = new ProductAggregateEventTypeRegistry();
+        registry.TryGetType("NonExistentEvent", out _).Should().BeFalse();
+    }
+}
