@@ -8,7 +8,11 @@ public readonly record struct EventEnvelope<TEvent>(
     TEvent Event,
     EventMetadata Metadata);
 
-/// <summary>Untyped envelope used internally for heterogeneous reads where the concrete event type is not statically known.</summary>
+/// <summary>
+/// Untyped event envelope returned by <c>IEventStore.ReadAsync</c>. The <see cref="Event"/>
+/// property is typed as <see cref="object"/>; value-type events will be boxed when stored here.
+/// Prefer <see cref="EventEnvelope{TEvent}"/> on typed hot paths.
+/// </summary>
 public readonly record struct EventEnvelope(
     StreamId StreamId,
     StreamPosition Position,
