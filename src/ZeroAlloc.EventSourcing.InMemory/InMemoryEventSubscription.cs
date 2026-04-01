@@ -10,8 +10,8 @@ internal sealed class InMemoryEventSubscription : IEventSubscription
 {
     private readonly InMemoryStream _stream;
     private readonly AsyncEvent<RawEvent> _callback;
-    private bool _running;
-    private bool _disposed;
+    private volatile bool _running;
+    private volatile bool _disposed;
 
     internal InMemoryEventSubscription(InMemoryStream stream, AsyncEvent<RawEvent> callback)
     {
