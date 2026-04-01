@@ -92,4 +92,11 @@ public class EventTypeRegistryTests
         var registry = new ProductAggregateEventTypeRegistry();
         registry.TryGetType("NonExistentEvent", out _).Should().BeFalse();
     }
+
+    [Fact]
+    public void GeneratedRegistry_GetTypeName_UnregisteredType_ReturnsDotNetShortName()
+    {
+        var registry = new ProductAggregateEventTypeRegistry();
+        registry.GetTypeName(typeof(string)).Should().Be("String");
+    }
 }

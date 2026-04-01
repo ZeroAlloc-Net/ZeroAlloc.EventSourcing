@@ -17,8 +17,8 @@ public sealed class EventTypeRegistryGenerator : IIncrementalGenerator
         // Reuse the same aggregate discovery as AggregateDispatchGenerator
         var aggregates = context.SyntaxProvider
             .CreateSyntaxProvider(
-                predicate: static (node, _) => AggregateDispatchGenerator.IsPartialClassWithBase(node),
-                transform: static (ctx, _) => AggregateDispatchGenerator.GetAggregateInfo(ctx))
+                predicate: static (node, _) => AggregateDispatchGenerator.IsPartialClassWithBaseSyntax(node),
+                transform: static (ctx, _) => AggregateDispatchGenerator.GetAggregateInfoPublic(ctx))
             .Where(static info => info is not null)
             .Select(static (info, _) => info!);
 

@@ -20,8 +20,8 @@ public sealed class AggregateDispatchGenerator : IIncrementalGenerator
     {
         var aggregates = context.SyntaxProvider
             .CreateSyntaxProvider(
-                predicate: static (node, _) => IsPartialClassWithBase(node),
-                transform: static (ctx, _) => GetAggregateInfo(ctx))
+                predicate: static (node, _) => IsPartialClassWithBaseSyntax(node),
+                transform: static (ctx, _) => GetAggregateInfoPublic(ctx))
             .Where(static info => info is not null)
             .Select(static (info, _) => info!);
 
@@ -36,18 +36,29 @@ public sealed class AggregateDispatchGenerator : IIncrementalGenerator
         });
     }
 
-    internal static bool IsPartialClassWithBase(SyntaxNode node)
+    /// <summary>Syntactic predicate: returns true for partial class declarations with a base type list. Shared with <see cref="EventTypeRegistryGenerator"/>.</summary>
+    internal static bool IsPartialClassWithBaseSyntax(SyntaxNode node)
         => node is ClassDeclarationSyntax cls
             && cls.Modifiers.Any(m => m.IsKind(SyntaxKind.PartialKeyword))
             && cls.BaseList?.Types.Count > 0;
 
-    internal static AggregateInfo? GetAggregateInfo(GeneratorSyntaxContext ctx)
+    /// <summary>
+    /// Semantic transform: returns an <see cref="AggregateInfo"/> for classes that inherit
+    /// <c>Aggregate&lt;TId, TState&gt;</c> and whose state has <c>Apply(TEvent)</c> methods.
+    /// Returns <c>null</c> for non-aggregate classes or those already providing a manual override.
+    /// Shared with <see cref="EventTypeRegistryGenerator"/>.
+    /// NOTE: the <c>hasExplicitApplyEvent</c> guard below also suppresses registry generation for
+    /// aggregates with a hand-written dispatcher. If those concerns need separating in the future,
+    /// introduce a dedicated discovery method for the registry generator.
+    /// </summary>
+    internal static AggregateInfo? GetAggregateInfoPublic(GeneratorSyntaxContext ctx)
     {
         var cls = (ClassDeclarationSyntax)ctx.Node;
         var symbol = ctx.SemanticModel.GetDeclaredSymbol(cls) as INamedTypeSymbol;
         if (symbol is null) return null;
 
-        // Skip if the class already has an explicit ApplyEvent override declared directly on it
+        // Skip if the class already has an explicit ApplyEvent override declared directly on it.
+        // This prevents a duplicate-member error when Order (in tests) defines ApplyEvent manually.
         var hasExplicitApplyEvent = symbol.GetMembers()
             .OfType<IMethodSymbol>()
             .Any(m => m.Name == "ApplyEvent"

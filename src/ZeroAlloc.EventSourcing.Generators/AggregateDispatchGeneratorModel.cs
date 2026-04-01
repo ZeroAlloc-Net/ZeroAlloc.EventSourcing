@@ -3,6 +3,12 @@ using System.Linq;
 
 namespace ZeroAlloc.EventSourcing.Generators;
 
+/// <summary>
+/// Shared discovery model used by both <see cref="AggregateDispatchGenerator"/> and
+/// <see cref="EventTypeRegistryGenerator"/>. Carries all information needed to emit
+/// the <c>ApplyEvent</c> switch and the <c>IEventTypeRegistry</c> implementation.
+/// <para>EventTypeNames (short) are used by the registry; EventTypeFullNames (qualified) by the dispatcher.</para>
+/// </summary>
 internal sealed class AggregateInfo
 {
     public AggregateInfo(
