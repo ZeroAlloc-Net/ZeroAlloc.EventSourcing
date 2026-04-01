@@ -16,6 +16,9 @@ public sealed class EventStore : IEventStore
     /// <summary>Initialises an <see cref="EventStore"/> with the given adapter, serializer, and type registry.</summary>
     public EventStore(IEventStoreAdapter adapter, IEventSerializer serializer, IEventTypeRegistry registry)
     {
+        ArgumentNullException.ThrowIfNull(adapter);
+        ArgumentNullException.ThrowIfNull(serializer);
+        ArgumentNullException.ThrowIfNull(registry);
         _adapter = adapter;
         _serializer = serializer;
         _registry = registry;
@@ -49,7 +52,7 @@ public sealed class EventStore : IEventStore
         StreamPosition from = default,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        await foreach (var raw in _adapter.ReadAsync(id, from, ct))
+        await foreach (var raw in _adapter.ReadAsync(id, from, ct).ConfigureAwait(false))
         {
             if (!_registry.TryGetType(raw.EventType, out var type) || type is null)
                 continue; // unknown event type — skip for forward compatibility
