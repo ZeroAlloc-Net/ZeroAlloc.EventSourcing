@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "dgSpecHash": "r1drEP9TErU=",
+  "success": true,
+  "projectFilePath": "C:\\Projects\\Prive\\ZeroAlloc.EventSourcing\\src\\ZeroAlloc.EventSourcing.InMemory\\ZeroAlloc.EventSourcing.InMemory.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\MarcelRoozekrans\\.nuget\\packages\\zeroalloc.asyncevents\\1.0.0\\zeroalloc.asyncevents.1.0.0.nupkg.sha512",
+    "C:\\Users\\MarcelRoozekrans\\.nuget\\packages\\zeroalloc.collections\\0.1.4\\zeroalloc.collections.0.1.4.nupkg.sha512",
+    "C:\\Users\\MarcelRoozekrans\\.nuget\\packages\\zeroalloc.results\\0.1.4\\zeroalloc.results.0.1.4.nupkg.sha512",
+    "C:\\Users\\MarcelRoozekrans\\.nuget\\packages\\zeroalloc.valueobjects\\1.1.6\\zeroalloc.valueobjects.1.1.6.nupkg.sha512"
+  ],
+  "logs": []
+}

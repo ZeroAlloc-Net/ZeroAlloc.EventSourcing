@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>Roslyn source generators for ZeroAlloc.EventSourcing.</Description>
+  </PropertyGroup>
+
+</Project>

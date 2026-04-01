@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>PostgreSQL event store implementation for ZeroAlloc.EventSourcing.</Description>
+  </PropertyGroup>
+
+</Project>

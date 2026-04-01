@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <Description>Core abstractions and primitives for ZeroAlloc.EventSourcing.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ZeroAlloc.Results" />
+    <PackageReference Include="ZeroAlloc.Collections" />
+    <PackageReference Include="ZeroAlloc.AsyncEvents" />
+    <PackageReference Include="ZeroAlloc.ValueObjects" />
+  </ItemGroup>
+
+</Project>

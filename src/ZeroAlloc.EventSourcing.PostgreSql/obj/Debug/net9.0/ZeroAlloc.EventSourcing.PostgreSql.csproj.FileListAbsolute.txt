@@ -1,0 +1,13 @@
+C:\Projects\Prive\ZeroAlloc.EventSourcing\src\ZeroAlloc.EventSourcing.PostgreSql\bin\Debug\net9.0\ZeroAlloc.EventSourcing.PostgreSql.deps.json
+C:\Projects\Prive\ZeroAlloc.EventSourcing\src\ZeroAlloc.EventSourcing.PostgreSql\bin\Debug\net9.0\ZeroAlloc.EventSourcing.PostgreSql.dll
+C:\Projects\Prive\ZeroAlloc.EventSourcing\src\ZeroAlloc.EventSourcing.PostgreSql\bin\Debug\net9.0\ZeroAlloc.EventSourcing.PostgreSql.pdb
+C:\Projects\Prive\ZeroAlloc.EventSourcing\src\ZeroAlloc.EventSourcing.PostgreSql\bin\Debug\net9.0\ZeroAlloc.EventSourcing.PostgreSql.xml
+C:\Projects\Prive\ZeroAlloc.EventSourcing\src\ZeroAlloc.EventSourcing.PostgreSql\obj\Debug\net9.0\ZeroAlloc.EventSourcing.PostgreSql.GeneratedMSBuildEditorConfig.editorconfig
+C:\Projects\Prive\ZeroAlloc.EventSourcing\src\ZeroAlloc.EventSourcing.PostgreSql\obj\Debug\net9.0\ZeroAlloc.EventSourcing.PostgreSql.AssemblyInfoInputs.cache
+C:\Projects\Prive\ZeroAlloc.EventSourcing\src\ZeroAlloc.EventSourcing.PostgreSql\obj\Debug\net9.0\ZeroAlloc.EventSourcing.PostgreSql.AssemblyInfo.cs
+C:\Projects\Prive\ZeroAlloc.EventSourcing\src\ZeroAlloc.EventSourcing.PostgreSql\obj\Debug\net9.0\ZeroAlloc.EventSourcing.PostgreSql.csproj.CoreCompileInputs.cache
+C:\Projects\Prive\ZeroAlloc.EventSourcing\src\ZeroAlloc.EventSourcing.PostgreSql\obj\Debug\net9.0\ZeroAlloc.EventSourcing.PostgreSql.dll
+C:\Projects\Prive\ZeroAlloc.EventSourcing\src\ZeroAlloc.EventSourcing.PostgreSql\obj\Debug\net9.0\refint\ZeroAlloc.EventSourcing.PostgreSql.dll
+C:\Projects\Prive\ZeroAlloc.EventSourcing\src\ZeroAlloc.EventSourcing.PostgreSql\obj\Debug\net9.0\ZeroAlloc.EventSourcing.PostgreSql.xml
+C:\Projects\Prive\ZeroAlloc.EventSourcing\src\ZeroAlloc.EventSourcing.PostgreSql\obj\Debug\net9.0\ZeroAlloc.EventSourcing.PostgreSql.pdb
+C:\Projects\Prive\ZeroAlloc.EventSourcing\src\ZeroAlloc.EventSourcing.PostgreSql\obj\Debug\net9.0\ref\ZeroAlloc.EventSourcing.PostgreSql.dll

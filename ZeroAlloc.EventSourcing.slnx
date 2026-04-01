@@ -1,0 +1,17 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ZeroAlloc.EventSourcing.Aggregates/ZeroAlloc.EventSourcing.Aggregates.csproj" />
+    <Project Path="src/ZeroAlloc.EventSourcing.Generators/ZeroAlloc.EventSourcing.Generators.csproj" />
+    <Project Path="src/ZeroAlloc.EventSourcing.InMemory/ZeroAlloc.EventSourcing.InMemory.csproj" />
+    <Project Path="src/ZeroAlloc.EventSourcing.PostgreSql/ZeroAlloc.EventSourcing.PostgreSql.csproj" />
+    <Project Path="src/ZeroAlloc.EventSourcing.SqlServer/ZeroAlloc.EventSourcing.SqlServer.csproj" />
+    <Project Path="src/ZeroAlloc.EventSourcing/ZeroAlloc.EventSourcing.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ZeroAlloc.EventSourcing.Aggregates.Tests/ZeroAlloc.EventSourcing.Aggregates.Tests.csproj" />
+    <Project Path="tests/ZeroAlloc.EventSourcing.InMemory.Tests/ZeroAlloc.EventSourcing.InMemory.Tests.csproj" />
+    <Project Path="tests/ZeroAlloc.EventSourcing.PostgreSql.Tests/ZeroAlloc.EventSourcing.PostgreSql.Tests.csproj" />
+    <Project Path="tests/ZeroAlloc.EventSourcing.SqlServer.Tests/ZeroAlloc.EventSourcing.SqlServer.Tests.csproj" />
+    <Project Path="tests/ZeroAlloc.EventSourcing.Tests/ZeroAlloc.EventSourcing.Tests.csproj" />
+  </Folder>
+</Solution>

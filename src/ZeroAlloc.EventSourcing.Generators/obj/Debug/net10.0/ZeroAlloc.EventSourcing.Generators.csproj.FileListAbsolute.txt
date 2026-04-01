@@ -1,0 +1,13 @@
+C:\Projects\Prive\ZeroAlloc.EventSourcing\src\ZeroAlloc.EventSourcing.Generators\bin\Debug\net10.0\ZeroAlloc.EventSourcing.Generators.deps.json
+C:\Projects\Prive\ZeroAlloc.EventSourcing\src\ZeroAlloc.EventSourcing.Generators\bin\Debug\net10.0\ZeroAlloc.EventSourcing.Generators.dll
+C:\Projects\Prive\ZeroAlloc.EventSourcing\src\ZeroAlloc.EventSourcing.Generators\bin\Debug\net10.0\ZeroAlloc.EventSourcing.Generators.pdb
+C:\Projects\Prive\ZeroAlloc.EventSourcing\src\ZeroAlloc.EventSourcing.Generators\bin\Debug\net10.0\ZeroAlloc.EventSourcing.Generators.xml
+C:\Projects\Prive\ZeroAlloc.EventSourcing\src\ZeroAlloc.EventSourcing.Generators\obj\Debug\net10.0\ZeroAlloc.EventSourcing.Generators.GeneratedMSBuildEditorConfig.editorconfig
+C:\Projects\Prive\ZeroAlloc.EventSourcing\src\ZeroAlloc.EventSourcing.Generators\obj\Debug\net10.0\ZeroAlloc.EventSourcing.Generators.AssemblyInfoInputs.cache
+C:\Projects\Prive\ZeroAlloc.EventSourcing\src\ZeroAlloc.EventSourcing.Generators\obj\Debug\net10.0\ZeroAlloc.EventSourcing.Generators.AssemblyInfo.cs
+C:\Projects\Prive\ZeroAlloc.EventSourcing\src\ZeroAlloc.EventSourcing.Generators\obj\Debug\net10.0\ZeroAlloc.EventSourcing.Generators.csproj.CoreCompileInputs.cache
+C:\Projects\Prive\ZeroAlloc.EventSourcing\src\ZeroAlloc.EventSourcing.Generators\obj\Debug\net10.0\ZeroAlloc.EventSourcing.Generators.dll
+C:\Projects\Prive\ZeroAlloc.EventSourcing\src\ZeroAlloc.EventSourcing.Generators\obj\Debug\net10.0\refint\ZeroAlloc.EventSourcing.Generators.dll
+C:\Projects\Prive\ZeroAlloc.EventSourcing\src\ZeroAlloc.EventSourcing.Generators\obj\Debug\net10.0\ZeroAlloc.EventSourcing.Generators.xml
+C:\Projects\Prive\ZeroAlloc.EventSourcing\src\ZeroAlloc.EventSourcing.Generators\obj\Debug\net10.0\ZeroAlloc.EventSourcing.Generators.pdb
+C:\Projects\Prive\ZeroAlloc.EventSourcing\src\ZeroAlloc.EventSourcing.Generators\obj\Debug\net10.0\ref\ZeroAlloc.EventSourcing.Generators.dll

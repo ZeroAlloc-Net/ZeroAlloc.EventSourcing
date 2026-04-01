@@ -1,0 +1,13 @@
+C:\Projects\Prive\ZeroAlloc.EventSourcing\src\ZeroAlloc.EventSourcing.SqlServer\bin\Debug\net9.0\ZeroAlloc.EventSourcing.SqlServer.deps.json
+C:\Projects\Prive\ZeroAlloc.EventSourcing\src\ZeroAlloc.EventSourcing.SqlServer\bin\Debug\net9.0\ZeroAlloc.EventSourcing.SqlServer.dll
+C:\Projects\Prive\ZeroAlloc.EventSourcing\src\ZeroAlloc.EventSourcing.SqlServer\bin\Debug\net9.0\ZeroAlloc.EventSourcing.SqlServer.pdb
+C:\Projects\Prive\ZeroAlloc.EventSourcing\src\ZeroAlloc.EventSourcing.SqlServer\bin\Debug\net9.0\ZeroAlloc.EventSourcing.SqlServer.xml
+C:\Projects\Prive\ZeroAlloc.EventSourcing\src\ZeroAlloc.EventSourcing.SqlServer\obj\Debug\net9.0\ZeroAlloc.EventSourcing.SqlServer.GeneratedMSBuildEditorConfig.editorconfig
+C:\Projects\Prive\ZeroAlloc.EventSourcing\src\ZeroAlloc.EventSourcing.SqlServer\obj\Debug\net9.0\ZeroAlloc.EventSourcing.SqlServer.AssemblyInfoInputs.cache
+C:\Projects\Prive\ZeroAlloc.EventSourcing\src\ZeroAlloc.EventSourcing.SqlServer\obj\Debug\net9.0\ZeroAlloc.EventSourcing.SqlServer.AssemblyInfo.cs
+C:\Projects\Prive\ZeroAlloc.EventSourcing\src\ZeroAlloc.EventSourcing.SqlServer\obj\Debug\net9.0\ZeroAlloc.EventSourcing.SqlServer.csproj.CoreCompileInputs.cache
+C:\Projects\Prive\ZeroAlloc.EventSourcing\src\ZeroAlloc.EventSourcing.SqlServer\obj\Debug\net9.0\ZeroAlloc.EventSourcing.SqlServer.dll
+C:\Projects\Prive\ZeroAlloc.EventSourcing\src\ZeroAlloc.EventSourcing.SqlServer\obj\Debug\net9.0\refint\ZeroAlloc.EventSourcing.SqlServer.dll
+C:\Projects\Prive\ZeroAlloc.EventSourcing\src\ZeroAlloc.EventSourcing.SqlServer\obj\Debug\net9.0\ZeroAlloc.EventSourcing.SqlServer.xml
+C:\Projects\Prive\ZeroAlloc.EventSourcing\src\ZeroAlloc.EventSourcing.SqlServer\obj\Debug\net9.0\ZeroAlloc.EventSourcing.SqlServer.pdb
+C:\Projects\Prive\ZeroAlloc.EventSourcing\src\ZeroAlloc.EventSourcing.SqlServer\obj\Debug\net9.0\ref\ZeroAlloc.EventSourcing.SqlServer.dll
