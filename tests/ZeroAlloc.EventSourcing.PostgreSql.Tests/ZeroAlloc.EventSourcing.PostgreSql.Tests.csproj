@@ -1,11 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <!-- Override Directory.Build.props multi-targeting — test projects target a single TFM -->
     <TargetFramework>net9.0</TargetFramework>
     <TargetFrameworks></TargetFrameworks>
     <IsPackable>false</IsPackable>
-    <!-- Suppress CS1591: test classes don't need XML doc comments -->
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
   </PropertyGroup>
 
@@ -14,6 +12,12 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ZeroAlloc.EventSourcing.PostgreSql\ZeroAlloc.EventSourcing.PostgreSql.csproj" />
   </ItemGroup>
 
   <ItemGroup>

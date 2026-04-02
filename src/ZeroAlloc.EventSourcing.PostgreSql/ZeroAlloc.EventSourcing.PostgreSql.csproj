@@ -4,4 +4,12 @@
     <Description>PostgreSQL event store implementation for ZeroAlloc.EventSourcing.</Description>
   </PropertyGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\ZeroAlloc.EventSourcing\ZeroAlloc.EventSourcing.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Npgsql" />
+  </ItemGroup>
+
 </Project>
