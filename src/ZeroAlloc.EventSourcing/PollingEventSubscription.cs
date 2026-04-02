@@ -18,6 +18,8 @@ public sealed class PollingEventSubscription : IEventSubscription
     private readonly CancellationTokenSource _cts = new();
     private Task? _backgroundTask;
     private volatile bool _running;
+    private int _started;   // 0 = not started, 1 = started — guards against double-start
+    private int _disposed;  // 0 = live, 1 = disposed — guards against concurrent DisposeAsync
 
     /// <summary>Initialises the subscription but does not start polling. Call <see cref="StartAsync"/> to begin delivery.</summary>
     /// <param name="adapter">The event-store adapter used to read events.</param>
@@ -32,6 +34,8 @@ public sealed class PollingEventSubscription : IEventSubscription
         Func<RawEvent, CancellationToken, ValueTask> handler,
         TimeSpan pollInterval)
     {
+        ArgumentNullException.ThrowIfNull(adapter);
+        ArgumentNullException.ThrowIfNull(handler);
         _adapter = adapter;
         _id = id;
         _nextPosition = from;
@@ -43,8 +47,11 @@ public sealed class PollingEventSubscription : IEventSubscription
     public bool IsRunning => _running;
 
     /// <inheritdoc/>
+    /// <exception cref="InvalidOperationException">Thrown when called more than once.</exception>
     public ValueTask StartAsync(CancellationToken ct = default)
     {
+        if (Interlocked.Exchange(ref _started, 1) != 0)
+            throw new InvalidOperationException("StartAsync has already been called on this subscription.");
         _running = true;
         _backgroundTask = Task.Run(() => RunAsync(_cts.Token), CancellationToken.None);
         return ValueTask.CompletedTask;
@@ -73,14 +80,14 @@ public sealed class PollingEventSubscription : IEventSubscription
         await foreach (var e in _adapter.ReadAsync(_id, _nextPosition, ct).ConfigureAwait(false))
         {
             await _handler(e, ct).ConfigureAwait(false);
-            _nextPosition = new StreamPosition(e.Position.Value + 1);
+            _nextPosition = e.Position.Next();
         }
     }
 
     /// <inheritdoc/>
     public async ValueTask DisposeAsync()
     {
-        if (!_running) return;
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
         _running = false;
         await _cts.CancelAsync().ConfigureAwait(false);
         if (_backgroundTask is not null)
