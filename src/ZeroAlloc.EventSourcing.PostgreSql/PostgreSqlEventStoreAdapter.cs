@@ -163,11 +163,13 @@ public sealed class PostgreSqlEventStoreAdapter : IEventStoreAdapter
     }
 
     /// <inheritdoc/>
-    /// <exception cref="NotSupportedException">Subscriptions are implemented in Phase 4.</exception>
     public ValueTask<IEventSubscription> SubscribeAsync(
         StreamId id,
         StreamPosition from,
         Func<RawEvent, CancellationToken, ValueTask> handler,
         CancellationToken ct = default)
-        => throw new NotSupportedException("Subscriptions are not yet implemented for the PostgreSQL adapter. See Phase 4.");
+    {
+        var sub = new PollingEventSubscription(this, id, from, handler, PollingEventSubscription.DefaultPollInterval);
+        return ValueTask.FromResult<IEventSubscription>(sub);
+    }
 }

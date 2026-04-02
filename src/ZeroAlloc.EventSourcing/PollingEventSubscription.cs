@@ -5,7 +5,7 @@ namespace ZeroAlloc.EventSourcing;
 /// push-based delivery (e.g. SQL adapters). On <see cref="StartAsync"/>, replays all events
 /// from <c>from</c> then polls at <see cref="DefaultPollInterval"/> until disposed.
 /// </summary>
-internal sealed class PollingEventSubscription : IEventSubscription
+public sealed class PollingEventSubscription : IEventSubscription
 {
     /// <summary>Default interval between poll cycles.</summary>
     public static readonly TimeSpan DefaultPollInterval = TimeSpan.FromMilliseconds(500);
@@ -19,7 +19,13 @@ internal sealed class PollingEventSubscription : IEventSubscription
     private Task? _backgroundTask;
     private volatile bool _running;
 
-    internal PollingEventSubscription(
+    /// <summary>Initialises the subscription but does not start polling. Call <see cref="StartAsync"/> to begin delivery.</summary>
+    /// <param name="adapter">The event-store adapter used to read events.</param>
+    /// <param name="id">The stream to subscribe to.</param>
+    /// <param name="from">The position (inclusive) from which to begin catch-up.</param>
+    /// <param name="handler">Callback invoked for each delivered event.</param>
+    /// <param name="pollInterval">Interval between poll cycles once catch-up is complete.</param>
+    public PollingEventSubscription(
         IEventStoreAdapter adapter,
         StreamId id,
         StreamPosition from,
