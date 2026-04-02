@@ -85,7 +85,7 @@ public sealed class PostgreSqlEventStoreAdapter : IEventStoreAdapter
 
             if (current != expectedVersion.Value)
             {
-                await tx.RollbackAsync(ct).ConfigureAwait(false);
+                // No explicit RollbackAsync needed — await using tx will rollback on dispose.
                 return Result<AppendResult, StoreError>.Failure(
                     StoreError.Conflict(id, expectedVersion, new StreamPosition(current)));
             }
@@ -119,7 +119,8 @@ public sealed class PostgreSqlEventStoreAdapter : IEventStoreAdapter
         }
         catch
         {
-            await tx.RollbackAsync(ct).ConfigureAwait(false);
+            // Use CancellationToken.None so a cancelled ct doesn't prevent the rollback from completing.
+            try { await tx.RollbackAsync(CancellationToken.None).ConfigureAwait(false); } catch { /* connection may already be dead */ }
             throw;
         }
     }
