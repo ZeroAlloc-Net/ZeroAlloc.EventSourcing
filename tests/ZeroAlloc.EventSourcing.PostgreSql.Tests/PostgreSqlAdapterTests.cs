@@ -208,4 +208,12 @@ public sealed class PostgreSqlAdapterTests : IAsyncLifetime
         read.Metadata.CorrelationId.Should().BeNull();
         read.Metadata.CausationId.Should().BeNull();
     }
+
+    [Fact]
+    public async Task EnsureSchemaAsync_CalledTwice_DoesNotThrow()
+    {
+        // CREATE TABLE IF NOT EXISTS must be idempotent
+        var act = async () => await _adapter.EnsureSchemaAsync();
+        await act.Should().NotThrowAsync();
+    }
 }
