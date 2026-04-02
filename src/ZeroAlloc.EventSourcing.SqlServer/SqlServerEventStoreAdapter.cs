@@ -17,10 +17,10 @@ public sealed class SqlServerEventStoreAdapter : IEventStoreAdapter
 
     /// <summary>Initialises the adapter with a SQL Server connection string.</summary>
     /// <param name="connectionString">A valid SQL Server connection string.</param>
-    /// <exception cref="ArgumentNullException">Thrown when <paramref name="connectionString"/> is <see langword="null"/>.</exception>
+    /// <exception cref="ArgumentException">Thrown when <paramref name="connectionString"/> is <see langword="null"/>, empty, or whitespace.</exception>
     public SqlServerEventStoreAdapter(string connectionString)
     {
-        ArgumentNullException.ThrowIfNull(connectionString);
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
         _connectionString = connectionString;
     }
 
