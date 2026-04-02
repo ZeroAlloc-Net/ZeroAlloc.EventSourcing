@@ -50,6 +50,7 @@ public sealed class SqlServerEventStoreAdapter : IEventStoreAdapter
                     causation_id    UNIQUEIDENTIFIER  NULL,
                     payload         VARBINARY(MAX)    NOT NULL,
                     CONSTRAINT PK_event_store PRIMARY KEY (stream_id, position)
+                    -- TODO(perf): add a covering non-clustered index on (stream_id) INCLUDE (position) for O(log n) MAX(position) version-check scans on high-event-count streams
                 )
             END
             """;
@@ -86,7 +87,7 @@ public sealed class SqlServerEventStoreAdapter : IEventStoreAdapter
                     FROM dbo.event_store WITH (UPDLOCK, HOLDLOCK)
                     WHERE stream_id = @streamId
                     """;
-                versionCmd.Parameters.AddWithValue("streamId", id.Value);
+                versionCmd.Parameters.AddWithValue("@streamId", id.Value);
                 current = (long)(await versionCmd.ExecuteScalarAsync(ct).ConfigureAwait(false) ?? 0L);
             }
 

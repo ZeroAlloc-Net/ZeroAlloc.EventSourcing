@@ -156,4 +156,16 @@ public sealed class PostgreSqlAdapterTests : IAsyncLifetime
         result.IsSuccess.Should().BeTrue();
         result.Value.NextExpectedVersion.Value.Should().Be(0);
     }
+
+    [Fact]
+    public async Task SecondAppend_AfterSuccessfulFirst_Succeeds()
+    {
+        var id = new StreamId($"orders-{Guid.NewGuid()}");
+
+        await _adapter.AppendAsync(id, new[] { MakeRaw("OrderPlaced") }.AsMemory(), StreamPosition.Start);
+        var result = await _adapter.AppendAsync(id, new[] { MakeRaw("OrderShipped") }.AsMemory(), new StreamPosition(1));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.NextExpectedVersion.Value.Should().Be(2);
+    }
 }

@@ -40,6 +40,7 @@ public sealed class PostgreSqlEventStoreAdapter : IEventStoreAdapter
                 causation_id   UUID         NULL,
                 payload        BYTEA        NOT NULL,
                 PRIMARY KEY (stream_id, position)
+                -- TODO(perf): add a covering index on (stream_id) INCLUDE (position) for O(log n) MAX(position) version-check scans on high-event-count streams
             )
             """;
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
