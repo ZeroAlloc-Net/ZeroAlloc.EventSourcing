@@ -152,4 +152,56 @@ public sealed class SqlServerAdapterTests : IAsyncLifetime
         result.IsSuccess.Should().BeTrue();
         result.Value.NextExpectedVersion.Value.Should().Be(0);
     }
+
+    [Fact]
+    public async Task SecondAppend_AfterSuccessfulFirst_Succeeds()
+    {
+        var id = new StreamId($"orders-{Guid.NewGuid()}");
+
+        await _adapter.AppendAsync(id, new[] { MakeRaw("OrderPlaced") }.AsMemory(), StreamPosition.Start);
+        var result = await _adapter.AppendAsync(id, new[] { MakeRaw("OrderShipped") }.AsMemory(), new StreamPosition(1));
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.NextExpectedVersion.Value.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task Read_PreservesMetadata()
+    {
+        var id = new StreamId($"orders-{Guid.NewGuid()}");
+        var correlationId = Guid.NewGuid();
+        var causationId = Guid.NewGuid();
+        var eventId = Guid.NewGuid();
+        var occurredAt = new DateTimeOffset(2026, 4, 1, 12, 0, 0, TimeSpan.Zero);
+        var metadata = new EventMetadata(eventId, "OrderPlaced", occurredAt, correlationId, causationId);
+        var raw = new RawEvent(StreamPosition.Start, "OrderPlaced", "{}"u8.ToArray().AsMemory(), metadata);
+
+        await _adapter.AppendAsync(id, new[] { raw }.AsMemory(), StreamPosition.Start);
+
+        RawEvent read = default;
+        await foreach (var e in _adapter.ReadAsync(id, StreamPosition.Start))
+            read = e;
+
+        read.Metadata.EventId.Should().Be(eventId);
+        read.Metadata.OccurredAt.Should().Be(occurredAt);
+        read.Metadata.CorrelationId.Should().Be(correlationId);
+        read.Metadata.CausationId.Should().Be(causationId);
+    }
+
+    [Fact]
+    public async Task Read_PreservesNullableMetadata_WhenNullCorrelationAndCausation()
+    {
+        var id = new StreamId($"orders-{Guid.NewGuid()}");
+        var metadata = new EventMetadata(Guid.NewGuid(), "OrderPlaced", DateTimeOffset.UtcNow, null, null);
+        var raw = new RawEvent(StreamPosition.Start, "OrderPlaced", "{}"u8.ToArray().AsMemory(), metadata);
+
+        await _adapter.AppendAsync(id, new[] { raw }.AsMemory(), StreamPosition.Start);
+
+        RawEvent read = default;
+        await foreach (var e in _adapter.ReadAsync(id, StreamPosition.Start))
+            read = e;
+
+        read.Metadata.CorrelationId.Should().BeNull();
+        read.Metadata.CausationId.Should().BeNull();
+    }
 }

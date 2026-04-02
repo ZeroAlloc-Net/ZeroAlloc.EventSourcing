@@ -65,11 +65,14 @@ public sealed class PostgreSqlEventStoreAdapter : IEventStoreAdapter
         try
         {
             // Acquire an exclusive advisory lock scoped to this transaction.
-            // hashtext() maps the stream_id string to an int4 key; collisions are astronomically rare.
+            // hashtextextended() (available since PostgreSQL 11) maps the stream_id string to an int8 key.
+            // Using int8 (64-bit) rather than hashtext()'s int4 (32-bit) makes birthday-paradox collisions
+            // negligible even at millions of distinct stream IDs. A collision causes spurious lock contention
+            // between unrelated streams (never data corruption), but should be avoided.
             await using (var lockCmd = conn.CreateCommand())
             {
                 lockCmd.Transaction = tx;
-                lockCmd.CommandText = "SELECT pg_advisory_xact_lock(hashtext(@streamId))";
+                lockCmd.CommandText = "SELECT pg_advisory_xact_lock(hashtextextended(@streamId, 0))";
                 lockCmd.Parameters.AddWithValue("streamId", id.Value);
                 await lockCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }

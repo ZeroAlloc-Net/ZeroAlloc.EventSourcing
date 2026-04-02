@@ -111,14 +111,14 @@ public sealed class SqlServerEventStoreAdapter : IEventStoreAdapter
                     VALUES
                         (@streamId, @position, @eventType, @eventId, @occurredAt, @correlationId, @causationId, @payload)
                     """;
-                ins.Parameters.AddWithValue("streamId", id.Value);
-                ins.Parameters.AddWithValue("position", position);
-                ins.Parameters.AddWithValue("eventType", e.EventType);
-                ins.Parameters.AddWithValue("eventId", e.Metadata.EventId);
-                ins.Parameters.AddWithValue("occurredAt", e.Metadata.OccurredAt);
-                ins.Parameters.Add(new SqlParameter("correlationId", SqlDbType.UniqueIdentifier) { Value = (object?)e.Metadata.CorrelationId ?? DBNull.Value });
-                ins.Parameters.Add(new SqlParameter("causationId", SqlDbType.UniqueIdentifier) { Value = (object?)e.Metadata.CausationId ?? DBNull.Value });
-                ins.Parameters.Add(new SqlParameter("payload", SqlDbType.VarBinary, -1) { Value = e.Payload.ToArray() });
+                ins.Parameters.AddWithValue("@streamId", id.Value);
+                ins.Parameters.AddWithValue("@position", position);
+                ins.Parameters.AddWithValue("@eventType", e.EventType);
+                ins.Parameters.AddWithValue("@eventId", e.Metadata.EventId);
+                ins.Parameters.AddWithValue("@occurredAt", e.Metadata.OccurredAt);
+                ins.Parameters.Add(new SqlParameter("@correlationId", SqlDbType.UniqueIdentifier) { Value = (object?)e.Metadata.CorrelationId ?? DBNull.Value });
+                ins.Parameters.Add(new SqlParameter("@causationId", SqlDbType.UniqueIdentifier) { Value = (object?)e.Metadata.CausationId ?? DBNull.Value });
+                ins.Parameters.Add(new SqlParameter("@payload", SqlDbType.VarBinary, -1) { Value = e.Payload.ToArray() });
                 await ins.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
             }
 
@@ -150,8 +150,8 @@ public sealed class SqlServerEventStoreAdapter : IEventStoreAdapter
             WHERE stream_id = @streamId AND position >= @from
             ORDER BY position ASC
             """;
-        cmd.Parameters.AddWithValue("streamId", id.Value);
-        cmd.Parameters.AddWithValue("from", from.Value);
+        cmd.Parameters.AddWithValue("@streamId", id.Value);
+        cmd.Parameters.AddWithValue("@from", from.Value);
 
         // SequentialAccess is required for efficient VARBINARY(MAX) streaming.
         // Columns MUST be read in index order when using SequentialAccess.
