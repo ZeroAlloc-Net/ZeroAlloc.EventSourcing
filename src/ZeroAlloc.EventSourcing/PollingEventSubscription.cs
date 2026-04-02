@@ -90,6 +90,9 @@ public sealed class PollingEventSubscription : IEventSubscription
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
         _running = false;
         await _cts.CancelAsync().ConfigureAwait(false);
+        // Interlocked.Exchange above establishes a full memory barrier, so the
+        // _backgroundTask write from StartAsync (on another thread) is guaranteed
+        // to be visible here even though _backgroundTask is not volatile.
         if (_backgroundTask is not null)
         {
             try { await _backgroundTask.ConfigureAwait(false); }

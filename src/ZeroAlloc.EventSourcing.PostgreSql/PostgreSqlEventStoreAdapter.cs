@@ -169,6 +169,7 @@ public sealed class PostgreSqlEventStoreAdapter : IEventStoreAdapter
         Func<RawEvent, CancellationToken, ValueTask> handler,
         CancellationToken ct = default)
     {
+        ct.ThrowIfCancellationRequested();
         var sub = new PollingEventSubscription(this, id, from, handler, PollingEventSubscription.DefaultPollInterval);
         return ValueTask.FromResult<IEventSubscription>(sub);
     }

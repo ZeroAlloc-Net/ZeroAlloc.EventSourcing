@@ -51,6 +51,7 @@ internal sealed class AggregateInfo
         var hash = 17;
         hash = hash * 31 + Namespace.GetHashCode();
         hash = hash * 31 + ClassName.GetHashCode();
+        hash = hash * 31 + StateTypeName.GetHashCode();
         hash = hash * 31 + StateTypeFullName.GetHashCode();
         foreach (var name in EventTypeFullNames)
             hash = hash * 31 + name.GetHashCode();
