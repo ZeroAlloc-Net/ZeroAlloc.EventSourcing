@@ -17,6 +17,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\ZeroAlloc.EventSourcing.Sql\ZeroAlloc.EventSourcing.Sql.csproj" />
+    <ProjectReference Include="..\ZeroAlloc.EventSourcing.Tests\ZeroAlloc.EventSourcing.Tests.csproj" />
   </ItemGroup>
 
   <ItemGroup>
