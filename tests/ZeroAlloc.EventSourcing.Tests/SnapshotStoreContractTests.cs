@@ -83,6 +83,8 @@ public abstract class SnapshotStoreContractTests
         var result1 = await store.ReadAsync(stream1);
         var result2 = await store.ReadAsync(stream2);
 
+        result1.Should().NotBeNull();
+        result2.Should().NotBeNull();
         result1.Value.State.OrderId.Should().Be("1");
         result2.Value.State.OrderId.Should().Be("2");
     }
