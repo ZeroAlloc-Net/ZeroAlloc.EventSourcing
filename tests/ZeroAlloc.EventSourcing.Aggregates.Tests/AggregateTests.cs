@@ -11,12 +11,14 @@ public readonly record struct OrderId(Guid Value);
 public record OrderPlacedEvent(string OrderId, decimal Total);
 public record OrderShippedEvent(string TrackingNumber);
 
-public struct OrderState : IAggregateState<OrderState>
+public partial struct OrderState : IAggregateState<OrderState>
 {
     public static OrderState Initial => default;
     public bool IsPlaced { get; private set; }
     public bool IsShipped { get; private set; }
     public decimal Total { get; private set; }
+    public string? OrderId { get; set; }
+    public string? TrackingNumber { get; set; }
 
     internal OrderState Apply(OrderPlacedEvent e) => this with { IsPlaced = true, Total = e.Total };
     internal OrderState Apply(OrderShippedEvent e) => this with { IsShipped = true };
