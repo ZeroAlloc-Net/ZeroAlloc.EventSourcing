@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ZeroAlloc.EventSourcing\ZeroAlloc.EventSourcing.csproj" />
+    <ProjectReference Include="..\ZeroAlloc.EventSourcing.Aggregates\ZeroAlloc.EventSourcing.Aggregates.csproj" />
   </ItemGroup>
 
   <ItemGroup>
