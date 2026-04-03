@@ -171,6 +171,61 @@ public sealed class SnapshotCachingRepositoryDecoratorTests
     }
 
     [Fact]
+    public async Task Decorator_ValidateAndReplay_UsesSnapshotWhenPositionValid()
+    {
+        // Arrange
+        var (eventStore, snapshotStore, _) = BuildRepo();
+        var id = new OrderId(Guid.NewGuid());
+        var streamId = new StreamId($"order-{id.Value}");
+
+        // Create and save an order with multiple events
+        var order = new Order();
+        order.SetId(id);
+        order.Place("ORD-1", 100m);
+        order.Ship("TRACK-456");
+
+        var uncommitted = order.DequeueUncommitted();
+        var events = new object[uncommitted.Length];
+        for (var i = 0; i < uncommitted.Length; i++)
+            events[i] = uncommitted[i];
+        await eventStore.AppendAsync(streamId, events.AsMemory(), StreamPosition.Start);
+
+        // Take snapshot at position 2 (after both events)
+        var snapshotState = OrderState.Initial with
+        {
+            OrderId = "ORD-1",
+            TrackingNumber = null
+        };
+        // Apply both events to get the correct state
+        snapshotState = snapshotState.Apply(new OrderPlacedEvent("ORD-1", 100m));
+        snapshotState = snapshotState.Apply(new OrderShippedEvent("TRACK-456"));
+        await snapshotStore.WriteAsync(streamId, new StreamPosition(2), snapshotState);
+
+        // Create decorator with ValidateAndReplay strategy
+        var streamIdFactory = new Func<OrderId, StreamId>(id => new StreamId($"order-{id.Value}"));
+        var aggregateFactory = new Func<Order>(() => new Order());
+        var innerRepo = new AggregateRepository<Order, OrderId>(eventStore, aggregateFactory, streamIdFactory);
+        var decorator = new SnapshotCachingRepositoryDecorator<Order, OrderId, OrderState>(
+            innerRepo,
+            snapshotStore,
+            SnapshotLoadingStrategy.ValidateAndReplay,
+            RestoreOrderState,
+            eventStore,
+            streamIdFactory,
+            aggregateFactory);
+
+        // Act
+        var result = await decorator.LoadAsync(id);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.State.IsPlaced.Should().BeTrue();
+        result.Value.State.IsShipped.Should().BeTrue();
+        result.Value.State.Total.Should().Be(100m);
+        result.Value.Version.Value.Should().Be(2);
+    }
+
+    [Fact]
     public async Task Decorator_SaveAsync_DelegatesToInnerRepository()
     {
         // Arrange
