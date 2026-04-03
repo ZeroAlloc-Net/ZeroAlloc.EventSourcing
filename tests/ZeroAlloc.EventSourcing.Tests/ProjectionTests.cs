@@ -110,3 +110,138 @@ public class ProjectionTests
         projection.Current.Amount.Should().Be(75.50m);
     }
 }
+
+// --- Projection dispatch generator tests ---
+
+/// <summary>
+/// Test projection with typed Apply method overloads suitable for code generation.
+/// The generator will emit an ApplyTyped method that dispatches on event type.
+/// </summary>
+public record InvoiceCreatedEvent(string InvoiceId, decimal Amount);
+public record InvoicePaidEvent(decimal PaidAmount);
+public record InvoiceRefundedEvent(decimal RefundAmount);
+public record InvoiceSummary(string InvoiceId, decimal Amount, decimal PaidAmount, decimal RefundAmount);
+
+public partial class InvoiceProjection : Projection<InvoiceSummary>
+{
+    public InvoiceProjection()
+    {
+        Current = new InvoiceSummary(string.Empty, 0m, 0m, 0m);
+    }
+
+    /// <summary>Typed Apply overload for InvoiceCreatedEvent.</summary>
+    private InvoiceSummary Apply(InvoiceSummary current, InvoiceCreatedEvent e) =>
+        new InvoiceSummary(e.InvoiceId, e.Amount, 0m, 0m);
+
+    /// <summary>Typed Apply overload for InvoicePaidEvent.</summary>
+    private InvoiceSummary Apply(InvoiceSummary current, InvoicePaidEvent e) =>
+        current with { PaidAmount = current.PaidAmount + e.PaidAmount };
+
+    /// <summary>Typed Apply overload for InvoiceRefundedEvent.</summary>
+    private InvoiceSummary Apply(InvoiceSummary current, InvoiceRefundedEvent e) =>
+        current with { RefundAmount = current.RefundAmount + e.RefundAmount };
+
+    /// <summary>Fallback Apply for EventEnvelope (not generated, manual).</summary>
+    protected override InvoiceSummary Apply(InvoiceSummary current, EventEnvelope @event)
+    {
+        // Try to use the generated ApplyTyped first
+        return ApplyTyped(current, @event.Event);
+    }
+}
+
+public class ProjectionDispatchGeneratorTests
+{
+    private static EventEnvelope MakeEnvelope(object @event)
+    {
+        return new EventEnvelope(
+            StreamId: new StreamId("test-stream"),
+            Position: new StreamPosition(1),
+            Event: @event,
+            Metadata: EventMetadata.New("TestEvent"));
+    }
+
+    [Fact]
+    public async Task GeneratedApplyTyped_RoutesInvoiceCreated()
+    {
+        // Arrange
+        var projection = new InvoiceProjection();
+        var created = new InvoiceCreatedEvent("INV-001", 500m);
+        var envelope = MakeEnvelope(created);
+
+        // Act
+        await projection.HandleAsync(envelope);
+
+        // Assert
+        projection.Current.InvoiceId.Should().Be("INV-001");
+        projection.Current.Amount.Should().Be(500m);
+        projection.Current.PaidAmount.Should().Be(0m);
+        projection.Current.RefundAmount.Should().Be(0m);
+    }
+
+    [Fact]
+    public async Task GeneratedApplyTyped_RoutesPaid()
+    {
+        // Arrange
+        var projection = new InvoiceProjection();
+        await projection.HandleAsync(MakeEnvelope(new InvoiceCreatedEvent("INV-002", 1000m)));
+
+        // Act
+        await projection.HandleAsync(MakeEnvelope(new InvoicePaidEvent(250m)));
+        await projection.HandleAsync(MakeEnvelope(new InvoicePaidEvent(250m)));
+
+        // Assert
+        projection.Current.Amount.Should().Be(1000m);
+        projection.Current.PaidAmount.Should().Be(500m);
+    }
+
+    [Fact]
+    public async Task GeneratedApplyTyped_RoutesRefund()
+    {
+        // Arrange
+        var projection = new InvoiceProjection();
+        await projection.HandleAsync(MakeEnvelope(new InvoiceCreatedEvent("INV-003", 800m)));
+        await projection.HandleAsync(MakeEnvelope(new InvoicePaidEvent(200m)));
+
+        // Act
+        await projection.HandleAsync(MakeEnvelope(new InvoiceRefundedEvent(50m)));
+
+        // Assert
+        projection.Current.PaidAmount.Should().Be(200m);
+        projection.Current.RefundAmount.Should().Be(50m);
+    }
+
+    [Fact]
+    public async Task GeneratedApplyTyped_MultipleEvents_StateAccumulates()
+    {
+        // Arrange
+        var projection = new InvoiceProjection();
+
+        // Act
+        await projection.HandleAsync(MakeEnvelope(new InvoiceCreatedEvent("INV-004", 2000m)));
+        await projection.HandleAsync(MakeEnvelope(new InvoicePaidEvent(500m)));
+        await projection.HandleAsync(MakeEnvelope(new InvoicePaidEvent(500m)));
+        await projection.HandleAsync(MakeEnvelope(new InvoiceRefundedEvent(100m)));
+        await projection.HandleAsync(MakeEnvelope(new InvoicePaidEvent(1000m)));
+
+        // Assert
+        projection.Current.InvoiceId.Should().Be("INV-004");
+        projection.Current.Amount.Should().Be(2000m);
+        projection.Current.PaidAmount.Should().Be(2000m);
+        projection.Current.RefundAmount.Should().Be(100m);
+    }
+
+    [Fact]
+    public async Task GeneratedApplyTyped_UnknownEvent_ReturnStateUnchanged()
+    {
+        // Arrange
+        var projection = new InvoiceProjection();
+        await projection.HandleAsync(MakeEnvelope(new InvoiceCreatedEvent("INV-005", 1500m)));
+
+        // Act
+        var stateBeforeUnknown = projection.Current;
+        await projection.HandleAsync(MakeEnvelope("unknown event object"));
+
+        // Assert
+        projection.Current.Should().Be(stateBeforeUnknown);
+    }
+}
