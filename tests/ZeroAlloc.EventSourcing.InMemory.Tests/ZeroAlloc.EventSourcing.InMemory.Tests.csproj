@@ -23,6 +23,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\ZeroAlloc.EventSourcing.InMemory\ZeroAlloc.EventSourcing.InMemory.csproj" />
+    <ProjectReference Include="..\ZeroAlloc.EventSourcing.Tests\ZeroAlloc.EventSourcing.Tests.csproj" />
   </ItemGroup>
 
 </Project>
