@@ -299,7 +299,17 @@ Event sourcing naturally supports eventual consistency patterns in distributed s
 
 ## Implications and Tradeoffs
 
-Event sourcing is powerful but comes with tradeoffs. Your application must handle event versioning, replay logic, position-based optimistic locking, and optionally snapshots to avoid replaying thousands of events. Storage increases since you retain all events (not just current state). Performance requires mitigation through snapshots or caching. Testing requires pure function state transitions and event verification, though database mocks are eliminated.
+Event sourcing is powerful but comes with tradeoffs:
+
+- **Event Versioning & Replay Logic** — You must plan how to evolve events over time and ensure replay logic handles old and new event formats gracefully.
+
+- **Position-Based Optimistic Locking** — Concurrent writes are prevented from silently losing updates by checking the event position; this prevents race conditions but requires retry logic in your code.
+
+- **Storage Overhead** — You retain all events indefinitely (not just current state), which increases disk usage. This is rarely a dealbreaker but should be factored into capacity planning.
+
+- **Replay Performance** — For long-lived aggregates with thousands of events, replaying from the start becomes slow. Snapshots mitigate this by storing periodic state snapshots, reducing replay from thousands of events to just recent ones.
+
+- **Testing Complexity** — State transitions must be pure functions (deterministic, no external dependencies) so they can be tested in isolation. The upside: no database mocks are needed; you test events and state logic directly against in-memory state.
 
 **When to use:** High-value operations (banking, healthcare), complex domains requiring audit, regulatory compliance, time-sensitive temporal queries.
 
