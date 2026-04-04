@@ -16,6 +16,8 @@ dotnet add package ZeroAlloc.EventSourcing.PostgreSql
 
 ### Basic Configuration
 
+For EventTypeRegistry definition, see building-aggregates.md:
+
 ```csharp
 using ZeroAlloc.EventSourcing.PostgreSql;
 using ZeroAlloc.EventSourcing;
@@ -26,7 +28,7 @@ var connectionString = "Host=localhost;Database=EventStore;User=postgres;Passwor
 var adapter = new PostgreSqlEventStoreAdapter(connectionString);
 
 // Create event store
-var registry = new OrderEventTypeRegistry();
+var registry = new OrderEventTypeRegistry();  // See building-aggregates.md
 var serializer = new JsonEventSerializer();
 var eventStore = new EventStore(adapter, serializer, registry);
 ```
@@ -114,6 +116,8 @@ dotnet add package ZeroAlloc.EventSourcing.SqlServer
 
 ### Basic Configuration
 
+For EventTypeRegistry definition, see building-aggregates.md:
+
 ```csharp
 using ZeroAlloc.EventSourcing.SqlServer;
 using ZeroAlloc.EventSourcing;
@@ -124,7 +128,7 @@ var connectionString = "Server=localhost;Database=EventStore;User=sa;Password=Yo
 var adapter = new SqlServerEventStoreAdapter(connectionString);
 
 // Create event store
-var registry = new OrderEventTypeRegistry();
+var registry = new OrderEventTypeRegistry();  // See building-aggregates.md
 var serializer = new JsonEventSerializer();
 var eventStore = new EventStore(adapter, serializer, registry);
 ```

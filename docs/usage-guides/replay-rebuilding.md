@@ -6,7 +6,7 @@ Event replay is fundamental to event sourcing. This guide covers loading aggrega
 
 ## Loading from History: The Complete Cycle
 
-Loading an aggregate from an event store requires three steps:
+Loading an aggregate from an event store requires three steps. See [building-aggregates.md](./building-aggregates.md) for the repository interface definition and aggregate base class documentation:
 
 ```csharp
 // Step 1: Create an empty aggregate
@@ -133,6 +133,17 @@ public class AggregateRebuilder<TId, TState>
 {
     private readonly IEventStore _eventStore;
     private readonly IAggregateRepository<TId, TState> _repository;
+    private readonly Func<StreamId, TId> _extractId;
+    
+    public AggregateRebuilder(
+        IEventStore eventStore,
+        IAggregateRepository<TId, TState> repository,
+        Func<StreamId, TId> extractId)
+    {
+        _eventStore = eventStore;
+        _repository = repository;
+        _extractId = extractId;  // Helper to extract TId from StreamId
+    }
     
     public async Task RebuildAll(StreamId filter, CancellationToken ct = default)
     {
@@ -142,8 +153,12 @@ public class AggregateRebuilder<TId, TState>
             // Extract stream ID from envelope
             var streamId = envelope.StreamId;
             
+            // Extract aggregate ID from stream ID
+            // This is domain-specific; example: streamId "order-{guid}" -> OrderId
+            var aggregateId = _extractId(streamId);
+            
             // Load aggregate (which replays all events)
-            var result = await _repository.LoadAsync(ExtractId(streamId), ct);
+            var result = await _repository.LoadAsync(aggregateId, ct);
             if (!result.IsSuccess)
             {
                 Console.WriteLine($"Failed to load {streamId}: {result.Error}");
@@ -155,6 +170,20 @@ public class AggregateRebuilder<TId, TState>
         }
     }
 }
+
+// Usage example:
+// For Order aggregates with stream ID format "order-{guid}":
+var rebuilder = new AggregateRebuilder<OrderId, OrderState>(
+    eventStore,
+    repository,
+    extractId: streamId =>
+    {
+        // Extract GUID from stream ID "order-{guid}"
+        var guidPart = streamId.Value.Substring("order-".Length);
+        return new OrderId(Guid.Parse(guidPart));
+    });
+
+await rebuilder.RebuildAll(new StreamId("order-*"));
 ```
 
 ### Snapshot Optimization

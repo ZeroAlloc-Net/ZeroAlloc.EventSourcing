@@ -433,6 +433,7 @@ Generate IDs at the application layer, not in the aggregate:
 
 ```csharp
 // Application/Command Handler
+// Note: See building-aggregates.md for repository interface definition
 public class PlaceOrderHandler
 {
     private readonly IAggregateRepository<Order, OrderId> _repository;

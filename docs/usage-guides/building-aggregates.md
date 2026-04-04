@@ -4,6 +4,35 @@
 
 Aggregates are the core of your event-sourced domain model. This guide shows patterns for structuring aggregates, handling state transitions, testing, and evolving behavior over time.
 
+## Repository Interface (Shared Across All Guides)
+
+All examples in this guide and related guides use the generic repository interface for consistency:
+
+```csharp
+public interface IAggregateRepository<TAggregate, TId>
+    where TAggregate : IAggregateRoot
+    where TId : struct
+{
+    /// Load an aggregate from the event store
+    Task<Result<TAggregate>> LoadAsync(TId id, CancellationToken ct = default);
+    
+    /// Save an aggregate and its uncommitted events
+    Task<Result<Success>> SaveAsync(TAggregate aggregate, CancellationToken ct = default);
+}
+```
+
+This generic interface works for any aggregate type. Alternatively, you can use a domain-specific interface for a single aggregate:
+
+```csharp
+public interface IOrderRepository
+{
+    Task<Result<Order>> LoadAsync(OrderId id, CancellationToken ct = default);
+    Task<Result<Success>> SaveAsync(Order order, CancellationToken ct = default);
+}
+```
+
+**Key point:** Whether you use the generic interface or domain-specific variants, the pattern is the same. Throughout the usage guides, we use the generic `IAggregateRepository<TAggregate, TId>` pattern for clarity and reusability.
+
 ## Aggregate Class Structure
 
 Every aggregate inherits from `Aggregate<TId, TState>`:
@@ -64,6 +93,79 @@ public partial struct OrderState : IAggregateState<OrderState>
 - **Stack allocation** — No heap pressure during event replay
 - **Value semantics** — Each state is independent
 - **Immutability via `with`** — Natural update syntax
+
+## Required Base Classes
+
+All aggregates and states depend on these base classes from ZeroAlloc.EventSourcing:
+
+### Aggregate<TId, TState>
+
+The base class for all aggregates. Key methods and properties:
+
+```csharp
+public abstract class Aggregate<TId, TState> : IAggregateRoot
+    where TId : struct
+    where TState : struct, IAggregateState<TState>
+{
+    /// The aggregate's identity
+    public TId Id { get; protected set; }
+    
+    /// Current state (built from replayed events)
+    public TState State { get; private set; }
+    
+    /// Current version (position in event stream)
+    public StreamPosition Version { get; private set; }
+    
+    /// Version at the time the aggregate was loaded
+    /// Used for optimistic concurrency control
+    public StreamPosition OriginalVersion { get; private set; }
+    
+    /// Apply an event to the current state (called by Raise)
+    /// Override in partial class or use [AggregateDispatch] source generator
+    protected abstract TState ApplyEvent(TState state, object @event);
+    
+    /// Raise a new event from a command
+    /// Queues event, applies it to state, increments version
+    protected void Raise(object @event) { ... }
+    
+    /// Apply a historic event during replay
+    /// Called when loading from event store
+    internal void ApplyHistoric(object @event, StreamPosition position) { ... }
+    
+    /// Restore state from a snapshot
+    /// Called before replaying remaining events after snapshot
+    internal void RestoreState(TState state, StreamPosition position) { ... }
+    
+    /// Get all uncommitted events raised since load/creation
+    /// Called after modification to get events to save
+    public object[] DequeueUncommitted() { ... }
+}
+```
+
+**Key usage patterns:**
+- `Raise()` to emit events from commands
+- `ApplyHistoric()` when replaying from event store
+- `RestoreState()` when loading from snapshot
+- `DequeueUncommitted()` to get events before saving
+
+### IAggregateState<TState>
+
+The interface for aggregate state structs:
+
+```csharp
+public interface IAggregateState<TState>
+    where TState : struct, IAggregateState<TState>
+{
+    /// Initial/empty state
+    static abstract TState Initial { get; }
+}
+```
+
+Every state struct must:
+1. Implement `IAggregateState<TSelf>`
+2. Define `static Initial => default;`
+3. Provide `Apply(EventType)` methods for each event type
+4. Use `private set` on properties (immutable)
 
 ### State Apply Methods: Pure Functions
 
@@ -151,6 +253,39 @@ public void PlaceAndConfirm(string orderNumber, decimal total, string paymentId)
 // Later: Get all uncommitted events
 var events = order.DequeueUncommitted();  // [OrderPlacedEvent, OrderConfirmedEvent]
 ```
+
+## Event Type Registry
+
+The `EventTypeRegistry` maps event types to serializable names. It's used by the event store to serialize/deserialize events. Define it once and reuse across your application:
+
+```csharp
+public class OrderEventTypeRegistry : IEventTypeRegistry
+{
+    public EventTypeRegistry()
+    {
+        Register<OrderPlacedEvent>(nameof(OrderPlacedEvent));
+        Register<OrderConfirmedEvent>(nameof(OrderConfirmedEvent));
+        Register<OrderShippedEvent>(nameof(OrderShippedEvent));
+        Register<OrderCancelledEvent>(nameof(OrderCancelledEvent));
+        Register<OrderDeliveredEvent>(nameof(OrderDeliveredEvent));
+    }
+}
+```
+
+**Note:** The registry can be:
+1. **Manually created** (as above) — Define it in your domain layer
+2. **Source-generated** — Use ZeroAlloc.EventSourcing.Generators to auto-generate it
+3. **Dynamically created** — Register types at runtime
+
+Once defined, pass it to the EventStore:
+
+```csharp
+var registry = new OrderEventTypeRegistry();
+var serializer = new JsonEventSerializer();
+var eventStore = new EventStore(adapter, serializer, registry);
+```
+
+See sql-adapters.md and domain-modeling.md for more details on registry setup.
 
 ## Event Dispatcher: ApplyEvent
 

@@ -48,6 +48,50 @@ var strategy = SnapshotLoadingStrategy.ValidateAndReplay;
 3. If valid, restore state and replay from after snapshot
 4. If invalid, fall back to full replay
 
+**Example fallback code when snapshot is missing or invalid:**
+
+```csharp
+// Try to load snapshot
+var snapshotResult = await snapshotStore.ReadAsync(streamId);
+StreamPosition startPosition = StreamPosition.Start;
+
+if (snapshotResult.HasValue)
+{
+    var (snapshotPosition, snapshotState) = snapshotResult.Value;
+    
+    // Validate snapshot position exists in event store
+    var isValid = await ValidateSnapshotPosition(streamId, snapshotPosition);
+    
+    if (isValid)
+    {
+        // Snapshot is good; restore from snapshot
+        order.RestoreState(snapshotState, snapshotPosition);
+        startPosition = snapshotPosition.Next();
+    }
+    // If invalid, startPosition remains StreamPosition.Start (full replay)
+}
+
+// Replay remaining events (or all if no valid snapshot)
+await foreach (var envelope in eventStore.ReadAsync(streamId, startPosition))
+{
+    order.ApplyHistoric(envelope.Event, envelope.Position);
+}
+
+private async Task<bool> ValidateSnapshotPosition(StreamId streamId, StreamPosition position)
+{
+    try
+    {
+        // Try to read the event at snapshot position
+        await eventStore.ReadSingleAsync(streamId, position);
+        return true;  // Position exists
+    }
+    catch (EventNotFoundException)
+    {
+        return false;  // Position doesn't exist; snapshot is stale
+    }
+}
+```
+
 **Guarantees:**
 - Protects against corrupted snapshots
 - Handles missing events gracefully
@@ -198,7 +242,7 @@ public async Task<Order> LoadOrder(OrderId orderId)
 
 ### Using SnapshotCachingRepositoryDecorator
 
-The decorator handles snapshot loading automatically:
+The decorator handles snapshot loading automatically. See building-aggregates.md for the repository interface definition.
 
 ```csharp
 // Setup: Create the decorated repository

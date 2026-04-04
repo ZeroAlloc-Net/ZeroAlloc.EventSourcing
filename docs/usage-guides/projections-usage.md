@@ -197,12 +197,14 @@ public class CustomerOrderCountProjection : Projection<Dictionary<string, int>>
         {
             OrderPlacedEvent e =>
                 current.TryGetValue(e.CustomerId, out var count)
-                    ? current.Update(e.CustomerId, count + 1)
-                    : current.Add(e.CustomerId, 1),
+                    ? current.ToDictionary(x => x.Key, x => 
+                        x.Key == e.CustomerId ? count + 1 : x.Value)
+                    : new Dictionary<string, int>(current) { { e.CustomerId, 1 } },
             
             OrderCancelledEvent e =>
                 current.TryGetValue(e.CustomerId, out var count)
-                    ? current.Update(e.CustomerId, count - 1)
+                    ? current.ToDictionary(x => x.Key, x => 
+                        x.Key == e.CustomerId ? count - 1 : x.Value)
                     : current,
             
             _ => current
@@ -315,7 +317,29 @@ public class OrderNotificationProjection : Projection<object>
 }
 ```
 
-## IProjection Interface
+## Projection Base Classes
+
+### Projection<TState>
+
+The base class for custom projections:
+
+```csharp
+public abstract class Projection<TState>
+{
+    /// Current projection state
+    public TState Current { get; protected set; }
+    
+    /// Apply an event to current state
+    /// Override this method to implement projection logic
+    public abstract TState Apply(TState current, EventEnvelope @event);
+}
+```
+
+All projection examples in this guide extend `Projection<T>` and override the `Apply` method.
+
+### IProjection Interface
+
+For more control, implement the interface directly:
 
 ZeroAlloc.EventSourcing defines the projection interface:
 
