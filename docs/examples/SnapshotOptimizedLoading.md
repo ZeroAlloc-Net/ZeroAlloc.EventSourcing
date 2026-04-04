@@ -18,10 +18,10 @@ var snapshotRepo = new SnapshotCachingRepositoryDecorator<Order, OrderId, OrderS
     innerRepository: innerRepo,
     snapshotStore: new InMemorySnapshotStore<OrderState>(),  // Or PostgreSqlSnapshotStore<OrderState>
     strategy: SnapshotLoadingStrategy.ValidateAndReplay,
-    getState: order => order.State,
-    setState: (order, state, pos) => order.RestoreState(state, pos),
+    restoreState: (order, state, pos) => order.RestoreState(state, pos),
+    eventStore: eventStore,
     streamIdFactory: id => new StreamId($"order-{id.Value}"),
-    eventStore: eventStore);
+    aggregateFactory: () => new Order());
 
 // Use like normal repository
 var result = await snapshotRepo.LoadAsync(new OrderId(123));
@@ -79,16 +79,16 @@ strategy: SnapshotLoadingStrategy.IgnoreSnapshot
 services
     .AddScoped<IAggregateRepository<Order, OrderId>>(sp =>
         new SnapshotCachingRepositoryDecorator<Order, OrderId, OrderState>(
-            new AggregateRepository<Order, OrderId>(
+            innerRepository: new AggregateRepository<Order, OrderId>(
                 sp.GetRequiredService<IEventStore>(),
                 () => new Order(),
                 id => new StreamId($"order-{id.Value}")),
-            sp.GetRequiredService<ISnapshotStore<OrderState>>(),
-            SnapshotLoadingStrategy.ValidateAndReplay,
-            o => o.State,
-            (o, state, pos) => o.RestoreState(state, pos),
-            id => new StreamId($"order-{id.Value}"),
-            sp.GetRequiredService<IEventStore>()));
+            snapshotStore: sp.GetRequiredService<ISnapshotStore<OrderState>>(),
+            strategy: SnapshotLoadingStrategy.ValidateAndReplay,
+            restoreState: (o, state, pos) => o.RestoreState(state, pos),
+            eventStore: sp.GetRequiredService<IEventStore>(),
+            streamIdFactory: id => new StreamId($"order-{id.Value}"),
+            aggregateFactory: () => new Order()));
 ```
 
 ## Performance Impact

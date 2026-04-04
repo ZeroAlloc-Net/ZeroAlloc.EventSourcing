@@ -6,6 +6,8 @@ namespace ZeroAlloc.EventSourcing.Benchmarks;
 /// Benchmarks for projection operations.
 /// Measures performance of projection building and updates.
 /// </summary>
+[SimpleJob(warmupCount: 3, invocationCount: 5)]
+[MemoryDiagnoser]
 [Config(typeof(BenchmarkConfig))]
 public class ProjectionBenchmarks
 {

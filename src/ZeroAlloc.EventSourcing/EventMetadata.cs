@@ -18,7 +18,11 @@ public readonly record struct EventMetadata(
     /// <returns>A fully populated <see cref="EventMetadata"/> value.</returns>
     public static EventMetadata New(string eventType, Guid? correlationId = null, Guid? causationId = null)
         => new(
+#if NET9_0_OR_GREATER
             Guid.CreateVersion7(),
+#else
+            Guid.NewGuid(),
+#endif
             eventType,
             DateTimeOffset.UtcNow,
             correlationId,

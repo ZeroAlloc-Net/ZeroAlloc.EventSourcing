@@ -6,6 +6,8 @@ namespace ZeroAlloc.EventSourcing.Benchmarks;
 /// Benchmarks for EventStore operations.
 /// Measures performance of event storage and retrieval.
 /// </summary>
+[SimpleJob(warmupCount: 3, invocationCount: 5)]
+[MemoryDiagnoser]
 [Config(typeof(BenchmarkConfig))]
 public class EventStoreBenchmarks
 {
