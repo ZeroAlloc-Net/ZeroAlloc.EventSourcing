@@ -1,3 +1,4 @@
+using FluentAssertions;
 using Xunit;
 using ZeroAlloc.EventSourcing;
 
@@ -12,15 +13,15 @@ public abstract class CheckpointStoreContractTests
     protected abstract ICheckpointStore CreateStore();
 
     [Fact]
-    public async Task ReadAsync_NonExistentConsumer_ReturnsNull()
+    public async Task Read_NonExistentConsumer_ReturnsNull()
     {
         var store = CreateStore();
         var result = await store.ReadAsync("nonexistent-consumer");
-        Assert.Null(result);
+        result.Should().BeNull();
     }
 
     [Fact]
-    public async Task WriteAsync_NewPosition_SuccessfullyStored()
+    public async Task Write_NewPosition_SuccessfullyStored()
     {
         var store = CreateStore();
         var consumerId = "test-consumer-1";
@@ -29,12 +30,12 @@ public abstract class CheckpointStoreContractTests
         await store.WriteAsync(consumerId, position);
         var result = await store.ReadAsync(consumerId);
 
-        Assert.NotNull(result);
-        Assert.Equal(position.Value, result.Value.Value);
+        result.Should().NotBeNull();
+        result.Value.Value.Should().Be(position.Value);
     }
 
     [Fact]
-    public async Task WriteAsync_UpdateExistingPosition_LastWriteWins()
+    public async Task Write_UpdateExistingPosition_LastWriteWins()
     {
         var store = CreateStore();
         var consumerId = "test-consumer-2";
@@ -43,11 +44,11 @@ public abstract class CheckpointStoreContractTests
         await store.WriteAsync(consumerId, new StreamPosition(20));
         var result = await store.ReadAsync(consumerId);
 
-        Assert.Equal(20, result.Value.Value);
+        result.Value.Value.Should().Be(20);
     }
 
     [Fact]
-    public async Task DeleteAsync_ExistingConsumer_ResetToNull()
+    public async Task Delete_ExistingConsumer_ResetToNull()
     {
         var store = CreateStore();
         var consumerId = "test-consumer-3";
@@ -56,15 +57,15 @@ public abstract class CheckpointStoreContractTests
         await store.DeleteAsync(consumerId);
         var result = await store.ReadAsync(consumerId);
 
-        Assert.Null(result);
+        result.Should().BeNull();
     }
 
     [Fact]
-    public async Task DeleteAsync_NonExistentConsumer_DoesNotThrow()
+    public async Task Delete_NonExistentConsumer_DoesNotThrow()
     {
         var store = CreateStore();
         var exception = await Record.ExceptionAsync(() => store.DeleteAsync("nonexistent"));
-        Assert.Null(exception);
+        exception.Should().BeNull();
     }
 
     [Fact]
@@ -78,7 +79,7 @@ public abstract class CheckpointStoreContractTests
         var posA = await store.ReadAsync("consumer-a");
         var posB = await store.ReadAsync("consumer-b");
 
-        Assert.Equal(10, posA.Value.Value);
-        Assert.Equal(20, posB.Value.Value);
+        posA.Value.Value.Should().Be(10);
+        posB.Value.Value.Should().Be(20);
     }
 }
