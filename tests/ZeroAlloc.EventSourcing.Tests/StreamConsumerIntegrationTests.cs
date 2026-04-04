@@ -87,4 +87,44 @@ public class StreamConsumerIntegrationTests : IAsyncLifetime
         consumer1Events.Should().Equal(100m, 200m);
         consumer2Events.Should().Equal(100m, 200m);
     }
+
+    [Fact]
+    public async Task ConsumeAsync_WithCancellation_StopsProcessing()
+    {
+        var streamId = new StreamId("test-stream");
+        StreamPosition nextVersion = StreamPosition.Start;
+        for (int i = 0; i < 100; i++)
+        {
+            var result = await _eventStore.AppendAsync(
+                streamId,
+                new ReadOnlyMemory<object>(new[] { (object)new OrderPlacedEvent($"order-{i}", i) }),
+                nextVersion
+            );
+            result.IsSuccess.Should().BeTrue();
+            nextVersion = result.Value.NextExpectedVersion;
+        }
+
+        var consumer = new StreamConsumer(_eventStore, _checkpointStore, "consumer-cancel", new StreamConsumerOptions { BatchSize = 10 }, streamId);
+        var processedCount = 0;
+        var cts = new CancellationTokenSource();
+
+        try
+        {
+            await consumer.ConsumeAsync(async (envelope, ct) =>
+            {
+                processedCount++;
+                if (processedCount >= 25)
+                    cts.Cancel();
+                await Task.CompletedTask;
+            }, cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected
+        }
+
+        // Should have processed around 25-30 events (batches are processed together)
+        processedCount.Should().BeGreaterThanOrEqualTo(25);
+        processedCount.Should().BeLessThan(100);
+    }
 }
