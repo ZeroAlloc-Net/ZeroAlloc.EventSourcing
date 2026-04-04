@@ -1,8 +1,8 @@
 # Quick Start Example
 
-Get event sourcing working in 5-10 minutes with a complete, runnable example. This guide walks through a real Order aggregate, saving events, and reconstructing the aggregate from history.
+Get event sourcing working in 5-10 minutes with a complete, runnable example. This guide walks through a real Order aggregate demonstrating a multi-step state workflow, saving events, and reconstructing the aggregate from history.
 
-By the end, you'll understand the full cycle: creating aggregates, raising events, persisting to a store, and loading aggregates back from their event history.
+By the end, you'll understand the full cycle: creating aggregates, raising events through multiple state transitions, persisting to a store, and loading aggregates back from their event history.
 
 ## The Complete Example
 
@@ -211,6 +211,22 @@ Step 4: Verifying reconstructed state
 - **State is derived**: The aggregate's state (`IsPlaced`, `IsConfirmed`, etc.) is computed by replaying events, never stored directly.
 - **Audit trail**: Every state change is captured as an event, creating a complete, queryable history of the aggregate's lifetime.
 - **Rebuild from history**: Because events are the source of truth, you can reconstruct any past state by replaying events up to a specific point.
+
+### State Validation & Ordering Constraints
+
+In this example, the Order aggregate enforces strict state ordering:
+1. `IsPlaced = true` (initial state after `Place()`)
+2. `IsConfirmed = true` (only allowed after `IsPlaced = true`)
+3. `IsShipped = true` (only allowed after `IsConfirmed = true`)
+
+This ordering constraint is enforced through validation checks in the `Confirm()` and `Ship()` methods. Why does this matter?
+
+- **Prevents invalid states**: The aggregate never enters intermediate states that violate business rules (e.g., shipping before confirming)
+- **Audit completeness**: The event history is a complete, unambiguous record of state transitions
+- **Concurrency safety**: When replaying events from storage, the same validation rules apply, ensuring consistency regardless of the order events are applied
+- **Domain clarity**: Explicit constraints make business logic testable and reviewable
+
+When you load an aggregate from its event history, events are replayed in their original order. If events ever arrive out of sequence (due to concurrency issues), the validation checks catch this immediately.
 
 ## Next Steps
 

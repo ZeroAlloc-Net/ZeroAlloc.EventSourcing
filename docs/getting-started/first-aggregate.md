@@ -157,7 +157,7 @@ var registry = new OrderEventTypeRegistry();    // source-generated from your ev
 var serializer = new JsonAggregateSerializer(); // application-provided serializer
 var eventStore = new EventStore(adapter, serializer, registry);
 
-var streamId = StreamId.From(orderId);
+var streamId = new StreamId($"order-{orderId.Value}");
 // Append to the event store at the expected version
 // StreamPosition.Start means "start of stream" (first append should be at Start)
 await eventStore.AppendAsync(streamId, events, StreamPosition.Start);
