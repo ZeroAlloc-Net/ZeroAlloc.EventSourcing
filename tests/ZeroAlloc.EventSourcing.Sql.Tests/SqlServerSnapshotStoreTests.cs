@@ -38,7 +38,7 @@ public class SqlServerSnapshotStoreTests : SnapshotStoreContractTests<SqlServerS
     [Fact]
     public void Constructor_ValidConnectionString_Succeeds()
     {
-        const string connectionString = "Server=localhost;Database=test;";
+        const string connectionString = "Server=localhost;Database=test;User Id=sa;Password=YourPassword123!;Trust Server Certificate=true;";
 
         FluentActions.Invoking(() => new SqlServerSnapshotStore<SnapshotTestState>(connectionString))
             .Should().NotThrow();
@@ -47,7 +47,7 @@ public class SqlServerSnapshotStoreTests : SnapshotStoreContractTests<SqlServerS
     /// <inheritdoc/>
     protected override async Task<SqlServerSnapshotStore<SnapshotTestState>> CreateStoreAsync()
     {
-        const string connectionString = "Server=localhost;Database=test;";
+        const string connectionString = "Server=localhost;Database=test;User Id=sa;Password=YourPassword123!;Trust Server Certificate=true;";
         var store = new SqlServerSnapshotStore<SnapshotTestState>(connectionString);
         // EnsureSchemaAsync is called to initialize the database schema
         // In real tests with a database, this would create the table

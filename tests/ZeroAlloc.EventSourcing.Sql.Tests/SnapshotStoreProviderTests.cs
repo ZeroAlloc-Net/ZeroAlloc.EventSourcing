@@ -14,7 +14,7 @@ public class SnapshotStoreProviderTests
         public static TestState Initial => default;
     }
     private const string PostgreSqlConnectionString = "Host=localhost;Database=test;Username=test;Password=test";
-    private const string SqlServerConnectionString = "Server=localhost;Database=test;User Id=sa;Password=test";
+    private const string SqlServerConnectionString = "Server=localhost;Database=test;User Id=sa;Password=YourPassword123!;Trust Server Certificate=true;";
 
     [Fact]
     public async Task CreateAsync_WithPostgreSQL_ReturnsPostgreSqlSnapshotStore()

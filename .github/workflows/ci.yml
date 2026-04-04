@@ -13,6 +13,20 @@ jobs:
     strategy:
       matrix:
         dotnet: ['9.0.x', '10.0.x']
+    services:
+      sql-server:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: Y
+          MSSQL_SA_PASSWORD: YourPassword123!
+          MSSQL_PID: Developer
+        options: >-
+          --health-cmd="/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P YourPassword123! -Q 'SELECT 1' || exit 1"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+        ports:
+          - 1433:1433
     steps:
       - uses: actions/checkout@v4
       - name: Setup .NET
@@ -20,6 +34,18 @@ jobs:
         with:
           dotnet-version: ${{ matrix.dotnet }}
           dotnet-quality: 'ga'
+      - name: Wait for SQL Server
+        run: |
+          for i in {1..30}; do
+            if sqlcmd -S localhost -U sa -P YourPassword123! -Q "SELECT 1" > /dev/null 2>&1; then
+              echo "SQL Server is ready"
+              exit 0
+            fi
+            echo "Waiting for SQL Server... ($i/30)"
+            sleep 1
+          done
+          echo "SQL Server failed to start"
+          exit 1
       - name: Restore
         run: dotnet restore ZeroAlloc.EventSourcing.slnx
       - name: Build
