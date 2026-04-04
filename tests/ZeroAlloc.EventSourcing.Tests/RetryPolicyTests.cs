@@ -43,4 +43,22 @@ public class ExponentialBackoffRetryPolicyTests
             new ExponentialBackoffRetryPolicy(initialDelayMs: value, maxDelayMs: 5000))
             .Should().Throw<ArgumentException>();
     }
+
+    [Fact]
+    public void Constructor_MaxDelayLessThanInitial_ThrowsArgumentException()
+    {
+        FluentActions.Invoking(() =>
+            new ExponentialBackoffRetryPolicy(initialDelayMs: 1000, maxDelayMs: 500))
+            .Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void GetDelay_VeryHighAttemptNumber_CapsAtMaxDelay()
+    {
+        var policy = new ExponentialBackoffRetryPolicy(initialDelayMs: 100, maxDelayMs: 5000);
+        // Attempt 100 would overflow exponential calculation
+        var delay = policy.GetDelay(attemptNumber: 100);
+
+        delay.TotalMilliseconds.Should().Be(5000);
+    }
 }
