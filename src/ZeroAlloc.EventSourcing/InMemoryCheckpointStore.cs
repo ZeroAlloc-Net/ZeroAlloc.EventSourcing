@@ -9,9 +9,11 @@ namespace ZeroAlloc.EventSourcing;
 /// </summary>
 public sealed class InMemoryCheckpointStore : ICheckpointStore
 {
+    /// <summary>Concurrent dictionary storing position by consumer ID.</summary>
     private readonly ConcurrentDictionary<string, StreamPosition> _positions = new();
 
-    /// <inheritdoc/>
+    /// <inheritdoc cref="ICheckpointStore.ReadAsync"/>
+    /// <remarks>Cancellation is not supported in this synchronous in-memory implementation.</remarks>
     public Task<StreamPosition?> ReadAsync(string consumerId, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(consumerId))
@@ -21,7 +23,8 @@ public sealed class InMemoryCheckpointStore : ICheckpointStore
         return Task.FromResult(result);
     }
 
-    /// <inheritdoc/>
+    /// <inheritdoc cref="ICheckpointStore.WriteAsync"/>
+    /// <remarks>Cancellation is not supported in this synchronous in-memory implementation.</remarks>
     public Task WriteAsync(string consumerId, StreamPosition position, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(consumerId))
@@ -31,7 +34,8 @@ public sealed class InMemoryCheckpointStore : ICheckpointStore
         return Task.CompletedTask;
     }
 
-    /// <inheritdoc/>
+    /// <inheritdoc cref="ICheckpointStore.DeleteAsync"/>
+    /// <remarks>Cancellation is not supported in this synchronous in-memory implementation.</remarks>
     public Task DeleteAsync(string consumerId, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(consumerId))

@@ -24,6 +24,7 @@ public class InMemoryCheckpointStoreTests : CheckpointStoreContractTests
         {
             var pos = await store.ReadAsync($"consumer-{i}", default);
             pos.Should().NotBeNull();
+            pos.Value.Value.Should().Be(i * 10);
         }
     }
 }
