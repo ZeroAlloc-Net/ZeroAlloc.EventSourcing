@@ -8,6 +8,7 @@ public sealed class StreamConsumer : IStreamConsumer
     private readonly IEventStore _eventStore;
     private readonly ICheckpointStore _checkpointStore;
     private readonly StreamConsumerOptions _options;
+    private StreamPosition? _currentPosition = null;
 
     /// <inheritdoc/>
     public string ConsumerId { get; }
@@ -46,6 +47,7 @@ public sealed class StreamConsumer : IStreamConsumer
 
         // Read the last checkpoint position, default to start
         var position = await _checkpointStore.ReadAsync(ConsumerId, ct) ?? StreamPosition.Start;
+        _currentPosition = position;
 
         var batch = new List<EventEnvelope>();
 
@@ -69,6 +71,7 @@ public sealed class StreamConsumer : IStreamConsumer
 
             // Update position to the event we just processed
             position = envelope.Position;
+            _currentPosition = position;
 
             // Commit position after each event if configured
             if (_options.CommitStrategy == CommitStrategy.AfterEvent)
@@ -95,6 +98,13 @@ public sealed class StreamConsumer : IStreamConsumer
         // If position is not the start, write the new position
         if (position.Value > 0)
             await _checkpointStore.WriteAsync(ConsumerId, position, ct);
+    }
+
+    /// <inheritdoc/>
+    public async Task CommitAsync(CancellationToken ct = default)
+    {
+        if (_currentPosition.HasValue)
+            await _checkpointStore.WriteAsync(ConsumerId, _currentPosition.Value, ct);
     }
 
     /// <summary>

@@ -126,6 +126,118 @@ public class StreamConsumerTests
         await consumer.ConsumeAsync(async (envelope, ct) => { count2++; await Task.CompletedTask; }, default);
         count2.Should().Be(1);
     }
+
+    [Fact]
+    public async Task ConsumeAsync_WithError_FailFastStrategy_Throws()
+    {
+        var streamId = new StreamId("test-stream");
+        await _eventStore.AppendAsync(streamId, new object[] { new TestEvent { Value = 1 } }.AsMemory(), StreamPosition.Start);
+
+        var options = new StreamConsumerOptions
+        {
+            MaxRetries = 1,
+            ErrorStrategy = ErrorHandlingStrategy.FailFast
+        };
+        var consumer = new StreamConsumer(_eventStore, _checkpointStore, "consumer-ff", options);
+
+        Func<Task> action = async () =>
+        {
+            await consumer.ConsumeAsync(async (envelope, ct) =>
+            {
+                throw new InvalidOperationException("Processing failed");
+            }, default);
+        };
+
+        await action.Should().ThrowAsync<InvalidOperationException>();
+    }
+
+    [Fact]
+    public async Task ConsumeAsync_WithError_SkipStrategy_ContinuesProcessing()
+    {
+        var streamId = new StreamId("test-stream");
+        await _eventStore.AppendAsync(streamId, new object[] { new TestEvent { Value = 1 } }.AsMemory(), StreamPosition.Start);
+        await _eventStore.AppendAsync(streamId, new object[] { new TestEvent { Value = 2 } }.AsMemory(), new StreamPosition(1));
+
+        var options = new StreamConsumerOptions
+        {
+            MaxRetries = 0,
+            ErrorStrategy = ErrorHandlingStrategy.Skip
+        };
+        var consumer = new StreamConsumer(_eventStore, _checkpointStore, "consumer-skip", options);
+
+        var processedValues = new List<int>();
+        var failedEvent = false;
+
+        await consumer.ConsumeAsync(async (envelope, ct) =>
+        {
+            if (envelope.Event is TestEvent te)
+            {
+                if (te.Value == 1)
+                {
+                    failedEvent = true;
+                    throw new InvalidOperationException("Processing failed");
+                }
+                processedValues.Add(te.Value);
+            }
+            await Task.CompletedTask;
+        }, default);
+
+        failedEvent.Should().BeTrue();
+        processedValues.Should().Contain(2); // Event 2 was processed despite event 1 failure
+    }
+
+    [Fact]
+    public async Task ConsumeAsync_WithError_DeadLetterStrategy_Throws()
+    {
+        var streamId = new StreamId("test-stream");
+        await _eventStore.AppendAsync(streamId, new object[] { new TestEvent { Value = 1 } }.AsMemory(), StreamPosition.Start);
+
+        var options = new StreamConsumerOptions
+        {
+            MaxRetries = 1,
+            ErrorStrategy = ErrorHandlingStrategy.DeadLetter
+        };
+        var consumer = new StreamConsumer(_eventStore, _checkpointStore, "consumer-dl", options);
+
+        Func<Task> action = async () =>
+        {
+            await consumer.ConsumeAsync(async (envelope, ct) =>
+            {
+                throw new InvalidOperationException("Processing failed");
+            }, default);
+        };
+
+        await action.Should().ThrowAsync<NotImplementedException>();
+    }
+
+    [Fact]
+    public async Task CommitAsync_WithManualStrategy_PersistsPosition()
+    {
+        var streamId = new StreamId("test-stream");
+        await _eventStore.AppendAsync(streamId, new object[] { new TestEvent { Value = 1 } }.AsMemory(), StreamPosition.Start);
+
+        var options = new StreamConsumerOptions
+        {
+            CommitStrategy = CommitStrategy.Manual
+        };
+        var consumer = new StreamConsumer(_eventStore, _checkpointStore, "consumer-manual", options);
+
+        // Process event
+        await consumer.ConsumeAsync(async (envelope, ct) =>
+        {
+            await Task.CompletedTask;
+        }, default);
+
+        // No position committed yet (Manual strategy)
+        var positionBeforeCommit = await _checkpointStore.ReadAsync("consumer-manual", default);
+
+        // Manually commit
+        await consumer.CommitAsync(default);
+
+        // Position now in checkpoint
+        var positionAfterCommit = await _checkpointStore.ReadAsync("consumer-manual", default);
+        positionAfterCommit.Should().NotBeNull();
+    }
 }
 
 public class TestEvent

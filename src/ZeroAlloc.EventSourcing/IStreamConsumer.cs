@@ -33,4 +33,11 @@ public interface IStreamConsumer
     /// <param name="position">Position to reset to (typically StreamPosition.Start for full replay).</param>
     /// <param name="ct">Cancellation token.</param>
     Task ResetPositionAsync(StreamPosition position, CancellationToken ct = default);
+
+    /// <summary>
+    /// Manually commit the current position to checkpoint (used with CommitStrategy.Manual).
+    /// For other strategies (AfterEvent, AfterBatch), positions are committed automatically.
+    /// </summary>
+    /// <param name="ct">Cancellation token</param>
+    Task CommitAsync(CancellationToken ct = default);
 }
