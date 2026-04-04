@@ -25,10 +25,10 @@ public sealed class PostgreSqlCheckpointStore : ICheckpointStore, IAsyncDisposab
     /// <summary>
     /// Create consumer_checkpoints table if it doesn't exist.
     /// </summary>
-    public async Task EnsureSchemaAsync()
+    public async ValueTask EnsureSchemaAsync(CancellationToken ct = default)
     {
-        using var connection = await _dataSource.OpenConnectionAsync();
-        using var command = connection.CreateCommand();
+        await using var connection = await _dataSource.OpenConnectionAsync(ct).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
         command.CommandText = $@"
             CREATE TABLE IF NOT EXISTS {TableName} (
                 consumer_id VARCHAR(256) PRIMARY KEY,
@@ -36,7 +36,7 @@ public sealed class PostgreSqlCheckpointStore : ICheckpointStore, IAsyncDisposab
                 updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
         ";
-        await command.ExecuteNonQueryAsync();
+        await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -44,12 +44,12 @@ public sealed class PostgreSqlCheckpointStore : ICheckpointStore, IAsyncDisposab
     {
         ValidateConsumerId(consumerId);
 
-        using var connection = await _dataSource.OpenConnectionAsync(ct);
-        using var command = connection.CreateCommand();
+        await using var connection = await _dataSource.OpenConnectionAsync(ct).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
         command.CommandText = $"SELECT position FROM {TableName} WHERE consumer_id = @consumer_id";
         command.Parameters.AddWithValue("@consumer_id", consumerId);
 
-        var result = await command.ExecuteScalarAsync(ct);
+        var result = await command.ExecuteScalarAsync(ct).ConfigureAwait(false);
         return result != null && result != DBNull.Value
             ? new StreamPosition((long)result)
             : null;
@@ -60,8 +60,8 @@ public sealed class PostgreSqlCheckpointStore : ICheckpointStore, IAsyncDisposab
     {
         ValidateConsumerId(consumerId);
 
-        using var connection = await _dataSource.OpenConnectionAsync(ct);
-        using var command = connection.CreateCommand();
+        await using var connection = await _dataSource.OpenConnectionAsync(ct).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
         command.CommandText = $@"
             INSERT INTO {TableName} (consumer_id, position, updated_at)
             VALUES (@consumer_id, @position, CURRENT_TIMESTAMP)
@@ -72,7 +72,7 @@ public sealed class PostgreSqlCheckpointStore : ICheckpointStore, IAsyncDisposab
         command.Parameters.AddWithValue("@consumer_id", consumerId);
         command.Parameters.AddWithValue("@position", position.Value);
 
-        await command.ExecuteNonQueryAsync(ct);
+        await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -80,12 +80,12 @@ public sealed class PostgreSqlCheckpointStore : ICheckpointStore, IAsyncDisposab
     {
         ValidateConsumerId(consumerId);
 
-        using var connection = await _dataSource.OpenConnectionAsync(ct);
-        using var command = connection.CreateCommand();
+        await using var connection = await _dataSource.OpenConnectionAsync(ct).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
         command.CommandText = $"DELETE FROM {TableName} WHERE consumer_id = @consumer_id";
         command.Parameters.AddWithValue("@consumer_id", consumerId);
 
-        await command.ExecuteNonQueryAsync(ct);
+        await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
     private static void ValidateConsumerId(string consumerId)
@@ -99,6 +99,6 @@ public sealed class PostgreSqlCheckpointStore : ICheckpointStore, IAsyncDisposab
     /// <inheritdoc/>
     async ValueTask IAsyncDisposable.DisposeAsync()
     {
-        await _dataSource.DisposeAsync();
+        await _dataSource.DisposeAsync().ConfigureAwait(false);
     }
 }

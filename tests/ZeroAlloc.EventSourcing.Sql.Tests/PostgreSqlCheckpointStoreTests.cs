@@ -21,7 +21,7 @@ public class PostgreSqlCheckpointStoreTests : CheckpointStoreContractTests, IAsy
 
         _dataSource = NpgsqlDataSource.Create(_container.GetConnectionString());
         _store = new PostgreSqlCheckpointStore(_dataSource);
-        await _store.EnsureSchemaAsync();
+        await _store.EnsureSchemaAsync(CancellationToken.None);
     }
 
     public async Task DisposeAsync()
