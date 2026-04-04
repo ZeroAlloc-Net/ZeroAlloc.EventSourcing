@@ -49,38 +49,44 @@ public sealed class StreamConsumer : IStreamConsumer
         var position = await _checkpointStore.ReadAsync(ConsumerId, ct) ?? StreamPosition.Start;
         _currentPosition = position;
 
-        var batch = new List<EventEnvelope>();
-
-        // Read a batch of events from the event store starting at current position
-        await foreach (var envelope in _eventStore.ReadAsync(new StreamId("*"), position, ct))
+        // Continuously process batches until no more events or cancellation requested
+        while (!ct.IsCancellationRequested)
         {
-            batch.Add(envelope);
-            if (batch.Count >= _options.BatchSize)
+            var batch = new List<EventEnvelope>();
+
+            // Read a batch of events from the event store starting at current position
+            await foreach (var envelope in _eventStore.ReadAsync(new StreamId("*"), position, ct))
+            {
+                batch.Add(envelope);
+                if (batch.Count >= _options.BatchSize)
+                    break;
+            }
+
+            // If no events were read, exit the batch processing loop
+            if (batch.Count == 0)
                 break;
-        }
 
-        // If no events were read, we're done
-        if (batch.Count == 0)
-            return;
+            // Process each event in the batch
+            foreach (var envelope in batch)
+            {
+                // Process event with retry logic
+                await ProcessEventWithRetryAsync(handler, envelope, ct);
 
-        // Process each event in the batch
-        foreach (var envelope in batch)
-        {
-            // Process event with retry logic
-            await ProcessEventWithRetryAsync(handler, envelope, ct);
+                // Update position to the event we just processed
+                position = envelope.Position;
+                _currentPosition = position;
 
-            // Update position to the event we just processed
-            position = envelope.Position;
-            _currentPosition = position;
+                // Commit position after each event if configured
+                if (_options.CommitStrategy == CommitStrategy.AfterEvent)
+                    await _checkpointStore.WriteAsync(ConsumerId, position, ct);
+            }
 
-            // Commit position after each event if configured
-            if (_options.CommitStrategy == CommitStrategy.AfterEvent)
+            // Commit position after entire batch if configured
+            if (_options.CommitStrategy == CommitStrategy.AfterBatch)
                 await _checkpointStore.WriteAsync(ConsumerId, position, ct);
-        }
 
-        // Commit position after entire batch if configured
-        if (_options.CommitStrategy == CommitStrategy.AfterBatch)
-            await _checkpointStore.WriteAsync(ConsumerId, position, ct);
+            // Continue to next batch loop iteration
+        }
     }
 
     /// <inheritdoc/>

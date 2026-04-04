@@ -62,8 +62,15 @@ public class StreamConsumerTests
         await _eventStore.AppendAsync(streamId, new object[] { new TestEvent { Value = 1 } }.AsMemory(), StreamPosition.Start);
         await _eventStore.AppendAsync(streamId, new object[] { new TestEvent { Value = 2 } }.AsMemory(), new StreamPosition(1));
         await _eventStore.AppendAsync(streamId, new object[] { new TestEvent { Value = 3 } }.AsMemory(), new StreamPosition(2));
+        await _eventStore.AppendAsync(streamId, new object[] { new TestEvent { Value = 4 } }.AsMemory(), new StreamPosition(3));
 
-        var consumer1 = new StreamConsumer(_eventStore, _checkpointStore, "consumer-3", new StreamConsumerOptions { BatchSize = 2 });
+        // First consumer processes events with AfterBatch commit strategy
+        var consumer1 = new StreamConsumer(_eventStore, _checkpointStore, "consumer-3",
+            new StreamConsumerOptions
+            {
+                BatchSize = 2,
+                CommitStrategy = CommitStrategy.AfterBatch
+            });
         var processedFirst = new List<int>();
 
         await consumer1.ConsumeAsync(async (envelope, ct) =>
@@ -73,6 +80,15 @@ public class StreamConsumerTests
             await Task.CompletedTask;
         }, default);
 
+        // First consumer should process all 4 events (continuous batch processing)
+        processedFirst.Should().Equal(1, 2, 3, 4);
+
+        // Verify checkpoint is at position 4 after first consumer
+        var checkpointAfterFirst = await _checkpointStore.ReadAsync("consumer-3", default);
+        checkpointAfterFirst.Should().NotBeNull();
+        checkpointAfterFirst.Value.Value.Should().Be(4, "First consumer should have processed all 4 events");
+
+        // Second consumer with same ID should have no events to process
         var consumer2 = new StreamConsumer(_eventStore, _checkpointStore, "consumer-3", new StreamConsumerOptions());
         var processedSecond = new List<int>();
 
@@ -83,8 +99,7 @@ public class StreamConsumerTests
             await Task.CompletedTask;
         }, default);
 
-        processedFirst.Should().Equal(1, 2);
-        processedSecond.Should().Equal(3);
+        processedSecond.Should().BeEmpty("Second consumer should find no events after first consumer");
     }
 
     [Fact]
@@ -215,28 +230,36 @@ public class StreamConsumerTests
     {
         var streamId = new StreamId("test-stream");
         await _eventStore.AppendAsync(streamId, new object[] { new TestEvent { Value = 1 } }.AsMemory(), StreamPosition.Start);
+        await _eventStore.AppendAsync(streamId, new object[] { new TestEvent { Value = 2 } }.AsMemory(), new StreamPosition(1));
 
         var options = new StreamConsumerOptions
         {
-            CommitStrategy = CommitStrategy.Manual
+            CommitStrategy = CommitStrategy.Manual,
+            BatchSize = 2  // Process all events in one batch
         };
         var consumer = new StreamConsumer(_eventStore, _checkpointStore, "consumer-manual", options);
 
-        // Process event
+        // Process events
+        var processedCount = 0;
         await consumer.ConsumeAsync(async (envelope, ct) =>
         {
+            processedCount++;
             await Task.CompletedTask;
         }, default);
 
-        // No position committed yet (Manual strategy)
+        processedCount.Should().Be(2);
+
+        // Before manual commit: position should NOT be in checkpoint (Manual strategy doesn't auto-commit)
         var positionBeforeCommit = await _checkpointStore.ReadAsync("consumer-manual", default);
+        positionBeforeCommit.Should().BeNull("Manual strategy should not auto-commit");
 
         // Manually commit
         await consumer.CommitAsync(default);
 
-        // Position now in checkpoint
+        // After manual commit: position should be in checkpoint
         var positionAfterCommit = await _checkpointStore.ReadAsync("consumer-manual", default);
-        positionAfterCommit.Should().NotBeNull();
+        positionAfterCommit.Should().NotBeNull("Manual commit should persist position");
+        positionAfterCommit.Value.Value.Should().Be(2, "Should have processed both events");
     }
 }
 
