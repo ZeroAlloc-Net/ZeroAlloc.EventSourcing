@@ -19,6 +19,7 @@ module.exports = {
         'core-concepts/event-store',
         'core-concepts/snapshots',
         'core-concepts/projections',
+        'core-concepts/consumers',
         'core-concepts/architecture',
       ],
     },
