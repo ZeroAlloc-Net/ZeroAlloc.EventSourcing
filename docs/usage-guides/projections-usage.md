@@ -770,12 +770,15 @@ public class CustomerOrderCountProjection : Projection<Dictionary<string, Custom
                     stat = new(e.CustomerId, 0, 0, "Placed");
                 }
                 
-                return current.Update(e.CustomerId,
-                    stat with
+                var updated = new Dictionary<string, CustomerOrderStatistics>(current)
+                {
+                    [e.CustomerId] = stat with
                     {
                         OrderCount = stat.OrderCount + 1,
                         TotalRevenue = stat.TotalRevenue + e.Total
-                    });
+                    }
+                };
+                return updated;
             },
             
             _ => current
