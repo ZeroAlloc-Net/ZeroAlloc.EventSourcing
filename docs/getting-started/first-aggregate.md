@@ -29,6 +29,10 @@ public readonly record struct OrderId(Guid Value);
 
 // Events are immutable records describing what happened
 // Each event should capture domain-significant information
+// Note: Events use strings for domain data (e.g., "ORD-001" as a user-facing order number)
+// while the aggregate ID (OrderId) is a Guid for internal uniqueness and efficiency.
+// This separation allows the domain model to use human-friendly values in events
+// while using allocation-free value types for aggregate identity.
 public record OrderPlacedEvent(string OrderId, decimal Total);
 
 public record OrderShippedEvent(string TrackingNumber);
@@ -144,7 +148,15 @@ var events = order.DequeueUncommitted();
 // events now contains: [OrderPlacedEvent, OrderShippedEvent]
 
 // === Persist events to store ===
-var eventStore = new InMemoryEventStore();
+// EventStore requires three components:
+// 1. Adapter (InMemoryEventStoreAdapter for in-memory, or custom for databases)
+// 2. Serializer (typically application-specific, handles event serialization)
+// 3. Registry (usually source-generated, maps event types for serialization)
+var adapter = new InMemoryEventStoreAdapter();
+var registry = new OrderEventTypeRegistry();    // source-generated from your events
+var serializer = new JsonAggregateSerializer(); // application-provided serializer
+var eventStore = new EventStore(adapter, serializer, registry);
+
 var streamId = StreamId.From(orderId);
 // Append to the event store at the expected version
 // StreamPosition.Start means "start of stream" (first append should be at Start)
