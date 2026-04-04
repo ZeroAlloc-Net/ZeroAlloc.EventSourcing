@@ -73,8 +73,8 @@ var result = await eventStore.AppendAsync(
 if (result.IsSuccess)
 {
     var appendResult = result.Value;
-    Console.WriteLine($"Appended {appendResult.EventCount} events");
-    Console.WriteLine($"New stream version: {appendResult.NewVersion}");
+    Console.WriteLine($"Stream: {appendResult.StreamId}");
+    Console.WriteLine($"Next expected version: {appendResult.NextExpectedVersion}");
 }
 else if (result.Error == StoreError.Conflict)
 {
@@ -95,8 +95,8 @@ else if (result.Error == StoreError.Conflict)
 
 ```csharp
 public record AppendResult(
-    StreamPosition NewVersion,  // Position after append (e.g., 5)
-    int EventCount              // Number of events appended
+    StreamId StreamId,                      // The stream identifier
+    StreamPosition NextExpectedVersion      // Position after append (e.g., 5)
 );
 ```
 
@@ -122,10 +122,10 @@ Each `EventEnvelope` contains:
 
 ```csharp
 public record EventEnvelope(
-    object Event,               // The event payload (e.g., OrderPlacedEvent)
+    StreamId StreamId,          // Which stream this event belongs to
     StreamPosition Position,    // Where in the stream (for versioning)
-    StreamId StreamId,         // Which stream
-    EventMetadata? Metadata    // Optional metadata (user, timestamp, etc.)
+    object Event,               // The event payload (e.g., OrderPlacedEvent)
+    EventMetadata Metadata      // Metadata (event ID, type, timestamp, etc.)
 );
 ```
 
@@ -199,7 +199,7 @@ Position 3: Third event
 **Important:** Position 0 doesn't represent an event; it means "no events appended yet."
 
 ```csharp
-public readonly record struct StreamPosition(ulong Value)
+public readonly record struct StreamPosition(long Value)
 {
     public static StreamPosition Start => new(0);
 
@@ -366,13 +366,11 @@ Access event metadata for auditing:
 await foreach (var envelope in eventStore.ReadAsync(streamId, StreamPosition.Start))
 {
     var metadata = envelope.Metadata;
-    if (metadata != null)
-    {
-        Console.WriteLine($"Event: {envelope.Event.GetType().Name}");
-        Console.WriteLine($"User: {metadata.UserId}");
-        Console.WriteLine($"Timestamp: {metadata.Timestamp}");
-        Console.WriteLine($"CorrelationId: {metadata.CorrelationId}");
-    }
+    Console.WriteLine($"Event: {envelope.Event.GetType().Name}");
+    Console.WriteLine($"EventId: {metadata.EventId}");
+    Console.WriteLine($"OccurredAt: {metadata.OccurredAt}");
+    Console.WriteLine($"CorrelationId: {metadata.CorrelationId}");
+    Console.WriteLine($"CausationId: {metadata.CausationId}");
 }
 ```
 

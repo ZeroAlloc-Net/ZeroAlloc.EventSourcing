@@ -97,18 +97,18 @@ Metadata enriches events with operational context. The event store captures:
 
 ```csharp
 public record EventEnvelope(
-    object Event,                    // The event payload (e.g., OrderPlacedEvent)
-    StreamPosition Position,         // Where in the stream this event lives
-    StreamId StreamId,              // Which aggregate's stream this belongs to
-    EventMetadata? Metadata = null  // Additional context
+    StreamId StreamId,          // Which aggregate's stream this belongs to
+    StreamPosition Position,    // Where in the stream this event lives
+    object Event,               // The event payload (e.g., OrderPlacedEvent)
+    EventMetadata Metadata      // Context about what happened
 );
 
 public record EventMetadata(
-    string? EventType,          // Type name for deserialization
-    DateTime? Timestamp,        // When the event occurred
-    string? UserId,            // Who triggered this event
-    string? CorrelationId,     // Links related events
-    Dictionary<string, string>? CustomHeaders  // Application-specific data
+    Guid EventId,              // Unique identifier for this event
+    string EventType,          // Type name for deserialization
+    DateTimeOffset OccurredAt, // When the event occurred
+    Guid? CorrelationId,       // Links related events across boundaries
+    Guid? CausationId          // Identifies the command or event that caused this
 );
 ```
 
