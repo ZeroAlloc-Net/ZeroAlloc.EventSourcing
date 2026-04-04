@@ -96,7 +96,7 @@ else if (result.Error == StoreError.Conflict)
 ```csharp
 public record AppendResult(
     StreamId StreamId,                      // The stream identifier
-    StreamPosition NextExpectedVersion      // Position after append (e.g., 5)
+    StreamPosition NextExpectedVersion      // Next write position after append (e.g., 5). Use for optimistic locking on next append.
 );
 ```
 

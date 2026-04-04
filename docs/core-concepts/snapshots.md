@@ -326,10 +326,16 @@ When should you create snapshots? Common strategies:
 Create a snapshot every N events:
 
 ```csharp
-int eventCount = stream.PositionValue;
-if (eventCount % 100 == 0)  // Every 100 events
+long eventCount = 0;
+await foreach (var envelope in eventStore.ReadAsync(streamId, StreamPosition.Start))
 {
-    await snapshotStore.WriteAsync(streamId, stream.Position, state);
+    order.ApplyHistoric(envelope.Event, envelope.Position);
+    eventCount++;
+    
+    if (eventCount % 100 == 0)  // Every 100 events
+    {
+        await snapshotStore.WriteAsync(streamId, envelope.Position, order.State);
+    }
 }
 ```
 

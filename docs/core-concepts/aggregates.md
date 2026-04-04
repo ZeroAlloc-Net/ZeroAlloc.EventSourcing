@@ -134,6 +134,15 @@ public sealed partial class Order : Aggregate<OrderId, OrderState>  // Aggregate
 
 **Key principle:** You load aggregates by their root ID, never by sub-entity IDs. The aggregate root is responsible for all entities within it.
 
+## Aggregate Versioning and State Tracking
+
+Aggregates track two version concepts:
+
+- **OriginalVersion** — The version when the aggregate was loaded from the event store. This is used for optimistic locking when saving changes.
+- **Version** — The current version after any new events are raised. As you call command methods and raise events, this version increments.
+
+When you load an aggregate, OriginalVersion is set to its stream position. When you save it, you pass OriginalVersion to AppendAsync for optimistic locking. The returned NextExpectedVersion becomes the new OriginalVersion if you load the same aggregate again.
+
 ## State Definition
 
 The aggregate's state is a `struct` that implements `IAggregateState<T>`. It must:

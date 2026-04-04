@@ -231,11 +231,28 @@ public class OrdersMaterializationProjection : Projection<Dictionary<string, Ord
         return @event.Event switch
         {
             OrderPlacedEvent e =>
-                with_updated(current, e.OrderId, row => row with { Total = e.Total, Status = "Placed" }),
+                ApplyOrderUpdate(current, e.OrderId, row => row with { Total = e.Total, Status = "Placed" }),
             OrderShippedEvent e =>
-                with_updated(current, e.OrderId, row => row with { Status = "Shipped" }),
+                ApplyOrderUpdate(current, e.OrderId, row => row with { Status = "Shipped" }),
             _ => current
         };
+    }
+
+    private static Dictionary<string, OrdersDataStore> ApplyOrderUpdate(
+        Dictionary<string, OrdersDataStore> current,
+        string orderId,
+        Func<OrdersDataStore, OrdersDataStore> update)
+    {
+        var updated = new Dictionary<string, OrdersDataStore>(current);
+        if (updated.TryGetValue(orderId, out var row))
+        {
+            updated[orderId] = update(row);
+        }
+        else
+        {
+            updated[orderId] = update(new OrdersDataStore { OrderId = orderId });
+        }
+        return updated;
     }
 
     public override async ValueTask HandleAsync(EventEnvelope @event, CancellationToken ct = default)
