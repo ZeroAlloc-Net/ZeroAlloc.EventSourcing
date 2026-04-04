@@ -295,79 +295,15 @@ For old events without CustomerId, you can either:
 
 ## Eventual Consistency in Distributed Systems
 
-Event sourcing naturally supports eventual consistency patterns, useful when building distributed systems.
-
-### The Scenario
-
-Your order system is split into two services:
-- **Order Service** — Manages orders (event source)
-- **Fulfillment Service** — Manages shipments (reads from orders)
-
-When an order is placed, the Fulfillment Service needs to know about it. But it doesn't need the information immediately. It's fine if it learns about the order 100 milliseconds later.
-
-### The Solution: Event Subscribers
-
-```csharp
-// Order Service publishes events
-await eventStore.AppendAsync(streamId, [orderPlacedEvent], position);
-
-// Fulfillment Service subscribes and learns about it asynchronously
-fulfillmentService.OnOrderPlaced(orderPlacedEvent);  // May arrive later
-```
-
-This decouples services and improves resilience:
-- If Fulfillment Service is temporarily down, it can catch up by replaying events
-- If an event fails to deliver, it can be retried independently
-- Services can process events at their own pace
-
-The tradeoff is that the Fulfillment Service's view of orders may temporarily lag behind the Order Service's truth. This is "eventual consistency" — the system will reach consistency given time, but it's not immediately consistent.
-
-For most business applications, this is a worthwhile tradeoff for the improved resilience and scalability.
+Event sourcing naturally supports eventual consistency patterns in distributed systems. When services communicate via events, one service publishes events and others subscribe asynchronously. Services may temporarily see different versions of the truth, but reach consistency over time as events propagate. This decouples services: downed services can catch up by replaying events, failures can be retried independently, and services process at their own pace. For most applications, this improved resilience and scalability is worth the eventual consistency tradeoff.
 
 ## Implications and Tradeoffs
 
-Event sourcing is powerful, but it's not a silver bullet. Adopting it comes with tradeoffs.
+Event sourcing is powerful but comes with tradeoffs. Your application must handle event versioning, replay logic, position-based optimistic locking, and optionally snapshots to avoid replaying thousands of events. Storage increases since you retain all events (not just current state). Performance requires mitigation through snapshots or caching. Testing requires pure function state transitions and event verification, though database mocks are eliminated.
 
-### Increased Complexity
+**When to use:** High-value operations (banking, healthcare), complex domains requiring audit, regulatory compliance, time-sensitive temporal queries.
 
-Your application now needs to think about:
-- **Event versioning** — How to evolve events as requirements change
-- **Replay logic** — Ensuring state is correctly derived from events
-- **Concurrency control** — Using position-based optimistic locking
-- **Snapshots** (optional) — For performance, you might periodically save state to avoid replaying thousands of events
-
-### Eventual Consistency
-
-In distributed systems, different services may temporarily see different versions of the truth. This requires application logic to handle:
-- Idempotent event handlers (handling the same event twice should be safe)
-- Compensating transactions (if one service fails, how do you undo its work?)
-
-### Storage and Performance
-
-- **Storage** — You store every event forever (for audit), not just current state. This can use more storage than traditional systems.
-- **Performance** — Replaying thousands of events to load a single aggregate can be slow. Mitigation: snapshots, caching, or periodically archiving old events.
-
-### Testing Complexity
-
-Event sourcing requires thinking differently about tests:
-- State transitions must be testable as pure functions (event -> state)
-- Aggregate behavior must be testable by verifying emitted events
-- Replay must be tested to ensure idempotency
-
-But this also makes testing easier in some ways — you can test behavior by specifying input events and verifying output events, with no need for database mocks.
-
-### When to Use Event Sourcing
-
-Event sourcing is ideal for:
-- **High-value operations** — Banking, trading, healthcare (where audit trails are critical)
-- **Complex domains** — Systems where understanding "how we got here" is important for debugging
-- **Regulatory requirements** — Compliance-heavy systems that need comprehensive audit trails
-- **Time-sensitive queries** — "Show me sales from the last hour" or "What was the inventory level yesterday?"
-
-Event sourcing is overkill for:
-- **Simple CRUD applications** — If you never need to ask "how did we get here?", traditional systems are simpler
-- **Real-time systems** — With extremely high throughput where storage/replay overhead matters
-- **Prototype/MVP** — If you don't yet know your domain, the added complexity isn't worth it
+**When to avoid:** Simple CRUD applications, systems with extreme throughput, prototypes where domain is still uncertain.
 
 ## Summary
 
