@@ -1,0 +1,10 @@
+mode: Mainline
+branches:
+  main:
+    increment: Patch
+    prevent-increment-of-merged-branch-version: true
+  feature:
+    increment: Minor
+  release:
+    increment: Patch
+commit-message-increment-pattern: '^(feat|fix|perf)(\(.+\))?!?:'
