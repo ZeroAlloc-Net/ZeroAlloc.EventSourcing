@@ -5,144 +5,131 @@ Build your first event-sourced aggregate in 5 minutes.
 ## What You'll Build
 
 An `Order` aggregate that:
-- Creates orders with items
-- Tracks order status (pending, confirmed, shipped)
+- Places orders with a total amount
+- Ships orders with tracking information
 - Applies events to maintain state
 
-## Step 1: Define Events
+## Step 1: Define the Order ID and Events
 
-Events represent things that happened in your domain.
+Events represent things that happened in your domain. Start by defining the aggregate ID type and events.
 
 ```csharp
 using ZeroAlloc.EventSourcing;
 
-namespace MyProject.Domain.Events;
+namespace MyProject.Domain;
 
-public record OrderCreated(OrderId OrderId, CustomerId CustomerId, decimal Amount)
-{
-    public static EventType EventType => new("order-created");
-}
+// Define the aggregate ID
+public readonly record struct OrderId(Guid Value);
 
-public record ItemAdded(string ItemId, decimal Price)
-{
-    public static EventType EventType => new("item-added");
-}
+// Events are simple records describing what happened
+public record OrderPlacedEvent(string OrderId, decimal Total);
 
-public record OrderShipped
-{
-    public static EventType EventType => new("order-shipped");
-}
+public record OrderShippedEvent(string TrackingNumber);
 ```
 
 ## Step 2: Define State
 
-State is the current condition of your aggregate.
+State is the current condition of your aggregate. It must implement `IAggregateState<T>` with an `Initial` property and methods to apply events.
 
 ```csharp
 namespace MyProject.Domain;
 
-public struct OrderState
+public partial struct OrderState : IAggregateState<OrderState>
 {
-    public OrderId OrderId { get; set; }
-    public CustomerId CustomerId { get; set; }
-    public decimal Amount { get; set; }
-    public string Status { get; set; } = "Pending";
-    public List<(string ItemId, decimal Price)> Items { get; set; } = [];
+    // Required: Initial state
+    public static OrderState Initial => default;
+    
+    // State properties
+    public bool IsPlaced { get; private set; }
+    public decimal Total { get; private set; }
+    public string TrackingNumber { get; private set; }
+
+    // Apply events to produce new state
+    internal OrderState Apply(OrderPlacedEvent e) =>
+        this with { IsPlaced = true, Total = e.Total };
+
+    internal OrderState Apply(OrderShippedEvent e) =>
+        this with { TrackingNumber = e.TrackingNumber };
 }
 ```
 
 ## Step 3: Define Your Aggregate
 
-Aggregates contain behavior and apply events.
+Aggregates inherit from `Aggregate<TId, TState>` and contain domain behavior.
 
 ```csharp
 using ZeroAlloc.EventSourcing;
-using ZeroAlloc.EventSourcing.Aggregates;
 
-namespace MyProject.Domain.Aggregates;
+namespace MyProject.Domain;
 
-public class Order : IAggregate<OrderState>
+public sealed partial class Order : Aggregate<OrderId, OrderState>
 {
-    private OrderState _state = new();
-    
-    public StreamId StreamId { get; private set; }
-    public OrderState State => _state;
-    public long Version { get; private set; }
-    public IReadOnlyList<object> UncommittedEvents { get; } = new List<object>();
-
-    // Factory method for new orders
-    public static Order CreateOrder(OrderId id, CustomerId customerId, decimal amount)
+    // Domain behavior: Place an order
+    public void Place(string orderId, decimal total)
     {
-        var order = new Order();
-        order.Raise(new OrderCreated(id, customerId, amount));
-        return order;
+        Raise(new OrderPlacedEvent(orderId, total));
     }
 
-    // Add item to order
-    public void AddItem(string itemId, decimal price)
+    // Domain behavior: Ship an order
+    public void Ship(string trackingNumber)
     {
-        Raise(new ItemAdded(itemId, price));
-    }
-
-    // Ship the order
-    public void Ship()
-    {
-        if (_state.Status != "Confirmed")
-            throw new InvalidOperationException("Can only ship confirmed orders");
+        if (!State.IsPlaced)
+            throw new InvalidOperationException("Cannot ship an order that hasn't been placed");
         
-        Raise(new OrderShipped());
+        Raise(new OrderShippedEvent(trackingNumber));
     }
 
-    // Apply events to state
-    public void ApplyEvent(object @event)
-    {
-        switch (@event)
-        {
-            case OrderCreated oc:
-                _state.OrderId = oc.OrderId;
-                _state.CustomerId = oc.CustomerId;
-                _state.Amount = oc.Amount;
-                _state.Status = "Pending";
-                break;
-            
-            case ItemAdded ia:
-                _state.Items.Add((ia.ItemId, ia.Price));
-                break;
-            
-            case OrderShipped:
-                _state.Status = "Shipped";
-                break;
-        }
-    }
+    // Set the aggregate ID (called after loading or during creation)
+    public void SetId(OrderId id) => Id = id;
 
-    private void Raise(object @event)
+    // Apply events to state - returns new state
+    protected override OrderState ApplyEvent(OrderState state, object @event) => @event switch
     {
-        ApplyEvent(@event);
-        ((List<object>)UncommittedEvents).Add(@event);
-        Version++;
-    }
+        OrderPlacedEvent e => state.Apply(e),
+        OrderShippedEvent e => state.Apply(e),
+        _ => state
+    };
 }
 ```
 
 ## Step 4: Save and Load
 
-Persist your aggregate with an event store.
+Persist your aggregate with an event store and reload it.
 
 ```csharp
-// Save
-var order = Order.CreateOrder(new OrderId(123), new CustomerId(456), 1000m);
-order.AddItem("ITEM-001", 500m);
+using ZeroAlloc.EventSourcing;
 
+// Create and modify an aggregate
+var orderId = new OrderId(Guid.NewGuid());
+var order = new Order();
+order.SetId(orderId);
+order.Place("ORD-001", 1500m);
+order.Ship("TRACK-12345");
+
+// Get uncommitted events
+var events = order.DequeueUncommitted();
+// events now contains: [OrderPlacedEvent, OrderShippedEvent]
+
+// Persist events to store
 var eventStore = new InMemoryEventStore();
-var streamId = new StreamId($"order-{order.State.OrderId.Value}");
-// await eventStore.AppendAsync(streamId, /* events */);
+var streamId = StreamId.From(orderId);
+await eventStore.AppendAsync(streamId, events);
 
-// Load
+// Load aggregate from event store
 var loadedOrder = new Order();
-// await foreach (var @event in eventStore.ReadAsync(streamId))
-// {
-//     loadedOrder.ApplyEvent(@event);
-// }
+loadedOrder.SetId(orderId);
+
+// Replay all events
+await foreach (var @event in eventStore.ReadAsync(streamId))
+{
+    // ApplyEvent is called internally by the aggregate
+    loadedOrder.LoadFromHistory(@event);
+}
+
+// State is now fully reconstructed
+Console.WriteLine($"Order IsPlaced: {loadedOrder.State.IsPlaced}");  // true
+Console.WriteLine($"Order Total: {loadedOrder.State.Total}");        // 1500
+Console.WriteLine($"Tracking: {loadedOrder.State.TrackingNumber}");   // TRACK-12345
 ```
 
 ## Next Steps
