@@ -1,0 +1,16 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    uses: ZeroAlloc-Net/.github/.github/workflows/nuget-release.yml@main
+    with:
+      repo-name: 'ZeroAlloc.EventSourcing'
+      has-benchmarks: true
+      nuget-org: 'ZeroAlloc'
+    secrets:
+      NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
