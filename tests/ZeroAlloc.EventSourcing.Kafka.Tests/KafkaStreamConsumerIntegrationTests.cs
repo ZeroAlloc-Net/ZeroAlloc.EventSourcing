@@ -9,7 +9,6 @@ public class KafkaStreamConsumerIntegrationTests : IAsyncLifetime
 {
     private KafkaContainer _kafkaContainer = null!;
     private string _bootstrapServers = null!;
-    private const string TestTopic = "test-events";
     private const int TestPartition = 0;
 
     public async Task InitializeAsync()
@@ -32,12 +31,13 @@ public class KafkaStreamConsumerIntegrationTests : IAsyncLifetime
     public async Task ConsumeAsync_ReadsMessagesFromTopic()
     {
         // Arrange
-        ProduceTestMessages(3);
+        const string topic = "test-reads-messages";
+        ProduceTestMessages(topic, 3);
 
         var options = new KafkaConsumerOptions
         {
             BootstrapServers = _bootstrapServers,
-            Topic = TestTopic,
+            Topic = topic,
             GroupId = "test-group-1",
             Partition = TestPartition,
             ConsumerOptions = new()
@@ -76,12 +76,13 @@ public class KafkaStreamConsumerIntegrationTests : IAsyncLifetime
     public async Task ConsumeAsync_ResumesFromCheckpoint()
     {
         // Arrange
-        ProduceTestMessages(5);
+        const string topic = "test-resumes-checkpoint";
+        ProduceTestMessages(topic, 5);
 
         var options = new KafkaConsumerOptions
         {
             BootstrapServers = _bootstrapServers,
-            Topic = TestTopic,
+            Topic = topic,
             GroupId = "test-group-2",
             Partition = TestPartition,
             ConsumerOptions = new()
@@ -136,12 +137,13 @@ public class KafkaStreamConsumerIntegrationTests : IAsyncLifetime
     public async Task ResetPositionAsync_AllowsReplay()
     {
         // Arrange
-        ProduceTestMessages(3);
+        const string topic = "test-reset-replay";
+        ProduceTestMessages(topic, 3);
 
         var options = new KafkaConsumerOptions
         {
             BootstrapServers = _bootstrapServers,
-            Topic = TestTopic,
+            Topic = topic,
             GroupId = "test-group-3",
             Partition = TestPartition,
             ConsumerOptions = new()
@@ -189,12 +191,13 @@ public class KafkaStreamConsumerIntegrationTests : IAsyncLifetime
     public async Task GetPositionAsync_ReturnsCurrentPosition()
     {
         // Arrange
-        ProduceTestMessages(1);
+        const string topic = "test-getposition";
+        ProduceTestMessages(topic, 1);
 
         var options = new KafkaConsumerOptions
         {
             BootstrapServers = _bootstrapServers,
-            Topic = TestTopic,
+            Topic = topic,
             GroupId = "test-group-4",
             Partition = TestPartition,
             ConsumerOptions = new()
@@ -231,12 +234,13 @@ public class KafkaStreamConsumerIntegrationTests : IAsyncLifetime
     public async Task MultipleConsumers_IndependentPositions()
     {
         // Arrange
-        ProduceTestMessages(3);
+        const string topic = "test-multiple-consumers";
+        ProduceTestMessages(topic, 3);
 
         var options1 = new KafkaConsumerOptions
         {
             BootstrapServers = _bootstrapServers,
-            Topic = TestTopic,
+            Topic = topic,
             GroupId = "test-group-5a",
             Partition = TestPartition,
             ConsumerOptions = new()
@@ -251,7 +255,7 @@ public class KafkaStreamConsumerIntegrationTests : IAsyncLifetime
         var options2 = new KafkaConsumerOptions
         {
             BootstrapServers = _bootstrapServers,
-            Topic = TestTopic,
+            Topic = topic,
             GroupId = "test-group-5b",
             Partition = TestPartition,
             ConsumerOptions = new()
@@ -295,7 +299,7 @@ public class KafkaStreamConsumerIntegrationTests : IAsyncLifetime
         count2.Should().Be(3);
     }
 
-    private void ProduceTestMessages(int count)
+    private void ProduceTestMessages(string topic, int count)
     {
         var config = new ProducerConfig { BootstrapServers = _bootstrapServers };
         using var producer = new ProducerBuilder<string, byte[]>(config).Build();
@@ -313,7 +317,7 @@ public class KafkaStreamConsumerIntegrationTests : IAsyncLifetime
                 Headers = headers
             };
 
-            producer.ProduceAsync(TestTopic, message).GetAwaiter().GetResult();
+            producer.ProduceAsync(topic, message).GetAwaiter().GetResult();
         }
 
         producer.Flush();
