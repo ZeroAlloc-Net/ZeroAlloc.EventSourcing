@@ -37,8 +37,21 @@ public sealed class ExponentialBackoffRetryPolicy : IRetryPolicy
         if (attemptNumber < 1)
             throw new ArgumentException("Attempt number must be >= 1", nameof(attemptNumber));
 
-        // Exponential backoff: 2^(n-1) multiplied by initial delay
-        long delayMs = _initialDelayMs * (long)Math.Pow(2, attemptNumber - 1);
+        // Exponential backoff using bit-shift: 2^(n-1) = 1 << (n-1)
+        // Using checked context to catch overflow
+        long delayMs;
+        try
+        {
+            checked
+            {
+                delayMs = _initialDelayMs * (1L << (attemptNumber - 1));
+            }
+        }
+        catch (OverflowException)
+        {
+            // Cap at max delay if exponential overflows
+            delayMs = _maxDelayMs;
+        }
 
         // Cap at max delay
         delayMs = Math.Min(delayMs, _maxDelayMs);

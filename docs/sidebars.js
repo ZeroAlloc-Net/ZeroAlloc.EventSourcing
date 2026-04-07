@@ -19,6 +19,8 @@ module.exports = {
         'core-concepts/event-store',
         'core-concepts/snapshots',
         'core-concepts/projections',
+        'core-concepts/consumers',
+        'core-concepts/kafka-consumer',
         'core-concepts/architecture',
       ],
     },
