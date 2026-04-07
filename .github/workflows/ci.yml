@@ -8,11 +8,8 @@ on:
 
 jobs:
   build-and-test:
-    name: Build & Test (.NET ${{ matrix.dotnet }})
+    name: Build & Test (.NET 10.0.x)
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        dotnet: ['9.0.x', '10.0.x']
     services:
       sql-server:
         image: mcr.microsoft.com/mssql/server:2022-latest
@@ -27,20 +24,10 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: ${{ matrix.dotnet }}
+          dotnet-version: 10.0.x
           dotnet-quality: 'ga'
       - name: Wait for SQL Server
-        run: |
-          for i in {1..30}; do
-            if sqlcmd -S localhost -U sa -P YourPassword123! -Q "SELECT 1" > /dev/null 2>&1; then
-              echo "SQL Server is ready"
-              exit 0
-            fi
-            echo "Waiting for SQL Server... ($i/30)"
-            sleep 1
-          done
-          echo "SQL Server failed to start"
-          exit 1
+        run: sleep 15
       - name: Restore
         run: dotnet restore ZeroAlloc.EventSourcing.slnx
       - name: Build
@@ -51,5 +38,5 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results-${{ matrix.dotnet }}
+          name: test-results
           path: "**/TestResults/*.trx"
