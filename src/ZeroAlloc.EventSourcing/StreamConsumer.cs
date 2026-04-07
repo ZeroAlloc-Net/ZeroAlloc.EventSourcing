@@ -9,6 +9,7 @@ public sealed class StreamConsumer : IStreamConsumer
     private readonly ICheckpointStore _checkpointStore;
     private readonly StreamConsumerOptions _options;
     private readonly StreamId _streamId;
+    private StreamPosition? _currentPosition;
 
     /// <inheritdoc/>
     public string ConsumerId { get; }
@@ -46,6 +47,7 @@ public sealed class StreamConsumer : IStreamConsumer
 
         // Read starting position from checkpoint
         var position = await _checkpointStore.ReadAsync(ConsumerId, cancellationToken) ?? StreamPosition.Start;
+        _currentPosition = position;
 
         // Consume events in batches
         while (!cancellationToken.IsCancellationRequested)
@@ -68,6 +70,7 @@ public sealed class StreamConsumer : IStreamConsumer
             {
                 await ProcessEventWithRetryAsync(handler, envelope, cancellationToken);
                 position = envelope.Position;
+                _currentPosition = position;
 
                 if (_options.CommitStrategy == CommitStrategy.AfterEvent)
                     await _checkpointStore.WriteAsync(ConsumerId, position, cancellationToken);
@@ -91,6 +94,13 @@ public sealed class StreamConsumer : IStreamConsumer
         await _checkpointStore.DeleteAsync(ConsumerId, cancellationToken);
         if (position.Value > 0)
             await _checkpointStore.WriteAsync(ConsumerId, position, cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public async Task CommitAsync(CancellationToken cancellationToken = default)
+    {
+        if (_currentPosition.HasValue)
+            await _checkpointStore.WriteAsync(ConsumerId, _currentPosition.Value, cancellationToken);
     }
 
     private async Task ProcessEventWithRetryAsync(
