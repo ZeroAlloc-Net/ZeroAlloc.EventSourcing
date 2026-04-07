@@ -46,6 +46,19 @@ foreach (var evt in envelope.Events)
 }
 ```
 
+## Packages
+
+| Package | Description |
+|---------|-------------|
+| `ZeroAlloc.EventSourcing` | Core library with event store and serialization |
+| `ZeroAlloc.EventSourcing.Aggregates` | Aggregate patterns and source generation |
+| `ZeroAlloc.EventSourcing.InMemory` | In-memory event store for testing |
+| `ZeroAlloc.EventSourcing.PostgreSql` | PostgreSQL adapter with native streams |
+| `ZeroAlloc.EventSourcing.SqlServer` | SQL Server adapter with native streams |
+| `ZeroAlloc.EventSourcing.Kafka` | Kafka stream consumer for external event sources |
+
+All packages follow zero-allocation principles and are optimized for high-throughput scenarios.
+
 ## Stream Consumers
 
 ZeroAlloc.EventSourcing includes production-grade stream consumers for reliable event consumption with automatic position tracking, retry logic, and configurable error handling.
@@ -70,6 +83,27 @@ await consumer.ConsumeAsync(async (envelope, ct) => {
 ```
 
 See [Stream Consumers Documentation](docs/core-concepts/consumers.md) for complete guide.
+
+## Kafka Integration
+
+Consume events directly from Kafka topics with the same reliability features:
+
+```csharp
+var options = new KafkaConsumerOptions
+{
+    BootstrapServers = "localhost:9092",
+    Topic = "my-events",
+    GroupId = "my-service"
+};
+
+var consumer = new KafkaStreamConsumer(options, checkpointStore, serializer, registry);
+await consumer.ConsumeAsync(async (envelope, ct) => {
+    // Process event from Kafka
+    await handler.ProcessAsync(envelope, ct);
+});
+```
+
+See [Kafka Consumer Documentation](docs/core-concepts/kafka-consumer.md) for complete guide.
 
 ## Projections
 

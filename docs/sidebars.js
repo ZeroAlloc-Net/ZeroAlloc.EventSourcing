@@ -20,6 +20,7 @@ module.exports = {
         'core-concepts/snapshots',
         'core-concepts/projections',
         'core-concepts/consumers',
+        'core-concepts/kafka-consumer',
         'core-concepts/architecture',
       ],
     },
