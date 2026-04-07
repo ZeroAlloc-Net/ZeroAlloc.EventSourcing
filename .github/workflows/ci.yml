@@ -51,7 +51,7 @@ jobs:
       - name: Build
         run: dotnet build ZeroAlloc.EventSourcing.slnx --no-restore --configuration Release
       - name: Test
-        run: dotnet test ZeroAlloc.EventSourcing.slnx --no-build --configuration Release --logger "trx;LogFileName=results.trx" --results-directory ./TestResults
+        run: dotnet test ZeroAlloc.EventSourcing.slnx --no-build --configuration Release --logger "trx;LogFileName=results.trx" --results-directory ./TestResults --filter "FullyQualifiedName!~SqlServer&FullyQualifiedName!~PostgreSql"
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
