@@ -31,9 +31,9 @@ public sealed class SqlServerEventStoreAdapter : IEventStoreAdapter
     /// <param name="ct">A cancellation token.</param>
     public async ValueTask EnsureSchemaAsync(CancellationToken ct = default)
     {
-        await using var conn = new SqlConnection(_connectionString);
+        using var conn = new SqlConnection(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
-        await using var cmd = conn.CreateCommand();
+        using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             IF NOT EXISTS (
                 SELECT 1 FROM sys.tables
@@ -70,9 +70,10 @@ public sealed class SqlServerEventStoreAdapter : IEventStoreAdapter
         // Copy to array up-front: ReadOnlySpan cannot be preserved across await boundaries.
         var eventsArray = events.ToArray();
 
-        await using var conn = new SqlConnection(_connectionString);
+        using var conn = new SqlConnection(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
-        await using var tx = (SqlTransaction)await conn.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct).ConfigureAwait(false);
+        var txTask = conn.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct).ConfigureAwait(false);
+        using var tx = (SqlTransaction)await txTask;
 
         try
         {
@@ -82,7 +83,7 @@ public sealed class SqlServerEventStoreAdapter : IEventStoreAdapter
 
             if (current != expectedVersion.Value)
             {
-                // No explicit RollbackAsync needed — await using tx will rollback on dispose.
+                // No explicit RollbackAsync needed — using tx will rollback on dispose.
                 return Result<AppendResult, StoreError>.Failure(
                     StoreError.Conflict(id, expectedVersion, new StreamPosition(current)));
             }
@@ -104,7 +105,7 @@ public sealed class SqlServerEventStoreAdapter : IEventStoreAdapter
 
     private async ValueTask<long> ReadCurrentVersionAsync(SqlConnection conn, SqlTransaction tx, StreamId id, CancellationToken ct)
     {
-        await using var versionCmd = conn.CreateCommand();
+        using var versionCmd = conn.CreateCommand();
         versionCmd.Transaction = tx;
         versionCmd.CommandText = """
             SELECT ISNULL(MAX(position), 0)
@@ -121,7 +122,7 @@ public sealed class SqlServerEventStoreAdapter : IEventStoreAdapter
         {
             var e = eventsArray[i];
             var position = expectedVersion.Value + i + 1;
-            await using var ins = conn.CreateCommand();
+            using var ins = conn.CreateCommand();
             ins.Transaction = tx;
             ins.CommandText = """
                 INSERT INTO dbo.event_store
@@ -147,9 +148,9 @@ public sealed class SqlServerEventStoreAdapter : IEventStoreAdapter
         StreamPosition from,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        await using var conn = new SqlConnection(_connectionString);
+        using var conn = new SqlConnection(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
-        await using var cmd = conn.CreateCommand();
+        using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             SELECT position, event_type, event_id, occurred_at, correlation_id, causation_id, payload
             FROM dbo.event_store
@@ -161,7 +162,8 @@ public sealed class SqlServerEventStoreAdapter : IEventStoreAdapter
 
         // SequentialAccess is required for efficient VARBINARY(MAX) streaming.
         // Columns MUST be read in index order when using SequentialAccess.
-        await using var reader = await cmd.ExecuteReaderAsync(CommandBehavior.SequentialAccess, ct).ConfigureAwait(false);
+        var readerTask = cmd.ExecuteReaderAsync(CommandBehavior.SequentialAccess, ct).ConfigureAwait(false);
+        using var reader = await readerTask;
         while (await reader.ReadAsync(ct).ConfigureAwait(false))
         {
             var position      = new StreamPosition(reader.GetInt64(0));

@@ -27,8 +27,11 @@ public sealed class PostgreSqlEventStoreAdapter : IEventStoreAdapter
     /// </summary>
     public async ValueTask EnsureSchemaAsync(CancellationToken ct = default)
     {
-        await using var conn = await _dataSource.OpenConnectionAsync(ct).ConfigureAwait(false);
-        await using var cmd = conn.CreateCommand();
+        var conn = await _dataSource.OpenConnectionAsync(ct).ConfigureAwait(false);
+#pragma warning disable MA0004
+        await using var _ = conn;
+#pragma warning restore MA0004
+        using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             CREATE TABLE IF NOT EXISTS event_store (
                 stream_id      TEXT         NOT NULL,
@@ -59,8 +62,14 @@ public sealed class PostgreSqlEventStoreAdapter : IEventStoreAdapter
         // Copy to array up-front: ReadOnlySpan cannot be preserved across await boundaries.
         var eventsArray = events.ToArray();
 
-        await using var conn = await _dataSource.OpenConnectionAsync(ct).ConfigureAwait(false);
-        await using var tx = await conn.BeginTransactionAsync(ct).ConfigureAwait(false);
+        var conn = await _dataSource.OpenConnectionAsync(ct).ConfigureAwait(false);
+#pragma warning disable MA0004
+        await using var _ = conn;
+#pragma warning restore MA0004
+        var tx = await conn.BeginTransactionAsync(ct).ConfigureAwait(false);
+#pragma warning disable MA0004
+        await using var __ = tx;
+#pragma warning restore MA0004
 
         try
         {
@@ -97,7 +106,7 @@ public sealed class PostgreSqlEventStoreAdapter : IEventStoreAdapter
         // Using int8 (64-bit) rather than hashtext()'s int4 (32-bit) makes birthday-paradox collisions
         // negligible even at millions of distinct stream IDs. A collision causes spurious lock contention
         // between unrelated streams (never data corruption), but should be avoided.
-        await using var lockCmd = conn.CreateCommand();
+        using var lockCmd = conn.CreateCommand();
         lockCmd.Transaction = tx;
         lockCmd.CommandText = "SELECT pg_advisory_xact_lock(hashtextextended(@streamId, 0))";
         lockCmd.Parameters.AddWithValue("streamId", id.Value);
@@ -106,7 +115,7 @@ public sealed class PostgreSqlEventStoreAdapter : IEventStoreAdapter
 
     private async ValueTask<long> ReadCurrentVersionAsync(NpgsqlConnection conn, NpgsqlTransaction tx, StreamId id, CancellationToken ct)
     {
-        await using var versionCmd = conn.CreateCommand();
+        using var versionCmd = conn.CreateCommand();
         versionCmd.Transaction = tx;
         versionCmd.CommandText = "SELECT COALESCE(MAX(position), 0) FROM event_store WHERE stream_id = @streamId";
         versionCmd.Parameters.AddWithValue("streamId", id.Value);
@@ -119,7 +128,7 @@ public sealed class PostgreSqlEventStoreAdapter : IEventStoreAdapter
         {
             var e = eventsArray[i];
             var position = expectedVersion.Value + i + 1;
-            await using var ins = conn.CreateCommand();
+            using var ins = conn.CreateCommand();
             ins.Transaction = tx;
             ins.CommandText = """
                 INSERT INTO event_store (stream_id, position, event_type, event_id, occurred_at, correlation_id, causation_id, payload)
@@ -143,8 +152,11 @@ public sealed class PostgreSqlEventStoreAdapter : IEventStoreAdapter
         StreamPosition from,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        await using var conn = await _dataSource.OpenConnectionAsync(ct).ConfigureAwait(false);
-        await using var cmd = conn.CreateCommand();
+        var conn = await _dataSource.OpenConnectionAsync(ct).ConfigureAwait(false);
+#pragma warning disable MA0004
+        await using var _ = conn;
+#pragma warning restore MA0004
+        using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             SELECT position, event_type, event_id, occurred_at, correlation_id, causation_id, payload
             FROM event_store
@@ -154,7 +166,10 @@ public sealed class PostgreSqlEventStoreAdapter : IEventStoreAdapter
         cmd.Parameters.AddWithValue("streamId", id.Value);
         cmd.Parameters.AddWithValue("from", from.Value);
 
-        await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+#pragma warning disable MA0004
+        await using var __ = reader;
+#pragma warning restore MA0004
         while (await reader.ReadAsync(ct).ConfigureAwait(false))
         {
             var position      = new StreamPosition(reader.GetInt64(0));
