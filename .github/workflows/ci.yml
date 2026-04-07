@@ -44,8 +44,8 @@ jobs:
         run: |
           # Create PostgreSQL test database
           docker exec $(docker ps -f name=postgres -q) psql -U postgres -c "CREATE DATABASE test;" || true
-          # Create SQL Server test database
-          docker exec $(docker ps -f name=mssql -q) /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P YourPassword123! -Q "CREATE DATABASE test;" || true
+          # Create SQL Server test database (disable encryption due to self-signed certs in container)
+          docker exec $(docker ps -f name=mssql -q) /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P YourPassword123! -N -C -Q "CREATE DATABASE test;" || true
       - name: Restore
         run: dotnet restore ZeroAlloc.EventSourcing.slnx
       - name: Build
