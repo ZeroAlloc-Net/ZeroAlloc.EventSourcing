@@ -27,8 +27,10 @@ public sealed class PostgreSqlCheckpointStore : ICheckpointStore, IAsyncDisposab
     /// </summary>
     public async ValueTask EnsureSchemaAsync(CancellationToken ct = default)
     {
+        #pragma warning disable MA0004
         await using var connection = await _dataSource.OpenConnectionAsync(ct).ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
+        #pragma warning restore MA0004
+        using var command = connection.CreateCommand();
         command.CommandText = $@"
             CREATE TABLE IF NOT EXISTS {TableName} (
                 consumer_id VARCHAR(256) PRIMARY KEY,
@@ -44,8 +46,10 @@ public sealed class PostgreSqlCheckpointStore : ICheckpointStore, IAsyncDisposab
     {
         ValidateConsumerId(consumerId);
 
+        #pragma warning disable MA0004
         await using var connection = await _dataSource.OpenConnectionAsync(ct).ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
+        #pragma warning restore MA0004
+        using var command = connection.CreateCommand();
         command.CommandText = $"SELECT position FROM {TableName} WHERE consumer_id = @consumer_id";
         command.Parameters.AddWithValue("@consumer_id", consumerId);
 
@@ -60,8 +64,10 @@ public sealed class PostgreSqlCheckpointStore : ICheckpointStore, IAsyncDisposab
     {
         ValidateConsumerId(consumerId);
 
+        #pragma warning disable MA0004
         await using var connection = await _dataSource.OpenConnectionAsync(ct).ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
+        #pragma warning restore MA0004
+        using var command = connection.CreateCommand();
         command.CommandText = $@"
             INSERT INTO {TableName} (consumer_id, position, updated_at)
             VALUES (@consumer_id, @position, CURRENT_TIMESTAMP)
@@ -80,8 +86,10 @@ public sealed class PostgreSqlCheckpointStore : ICheckpointStore, IAsyncDisposab
     {
         ValidateConsumerId(consumerId);
 
+        #pragma warning disable MA0004
         await using var connection = await _dataSource.OpenConnectionAsync(ct).ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
+        #pragma warning restore MA0004
+        using var command = connection.CreateCommand();
         command.CommandText = $"DELETE FROM {TableName} WHERE consumer_id = @consumer_id";
         command.Parameters.AddWithValue("@consumer_id", consumerId);
 

@@ -42,8 +42,10 @@ public sealed class PostgreSqlSnapshotStore<TState> : ISnapshotStore<TState> whe
     {
         ct.ThrowIfCancellationRequested();
 
+        #pragma warning disable MA0004
         await using var conn = await _dataSource.OpenConnectionAsync(ct).ConfigureAwait(false);
-        await using var cmd = conn.CreateCommand();
+        #pragma warning restore MA0004
+        using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             SELECT position, state_type, payload
             FROM snapshots
@@ -51,7 +53,9 @@ public sealed class PostgreSqlSnapshotStore<TState> : ISnapshotStore<TState> whe
             """;
         cmd.Parameters.AddWithValue("@stream_id", streamId.Value);
 
+        #pragma warning disable MA0004
         await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        #pragma warning restore MA0004
 
         if (await reader.ReadAsync(ct).ConfigureAwait(false))
         {
@@ -60,7 +64,7 @@ public sealed class PostgreSqlSnapshotStore<TState> : ISnapshotStore<TState> whe
             var payload = (byte[])reader.GetValue(2);
 
             // Type validation: if stateType doesn't match TState, return null (treat as missing)
-            if (stateType != typeof(TState).FullName)
+            if (!string.Equals(stateType, typeof(TState).FullName))
             {
                 return null;
             }
@@ -93,8 +97,10 @@ public sealed class PostgreSqlSnapshotStore<TState> : ISnapshotStore<TState> whe
         var stateType = typeof(TState).FullName ?? typeof(TState).Name;
         var createdAt = DateTime.UtcNow;
 
+        #pragma warning disable MA0004
         await using var conn = await _dataSource.OpenConnectionAsync(ct).ConfigureAwait(false);
-        await using var cmd = conn.CreateCommand();
+        #pragma warning restore MA0004
+        using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             INSERT INTO snapshots (stream_id, position, state_type, payload, created_at)
             VALUES (@stream_id, @position, @state_type, @payload, @created_at)
