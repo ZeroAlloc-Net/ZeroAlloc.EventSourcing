@@ -136,7 +136,17 @@ public sealed class KafkaStreamConsumer : IStreamConsumer, IDisposable
         {
             // Close the consumer if we own it
             if (_ownsConsumer)
-                _consumer.Close();
+            {
+                try
+                {
+                    _consumer.Close();
+                }
+                catch (ObjectDisposedException)
+                {
+                    // Handle already destroyed (e.g., by test container cleanup)
+                    // Safe to ignore as the connection is already gone
+                }
+            }
         }
     }
 
@@ -244,7 +254,16 @@ public sealed class KafkaStreamConsumer : IStreamConsumer, IDisposable
     {
         if (_ownsConsumer)
         {
-            _consumer.Close();
+            try
+            {
+                _consumer.Close();
+            }
+            catch (ObjectDisposedException)
+            {
+                // Handle already destroyed (e.g., by test container cleanup)
+                // Safe to ignore as the connection is already gone
+            }
+
             _consumer.Dispose();
         }
     }
