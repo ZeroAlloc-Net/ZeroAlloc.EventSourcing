@@ -10,7 +10,7 @@ namespace ZeroAlloc.EventSourcing.InMemory;
 /// <typeparam name="TState">The aggregate state type. Must be a struct.</typeparam>
 public sealed class InMemorySnapshotStore<TState> : ISnapshotStore<TState> where TState : struct
 {
-    private readonly ConcurrentDictionary<string, (StreamPosition Position, TState State)> _snapshots = new();
+    private readonly ConcurrentDictionary<string, (StreamPosition Position, TState State)> _snapshots = new(StringComparer.Ordinal);
 
     /// <inheritdoc/>
     public ValueTask<(StreamPosition Position, TState State)?> ReadAsync(StreamId streamId, CancellationToken ct = default)
