@@ -20,10 +20,10 @@
     <PackageVersion Include="Npgsql"                       Version="9.0.5" />
     <PackageVersion Include="NSubstitute"                  Version="5.1.0" />
     <PackageVersion Include="Microsoft.Data.SqlClient"     Version="5.2.3" />
-    <PackageVersion Include="Testcontainers.PostgreSql"    Version="4.1.0" />
-    <PackageVersion Include="Testcontainers.MsSql"         Version="4.1.0" />
+    <PackageVersion Include="Testcontainers.PostgreSql"    Version="4.11.0" />
+    <PackageVersion Include="Testcontainers.MsSql"         Version="4.11.0" />
     <PackageVersion Include="BenchmarkDotNet"              Version="0.14.0" />
     <PackageVersion Include="Confluent.Kafka"              Version="2.6.0" />
-    <PackageVersion Include="Testcontainers.Kafka"         Version="4.1.0" />
+    <PackageVersion Include="Testcontainers.Kafka"         Version="4.11.0" />
   </ItemGroup>
 </Project>
