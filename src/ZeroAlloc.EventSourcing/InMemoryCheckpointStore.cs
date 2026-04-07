@@ -9,7 +9,7 @@ namespace ZeroAlloc.EventSourcing;
 /// </summary>
 public sealed class InMemoryCheckpointStore : ICheckpointStore
 {
-    private readonly ConcurrentDictionary<string, StreamPosition> _positions = new();
+    private readonly ConcurrentDictionary<string, StreamPosition> _positions = new(StringComparer.Ordinal);
 
     /// <inheritdoc/>
     public Task<StreamPosition?> ReadAsync(string consumerId, CancellationToken ct = default)

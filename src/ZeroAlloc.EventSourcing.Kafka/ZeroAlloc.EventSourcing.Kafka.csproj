@@ -12,4 +12,9 @@
     <PackageReference Include="Confluent.Kafka" />
   </ItemGroup>
 
+
+  <ItemGroup Condition="'$(IsRoslynComponent)' != 'true'">
+    <PackageReference Include="Meziantou.Analyzer" PrivateAssets="all" />
+    <PackageReference Include="Roslynator.Analyzers" PrivateAssets="all" />
+  </ItemGroup>
 </Project>
