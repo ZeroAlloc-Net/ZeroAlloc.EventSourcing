@@ -14,4 +14,9 @@
     <PackageReference Include="Microsoft.Data.SqlClient" />
   </ItemGroup>
 
+
+  <ItemGroup Condition="'$(IsRoslynComponent)' != 'true'">
+    <PackageReference Include="Meziantou.Analyzer" PrivateAssets="all" />
+    <PackageReference Include="Roslynator.Analyzers" PrivateAssets="all" />
+  </ItemGroup>
 </Project>

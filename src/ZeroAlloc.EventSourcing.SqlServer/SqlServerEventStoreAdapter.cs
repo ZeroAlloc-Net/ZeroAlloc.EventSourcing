@@ -31,9 +31,9 @@ public sealed class SqlServerEventStoreAdapter : IEventStoreAdapter
     /// <param name="ct">A cancellation token.</param>
     public async ValueTask EnsureSchemaAsync(CancellationToken ct = default)
     {
-        await using var conn = new SqlConnection(_connectionString);
+        using var conn = new SqlConnection(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
-        await using var cmd = conn.CreateCommand();
+        using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             IF NOT EXISTS (
                 SELECT 1 FROM sys.tables
@@ -70,58 +70,26 @@ public sealed class SqlServerEventStoreAdapter : IEventStoreAdapter
         // Copy to array up-front: ReadOnlySpan cannot be preserved across await boundaries.
         var eventsArray = events.ToArray();
 
-        await using var conn = new SqlConnection(_connectionString);
+        using var conn = new SqlConnection(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
-        await using var tx = (SqlTransaction)await conn.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct).ConfigureAwait(false);
+        var txTask = conn.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct).ConfigureAwait(false);
+        using var tx = (SqlTransaction)await txTask;
 
         try
         {
             // Read current version with UPDLOCK + HOLDLOCK to lock the range and hold until
             // transaction end, preventing phantom inserts between the SELECT and INSERT.
-            long current;
-            await using (var versionCmd = conn.CreateCommand())
-            {
-                versionCmd.Transaction = tx;
-                versionCmd.CommandText = """
-                    SELECT ISNULL(MAX(position), 0)
-                    FROM dbo.event_store WITH (UPDLOCK, HOLDLOCK)
-                    WHERE stream_id = @streamId
-                    """;
-                versionCmd.Parameters.AddWithValue("@streamId", id.Value);
-                current = (long)(await versionCmd.ExecuteScalarAsync(ct).ConfigureAwait(false) ?? 0L);
-            }
+            var current = await ReadCurrentVersionAsync(conn, tx, id, ct).ConfigureAwait(false);
 
             if (current != expectedVersion.Value)
             {
-                // No explicit RollbackAsync needed — await using tx will rollback on dispose.
+                // No explicit RollbackAsync needed — using tx will rollback on dispose.
                 return Result<AppendResult, StoreError>.Failure(
                     StoreError.Conflict(id, expectedVersion, new StreamPosition(current)));
             }
 
-            // Insert events at successive positions.
-            for (var i = 0; i < eventsArray.Length; i++)
-            {
-                var e = eventsArray[i];
-                var position = expectedVersion.Value + i + 1;
-                await using var ins = conn.CreateCommand();
-                ins.Transaction = tx;
-                ins.CommandText = """
-                    INSERT INTO dbo.event_store
-                        (stream_id, position, event_type, event_id, occurred_at, correlation_id, causation_id, payload)
-                    VALUES
-                        (@streamId, @position, @eventType, @eventId, @occurredAt, @correlationId, @causationId, @payload)
-                    """;
-                ins.Parameters.AddWithValue("@streamId", id.Value);
-                ins.Parameters.AddWithValue("@position", position);
-                ins.Parameters.AddWithValue("@eventType", e.EventType);
-                ins.Parameters.AddWithValue("@eventId", e.Metadata.EventId);
-                ins.Parameters.AddWithValue("@occurredAt", e.Metadata.OccurredAt);
-                ins.Parameters.Add(new SqlParameter("@correlationId", SqlDbType.UniqueIdentifier) { Value = (object?)e.Metadata.CorrelationId ?? DBNull.Value });
-                ins.Parameters.Add(new SqlParameter("@causationId", SqlDbType.UniqueIdentifier) { Value = (object?)e.Metadata.CausationId ?? DBNull.Value });
-                ins.Parameters.Add(new SqlParameter("@payload", SqlDbType.VarBinary, -1) { Value = e.Payload.ToArray() });
-                await ins.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-            }
-
+            // Insert events at successive positions
+            await InsertEventsAsync(conn, tx, id, eventsArray, expectedVersion, ct).ConfigureAwait(false);
             await tx.CommitAsync(ct).ConfigureAwait(false);
 
             var nextVersion = new StreamPosition(expectedVersion.Value + eventsArray.Length);
@@ -135,15 +103,54 @@ public sealed class SqlServerEventStoreAdapter : IEventStoreAdapter
         }
     }
 
+    private async ValueTask<long> ReadCurrentVersionAsync(SqlConnection conn, SqlTransaction tx, StreamId id, CancellationToken ct)
+    {
+        using var versionCmd = conn.CreateCommand();
+        versionCmd.Transaction = tx;
+        versionCmd.CommandText = """
+            SELECT ISNULL(MAX(position), 0)
+            FROM dbo.event_store WITH (UPDLOCK, HOLDLOCK)
+            WHERE stream_id = @streamId
+            """;
+        versionCmd.Parameters.AddWithValue("@streamId", id.Value);
+        return (long)(await versionCmd.ExecuteScalarAsync(ct).ConfigureAwait(false) ?? 0L);
+    }
+
+    private async ValueTask InsertEventsAsync(SqlConnection conn, SqlTransaction tx, StreamId id, RawEvent[] eventsArray, StreamPosition expectedVersion, CancellationToken ct)
+    {
+        for (var i = 0; i < eventsArray.Length; i++)
+        {
+            var e = eventsArray[i];
+            var position = expectedVersion.Value + i + 1;
+            using var ins = conn.CreateCommand();
+            ins.Transaction = tx;
+            ins.CommandText = """
+                INSERT INTO dbo.event_store
+                    (stream_id, position, event_type, event_id, occurred_at, correlation_id, causation_id, payload)
+                VALUES
+                    (@streamId, @position, @eventType, @eventId, @occurredAt, @correlationId, @causationId, @payload)
+                """;
+            ins.Parameters.AddWithValue("@streamId", id.Value);
+            ins.Parameters.AddWithValue("@position", position);
+            ins.Parameters.AddWithValue("@eventType", e.EventType);
+            ins.Parameters.AddWithValue("@eventId", e.Metadata.EventId);
+            ins.Parameters.AddWithValue("@occurredAt", e.Metadata.OccurredAt);
+            ins.Parameters.Add(new SqlParameter("@correlationId", SqlDbType.UniqueIdentifier) { Value = (object?)e.Metadata.CorrelationId ?? DBNull.Value });
+            ins.Parameters.Add(new SqlParameter("@causationId", SqlDbType.UniqueIdentifier) { Value = (object?)e.Metadata.CausationId ?? DBNull.Value });
+            ins.Parameters.Add(new SqlParameter("@payload", SqlDbType.VarBinary, -1) { Value = e.Payload.ToArray() });
+            await ins.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+    }
+
     /// <inheritdoc/>
     public async IAsyncEnumerable<RawEvent> ReadAsync(
         StreamId id,
         StreamPosition from,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        await using var conn = new SqlConnection(_connectionString);
+        using var conn = new SqlConnection(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
-        await using var cmd = conn.CreateCommand();
+        using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             SELECT position, event_type, event_id, occurred_at, correlation_id, causation_id, payload
             FROM dbo.event_store
@@ -155,7 +162,8 @@ public sealed class SqlServerEventStoreAdapter : IEventStoreAdapter
 
         // SequentialAccess is required for efficient VARBINARY(MAX) streaming.
         // Columns MUST be read in index order when using SequentialAccess.
-        await using var reader = await cmd.ExecuteReaderAsync(CommandBehavior.SequentialAccess, ct).ConfigureAwait(false);
+        var readerTask = cmd.ExecuteReaderAsync(CommandBehavior.SequentialAccess, ct).ConfigureAwait(false);
+        using var reader = await readerTask;
         while (await reader.ReadAsync(ct).ConfigureAwait(false))
         {
             var position      = new StreamPosition(reader.GetInt64(0));

@@ -83,12 +83,23 @@ public sealed class SnapshotCachingRepositoryDecorator<TAggregate, TId, TState> 
 
         var (snapshotPosition, snapshotState) = snapshot.Value;
 
-        // Create a fresh aggregate instance
+        // Create a fresh aggregate instance and restore snapshot state
         var aggregate = _aggregateFactory();
-
-        // Restore the snapshot state
         _restoreState(aggregate, snapshotState, snapshotPosition);
 
+        // Validate snapshot position if required by strategy
+        var validationResult = await ValidateSnapshotPositionAsync(streamId, snapshotPosition, id, ct).ConfigureAwait(false);
+        if (validationResult.HasValue)
+            return validationResult.Value;
+
+        // Replay events after the snapshot
+        await ReplayEventsAfterSnapshotAsync(aggregate, streamId, snapshotPosition, ct).ConfigureAwait(false);
+
+        return Result<TAggregate, StoreError>.Success(aggregate);
+    }
+
+    private async ValueTask<Result<TAggregate, StoreError>?> ValidateSnapshotPositionAsync(StreamId streamId, StreamPosition snapshotPosition, TId id, CancellationToken ct)
+    {
         // For ValidateAndReplay strategy, verify the snapshot position exists in the event store
         if (_strategy == SnapshotLoadingStrategy.ValidateAndReplay)
         {
@@ -107,6 +118,11 @@ public sealed class SnapshotCachingRepositoryDecorator<TAggregate, TId, TState> 
             }
         }
 
+        return null;
+    }
+
+    private async ValueTask ReplayEventsAfterSnapshotAsync(TAggregate aggregate, StreamId streamId, StreamPosition snapshotPosition, CancellationToken ct)
+    {
         // Replay events from position after the snapshot
         // InMemoryStream.ReadFrom(n) calls Skip(n), so:
         //   ReadFrom(0) returns all events (skip 0)
@@ -122,8 +138,6 @@ public sealed class SnapshotCachingRepositoryDecorator<TAggregate, TId, TState> 
                 continue;
             aggregate.ApplyHistoric(envelope.Event, envelope.Position);
         }
-
-        return Result<TAggregate, StoreError>.Success(aggregate);
     }
 
     /// <inheritdoc/>

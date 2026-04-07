@@ -82,7 +82,7 @@ internal static class KafkaMessageMapper
         if (headers == null)
             return null;
 
-        var header = headers.FirstOrDefault(h => h.Key == headerName);
+        var header = headers.FirstOrDefault(h => string.Equals(h.Key, headerName));
         if (header == null)
             return null;
 
@@ -116,7 +116,7 @@ internal static class KafkaMessageMapper
         if (string.IsNullOrEmpty(value))
             return null;
 
-        if (DateTimeOffset.TryParse(value, out var dateTime))
+        if (DateTimeOffset.TryParse(value, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal, out var dateTime))
             return dateTime;
 
         return null;
