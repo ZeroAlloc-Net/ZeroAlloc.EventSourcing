@@ -11,12 +11,14 @@
 
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" />
+    <PackageReference Include="NSubstitute" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="../ZeroAlloc.EventSourcing/ZeroAlloc.EventSourcing.csproj" />
     <ProjectReference Include="../ZeroAlloc.EventSourcing.InMemory/ZeroAlloc.EventSourcing.InMemory.csproj" />
     <ProjectReference Include="../ZeroAlloc.EventSourcing.Aggregates/ZeroAlloc.EventSourcing.Aggregates.csproj" />
+    <ProjectReference Include="../ZeroAlloc.EventSourcing.Kafka/ZeroAlloc.EventSourcing.Kafka.csproj" />
   </ItemGroup>
 
 </Project>
