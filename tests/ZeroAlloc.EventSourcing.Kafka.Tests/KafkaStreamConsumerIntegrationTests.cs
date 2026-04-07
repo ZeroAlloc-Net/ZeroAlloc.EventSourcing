@@ -27,7 +27,7 @@ public class KafkaStreamConsumerIntegrationTests : IAsyncLifetime
             await _kafkaContainer.StopAsync();
     }
 
-    [Fact]
+    [Fact(Skip = "Integration test: requires Docker and isolated Kafka container")]
     public async Task ConsumeAsync_ReadsMessagesFromTopic()
     {
         // Arrange
@@ -72,7 +72,7 @@ public class KafkaStreamConsumerIntegrationTests : IAsyncLifetime
         processedOffsets.Should().BeInAscendingOrder();
     }
 
-    [Fact]
+    [Fact(Skip = "Integration test: requires Docker and isolated Kafka container")]
     public async Task ConsumeAsync_ResumesFromCheckpoint()
     {
         // Arrange
@@ -133,7 +133,7 @@ public class KafkaStreamConsumerIntegrationTests : IAsyncLifetime
         count2.Should().Be(2);
     }
 
-    [Fact]
+    [Fact(Skip = "Integration test: requires Docker and isolated Kafka container")]
     public async Task ResetPositionAsync_AllowsReplay()
     {
         // Arrange
@@ -187,7 +187,7 @@ public class KafkaStreamConsumerIntegrationTests : IAsyncLifetime
         count.Should().Be(3);
     }
 
-    [Fact]
+    [Fact(Skip = "Integration test: requires Docker and isolated Kafka container")]
     public async Task GetPositionAsync_ReturnsCurrentPosition()
     {
         // Arrange
@@ -230,7 +230,7 @@ public class KafkaStreamConsumerIntegrationTests : IAsyncLifetime
         position.Should().NotBeNull();
     }
 
-    [Fact]
+    [Fact(Skip = "Integration test: requires Docker and isolated Kafka container")]
     public async Task MultipleConsumers_IndependentPositions()
     {
         // Arrange
