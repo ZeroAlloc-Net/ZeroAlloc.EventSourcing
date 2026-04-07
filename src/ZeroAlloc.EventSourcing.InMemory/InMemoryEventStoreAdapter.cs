@@ -39,10 +39,31 @@ public sealed class InMemoryEventStoreAdapter : IEventStoreAdapter
         StreamPosition from,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        if (!_streams.TryGetValue(id.Value, out var stream))
+        // Special handling for "$all" pseudo-stream: reads from all streams in order
+        if (id.Value == "$all" || id.Value == "*")
+        {
+            var allEvents = new List<RawEvent>();
+            foreach (var stream in _streams.Values)
+            {
+                allEvents.AddRange(stream.ReadFrom(from.Value));
+            }
+
+            // Sort by position to maintain ordering across streams
+            allEvents.Sort((a, b) => a.Position.Value.CompareTo(b.Position.Value));
+
+            foreach (var e in allEvents)
+            {
+                ct.ThrowIfCancellationRequested();
+                yield return e;
+            }
+
+            yield break;
+        }
+
+        if (!_streams.TryGetValue(id.Value, out var specificStream))
             yield break;
 
-        foreach (var e in stream.ReadFrom(from.Value))
+        foreach (var e in specificStream.ReadFrom(from.Value))
         {
             ct.ThrowIfCancellationRequested();
             yield return e;

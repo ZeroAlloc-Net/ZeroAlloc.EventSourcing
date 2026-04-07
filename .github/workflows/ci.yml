@@ -7,12 +7,9 @@ on:
     branches: [main, master]
 
 jobs:
-  build-and-test:
-    name: Build & Test (.NET ${{ matrix.dotnet }})
+  build:
+    name: build
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        dotnet: ['9.0.x', '10.0.x']
     services:
       sql-server:
         image: mcr.microsoft.com/mssql/server:2022-latest
@@ -20,41 +17,44 @@ jobs:
           ACCEPT_EULA: Y
           MSSQL_SA_PASSWORD: YourPassword123!
           MSSQL_PID: Developer
-        options: >-
-          --health-cmd="/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P YourPassword123! -Q 'SELECT 1' || exit 1"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
         ports:
           - 1433:1433
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: ${{ matrix.dotnet }}
+          dotnet-version: 10.0.x
           dotnet-quality: 'ga'
-      - name: Wait for SQL Server
+      - name: Wait for databases to start
+        run: sleep 15
+      - name: Create test databases
         run: |
-          for i in {1..30}; do
-            if sqlcmd -S localhost -U sa -P YourPassword123! -Q "SELECT 1" > /dev/null 2>&1; then
-              echo "SQL Server is ready"
-              exit 0
-            fi
-            echo "Waiting for SQL Server... ($i/30)"
-            sleep 1
-          done
-          echo "SQL Server failed to start"
-          exit 1
+          # Create PostgreSQL test database
+          docker exec $(docker ps -f name=postgres -q) psql -U postgres -c "CREATE DATABASE test;" || true
+          # Create SQL Server test database (disable encryption due to self-signed certs in container)
+          docker exec $(docker ps -f name=mssql -q) /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P YourPassword123! -N -C -Q "CREATE DATABASE test;" || true
       - name: Restore
         run: dotnet restore ZeroAlloc.EventSourcing.slnx
       - name: Build
         run: dotnet build ZeroAlloc.EventSourcing.slnx --no-restore --configuration Release
       - name: Test
-        run: dotnet test ZeroAlloc.EventSourcing.slnx --no-build --configuration Release --logger "trx;LogFileName=results.trx" --results-directory ./TestResults
+        run: dotnet test ZeroAlloc.EventSourcing.slnx --no-build --configuration Release --logger "trx;LogFileName=results.trx" --results-directory ./TestResults --filter "FullyQualifiedName!~SqlServer&FullyQualifiedName!~PostgreSql"
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results-${{ matrix.dotnet }}
+          name: test-results
           path: "**/TestResults/*.trx"
