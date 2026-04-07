@@ -40,6 +40,10 @@ jobs:
           dotnet-quality: 'ga'
       - name: Wait for SQL Server
         run: sleep 15
+      - name: Create test database in PostgreSQL
+        run: |
+          PGPASSWORD=postgres psql -h localhost -U postgres -c "CREATE DATABASE test;"
+        continue-on-error: true
       - name: Restore
         run: dotnet restore ZeroAlloc.EventSourcing.slnx
       - name: Build
