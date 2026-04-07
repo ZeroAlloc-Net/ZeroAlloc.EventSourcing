@@ -26,13 +26,28 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Check if documentation exists
+        id: check-docs
+        run: |
+          if [ -f "docs/package.json" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Install dependencies
+        if: steps.check-docs.outputs.exists == 'true'
         run: pnpm install --frozen-lockfile
         working-directory: docs
 
       - name: Build documentation
+        if: steps.check-docs.outputs.exists == 'true'
         run: pnpm run build
         working-directory: docs
+
+      - name: Skip build if no documentation
+        if: steps.check-docs.outputs.exists != 'true'
+        run: echo "No documentation found - skipping build"
 
       - name: Upload documentation artifact
         uses: actions/upload-artifact@v4
