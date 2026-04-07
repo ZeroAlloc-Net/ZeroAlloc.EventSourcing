@@ -112,7 +112,7 @@ public abstract class BatchedProjection<TReadModel> : FilteredProjection<TReadMo
             // Flush if batch is full
             if (_batch.Count >= _batchSize)
             {
-                await FlushAsync(ct);
+                await FlushAsync(ct).ConfigureAwait(false);
             }
         }
 
@@ -134,7 +134,7 @@ public abstract class BatchedProjection<TReadModel> : FilteredProjection<TReadMo
 
         if (_batch.Count > 0)
         {
-            await FlushBatchAsync(_batch.AsReadOnly(), ct);
+            await FlushBatchAsync(_batch.AsReadOnly(), ct).ConfigureAwait(false);
             _batch.Clear();
         }
 
