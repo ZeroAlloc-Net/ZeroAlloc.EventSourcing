@@ -64,28 +64,9 @@ public sealed class PostgreSqlEventStoreAdapter : IEventStoreAdapter
 
         try
         {
-            // Acquire an exclusive advisory lock scoped to this transaction.
-            // hashtextextended() (available since PostgreSQL 11) maps the stream_id string to an int8 key.
-            // Using int8 (64-bit) rather than hashtext()'s int4 (32-bit) makes birthday-paradox collisions
-            // negligible even at millions of distinct stream IDs. A collision causes spurious lock contention
-            // between unrelated streams (never data corruption), but should be avoided.
-            await using (var lockCmd = conn.CreateCommand())
-            {
-                lockCmd.Transaction = tx;
-                lockCmd.CommandText = "SELECT pg_advisory_xact_lock(hashtextextended(@streamId, 0))";
-                lockCmd.Parameters.AddWithValue("streamId", id.Value);
-                await lockCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-            }
-
-            // Read current version (0 if stream does not exist yet).
-            long current;
-            await using (var versionCmd = conn.CreateCommand())
-            {
-                versionCmd.Transaction = tx;
-                versionCmd.CommandText = "SELECT COALESCE(MAX(position), 0) FROM event_store WHERE stream_id = @streamId";
-                versionCmd.Parameters.AddWithValue("streamId", id.Value);
-                current = (long)(await versionCmd.ExecuteScalarAsync(ct).ConfigureAwait(false) ?? 0L);
-            }
+            // Acquire lock and check version
+            await AcquireLockAsync(conn, tx, id, ct).ConfigureAwait(false);
+            var current = await ReadCurrentVersionAsync(conn, tx, id, ct).ConfigureAwait(false);
 
             if (current != expectedVersion.Value)
             {
@@ -94,28 +75,8 @@ public sealed class PostgreSqlEventStoreAdapter : IEventStoreAdapter
                     StoreError.Conflict(id, expectedVersion, new StreamPosition(current)));
             }
 
-            // Insert events at successive positions.
-            for (var i = 0; i < eventsArray.Length; i++)
-            {
-                var e = eventsArray[i];
-                var position = expectedVersion.Value + i + 1;
-                await using var ins = conn.CreateCommand();
-                ins.Transaction = tx;
-                ins.CommandText = """
-                    INSERT INTO event_store (stream_id, position, event_type, event_id, occurred_at, correlation_id, causation_id, payload)
-                    VALUES (@streamId, @position, @eventType, @eventId, @occurredAt, @correlationId, @causationId, @payload)
-                    """;
-                ins.Parameters.AddWithValue("streamId", id.Value);
-                ins.Parameters.AddWithValue("position", position);
-                ins.Parameters.AddWithValue("eventType", e.EventType);
-                ins.Parameters.AddWithValue("eventId", e.Metadata.EventId);
-                ins.Parameters.AddWithValue("occurredAt", e.Metadata.OccurredAt.UtcDateTime);
-                ins.Parameters.Add(new NpgsqlParameter("correlationId", NpgsqlDbType.Uuid) { Value = (object?)e.Metadata.CorrelationId ?? DBNull.Value });
-                ins.Parameters.Add(new NpgsqlParameter("causationId", NpgsqlDbType.Uuid) { Value = (object?)e.Metadata.CausationId ?? DBNull.Value });
-                ins.Parameters.Add(new NpgsqlParameter("payload", NpgsqlDbType.Bytea) { Value = e.Payload.ToArray() });
-                await ins.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-            }
-
+            // Insert events at successive positions
+            await InsertEventsAsync(conn, tx, id, eventsArray, expectedVersion, ct).ConfigureAwait(false);
             await tx.CommitAsync(ct).ConfigureAwait(false);
 
             var nextVersion = new StreamPosition(expectedVersion.Value + eventsArray.Length);
@@ -126,6 +87,53 @@ public sealed class PostgreSqlEventStoreAdapter : IEventStoreAdapter
             // Use CancellationToken.None so a cancelled ct doesn't prevent the rollback from completing.
             try { await tx.RollbackAsync(CancellationToken.None).ConfigureAwait(false); } catch { /* connection may already be dead */ }
             throw;
+        }
+    }
+
+    private async ValueTask AcquireLockAsync(NpgsqlConnection conn, NpgsqlTransaction tx, StreamId id, CancellationToken ct)
+    {
+        // Acquire an exclusive advisory lock scoped to this transaction.
+        // hashtextextended() (available since PostgreSQL 11) maps the stream_id string to an int8 key.
+        // Using int8 (64-bit) rather than hashtext()'s int4 (32-bit) makes birthday-paradox collisions
+        // negligible even at millions of distinct stream IDs. A collision causes spurious lock contention
+        // between unrelated streams (never data corruption), but should be avoided.
+        await using var lockCmd = conn.CreateCommand();
+        lockCmd.Transaction = tx;
+        lockCmd.CommandText = "SELECT pg_advisory_xact_lock(hashtextextended(@streamId, 0))";
+        lockCmd.Parameters.AddWithValue("streamId", id.Value);
+        await lockCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    private async ValueTask<long> ReadCurrentVersionAsync(NpgsqlConnection conn, NpgsqlTransaction tx, StreamId id, CancellationToken ct)
+    {
+        await using var versionCmd = conn.CreateCommand();
+        versionCmd.Transaction = tx;
+        versionCmd.CommandText = "SELECT COALESCE(MAX(position), 0) FROM event_store WHERE stream_id = @streamId";
+        versionCmd.Parameters.AddWithValue("streamId", id.Value);
+        return (long)(await versionCmd.ExecuteScalarAsync(ct).ConfigureAwait(false) ?? 0L);
+    }
+
+    private async ValueTask InsertEventsAsync(NpgsqlConnection conn, NpgsqlTransaction tx, StreamId id, RawEvent[] eventsArray, StreamPosition expectedVersion, CancellationToken ct)
+    {
+        for (var i = 0; i < eventsArray.Length; i++)
+        {
+            var e = eventsArray[i];
+            var position = expectedVersion.Value + i + 1;
+            await using var ins = conn.CreateCommand();
+            ins.Transaction = tx;
+            ins.CommandText = """
+                INSERT INTO event_store (stream_id, position, event_type, event_id, occurred_at, correlation_id, causation_id, payload)
+                VALUES (@streamId, @position, @eventType, @eventId, @occurredAt, @correlationId, @causationId, @payload)
+                """;
+            ins.Parameters.AddWithValue("streamId", id.Value);
+            ins.Parameters.AddWithValue("position", position);
+            ins.Parameters.AddWithValue("eventType", e.EventType);
+            ins.Parameters.AddWithValue("eventId", e.Metadata.EventId);
+            ins.Parameters.AddWithValue("occurredAt", e.Metadata.OccurredAt.UtcDateTime);
+            ins.Parameters.Add(new NpgsqlParameter("correlationId", NpgsqlDbType.Uuid) { Value = (object?)e.Metadata.CorrelationId ?? DBNull.Value });
+            ins.Parameters.Add(new NpgsqlParameter("causationId", NpgsqlDbType.Uuid) { Value = (object?)e.Metadata.CausationId ?? DBNull.Value });
+            ins.Parameters.Add(new NpgsqlParameter("payload", NpgsqlDbType.Bytea) { Value = e.Payload.ToArray() });
+            await ins.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
         }
     }
 

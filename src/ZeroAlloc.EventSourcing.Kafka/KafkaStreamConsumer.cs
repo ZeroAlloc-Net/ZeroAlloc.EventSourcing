@@ -79,7 +79,7 @@ public sealed class KafkaStreamConsumer : IStreamConsumer, IDisposable
         try
         {
             // Read the last checkpoint position, default to start
-            var position = await _checkpointStore.ReadAsync(ConsumerId, ct) ?? StreamPosition.Start;
+            var position = await _checkpointStore.ReadAsync(ConsumerId, ct).ConfigureAwait(false) ?? StreamPosition.Start;
             _currentPosition = position;
 
             // Assign the partition and seek to start position
@@ -89,63 +89,96 @@ public sealed class KafkaStreamConsumer : IStreamConsumer, IDisposable
                 new Offset(position.Value)));
 
             // Continuously process batches until no more events or cancellation requested
-            while (!ct.IsCancellationRequested)
-            {
-                var batch = new List<ConsumeResult<string, byte[]>>();
-
-                // Poll up to BatchSize messages
-                for (int i = 0; i < _options.ConsumerOptions.BatchSize; i++)
-                {
-                    var result = _consumer.Consume(_options.PollTimeout);
-                    if (result == null)
-                        break;  // No more messages at this moment
-
-                    batch.Add(result);
-                }
-
-                // If no events were read, exit the batch processing loop
-                if (batch.Count == 0)
-                    break;
-
-                // Process each message in the batch
-                foreach (var kafkaMessage in batch)
-                {
-                    // Map Kafka message to EventEnvelope
-                    var envelope = KafkaMessageMapper.ToEnvelope(kafkaMessage, _serializer, _registry);
-
-                    // Process event with retry logic
-                    await ProcessEventWithRetryAsync(handler, envelope, ct);
-
-                    // Update position to the event we just processed
-                    var messagePosition = KafkaMessageMapper.ToStreamPosition(kafkaMessage.Offset);
-                    _currentPosition = messagePosition;
-
-                    // Commit position after each event if configured
-                    if (_options.ConsumerOptions.CommitStrategy == CommitStrategy.AfterEvent)
-                        await _checkpointStore.WriteAsync(ConsumerId, messagePosition, ct);
-                }
-
-                // Commit position after entire batch if configured
-                if (_options.ConsumerOptions.CommitStrategy == CommitStrategy.AfterBatch && _currentPosition.HasValue)
-                    await _checkpointStore.WriteAsync(ConsumerId, _currentPosition.Value, ct);
-
-                // Continue to next batch loop iteration
-            }
+            await ProcessBatchesAsync(handler, ct).ConfigureAwait(false);
         }
         finally
         {
-            // Close the consumer if we own it
-            if (_ownsConsumer)
+            CloseConsumer();
+        }
+    }
+
+    /// <summary>
+    /// Process batches of messages from Kafka until cancellation or no more messages.
+    /// </summary>
+    private async Task ProcessBatchesAsync(
+        Func<EventEnvelope, CancellationToken, Task> handler,
+        CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            var batch = PollBatch();
+
+            // If no events were read, exit the batch processing loop
+            if (batch.Count == 0)
+                break;
+
+            await ProcessBatchAsync(handler, batch, ct).ConfigureAwait(false);
+
+            // Commit position after entire batch if configured
+            if (_options.ConsumerOptions.CommitStrategy == CommitStrategy.AfterBatch && _currentPosition.HasValue)
+                await _checkpointStore.WriteAsync(ConsumerId, _currentPosition.Value, ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Poll for a batch of messages from Kafka.
+    /// </summary>
+    private List<ConsumeResult<string, byte[]>> PollBatch()
+    {
+        var batch = new List<ConsumeResult<string, byte[]>>();
+        for (int i = 0; i < _options.ConsumerOptions.BatchSize; i++)
+        {
+            var result = _consumer.Consume(_options.PollTimeout);
+            if (result == null)
+                break;  // No more messages at this moment
+
+            batch.Add(result);
+        }
+
+        return batch;
+    }
+
+    /// <summary>
+    /// Process a batch of Kafka messages.
+    /// </summary>
+    private async Task ProcessBatchAsync(
+        Func<EventEnvelope, CancellationToken, Task> handler,
+        List<ConsumeResult<string, byte[]>> batch,
+        CancellationToken ct)
+    {
+        foreach (var kafkaMessage in batch)
+        {
+            // Map Kafka message to EventEnvelope
+            var envelope = KafkaMessageMapper.ToEnvelope(kafkaMessage, _serializer, _registry);
+
+            // Process event with retry logic
+            await ProcessEventWithRetryAsync(handler, envelope, ct).ConfigureAwait(false);
+
+            // Update position to the event we just processed
+            var messagePosition = KafkaMessageMapper.ToStreamPosition(kafkaMessage.Offset);
+            _currentPosition = messagePosition;
+
+            // Commit position after each event if configured
+            if (_options.ConsumerOptions.CommitStrategy == CommitStrategy.AfterEvent)
+                await _checkpointStore.WriteAsync(ConsumerId, messagePosition, ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Close the Kafka consumer if we own it.
+    /// </summary>
+    private void CloseConsumer()
+    {
+        if (_ownsConsumer)
+        {
+            try
             {
-                try
-                {
-                    _consumer.Close();
-                }
-                catch (ObjectDisposedException)
-                {
-                    // Handle already destroyed (e.g., by test container cleanup)
-                    // Safe to ignore as the connection is already gone
-                }
+                _consumer.Close();
+            }
+            catch (ObjectDisposedException)
+            {
+                // Handle already destroyed (e.g., by test container cleanup)
+                // Safe to ignore as the connection is already gone
             }
         }
     }
@@ -153,18 +186,18 @@ public sealed class KafkaStreamConsumer : IStreamConsumer, IDisposable
     /// <inheritdoc/>
     public async Task<StreamPosition?> GetPositionAsync(CancellationToken ct = default)
     {
-        return await _checkpointStore.ReadAsync(ConsumerId, ct);
+        return await _checkpointStore.ReadAsync(ConsumerId, ct).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
     public async Task ResetPositionAsync(StreamPosition position, CancellationToken ct = default)
     {
         // Delete the checkpoint to reset
-        await _checkpointStore.DeleteAsync(ConsumerId, ct);
+        await _checkpointStore.DeleteAsync(ConsumerId, ct).ConfigureAwait(false);
 
         // If position is not the start, write the new position
         if (position.Value > 0)
-            await _checkpointStore.WriteAsync(ConsumerId, position, ct);
+            await _checkpointStore.WriteAsync(ConsumerId, position, ct).ConfigureAwait(false);
 
         // Seek to the new position in Kafka (only valid if partition is assigned)
         try
@@ -184,7 +217,7 @@ public sealed class KafkaStreamConsumer : IStreamConsumer, IDisposable
     public async Task CommitAsync(CancellationToken ct = default)
     {
         if (_currentPosition.HasValue)
-            await _checkpointStore.WriteAsync(ConsumerId, _currentPosition.Value, ct);
+            await _checkpointStore.WriteAsync(ConsumerId, _currentPosition.Value, ct).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -202,7 +235,7 @@ public sealed class KafkaStreamConsumer : IStreamConsumer, IDisposable
             try
             {
                 // Attempt to process the event
-                await handler(envelope, ct);
+                await handler(envelope, ct).ConfigureAwait(false);
                 return;
             }
             catch (Exception) when (attemptCount < _options.ConsumerOptions.MaxRetries)
@@ -210,7 +243,7 @@ public sealed class KafkaStreamConsumer : IStreamConsumer, IDisposable
                 // Retry if we haven't exceeded max retries
                 attemptCount++;
                 var delay = _options.ConsumerOptions.RetryPolicy.GetDelay(attemptCount);
-                await Task.Delay(delay, ct);
+                await Task.Delay(delay, ct).ConfigureAwait(false);
             }
             catch (Exception) when (attemptCount >= _options.ConsumerOptions.MaxRetries)
             {
@@ -223,7 +256,7 @@ public sealed class KafkaStreamConsumer : IStreamConsumer, IDisposable
                         // Skip this event and continue with the next
                         return;
                     case ErrorHandlingStrategy.DeadLetter:
-                        throw new NotImplementedException("Dead-letter strategy not yet implemented");
+                        throw new NotSupportedException("Dead-letter strategy not yet implemented");
                     default:
                         throw;
                 }

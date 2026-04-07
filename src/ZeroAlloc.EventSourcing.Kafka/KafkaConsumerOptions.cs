@@ -59,13 +59,13 @@ public sealed class KafkaConsumerOptions
     public void Validate()
     {
         if (string.IsNullOrWhiteSpace(BootstrapServers))
-            throw new ArgumentException("BootstrapServers cannot be null or whitespace", nameof(BootstrapServers));
+            throw new ArgumentException($"{nameof(BootstrapServers)} cannot be null or whitespace", nameof(BootstrapServers));
 
         if (string.IsNullOrWhiteSpace(Topic))
-            throw new ArgumentException("Topic cannot be null or whitespace", nameof(Topic));
+            throw new ArgumentException($"{nameof(Topic)} cannot be null or whitespace", nameof(Topic));
 
         if (string.IsNullOrWhiteSpace(GroupId))
-            throw new ArgumentException("GroupId cannot be null or whitespace", nameof(GroupId));
+            throw new ArgumentException($"{nameof(GroupId)} cannot be null or whitespace", nameof(GroupId));
 
         if (PollTimeout <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(PollTimeout), "PollTimeout must be positive");

@@ -78,18 +78,7 @@ public sealed class SqlServerEventStoreAdapter : IEventStoreAdapter
         {
             // Read current version with UPDLOCK + HOLDLOCK to lock the range and hold until
             // transaction end, preventing phantom inserts between the SELECT and INSERT.
-            long current;
-            await using (var versionCmd = conn.CreateCommand())
-            {
-                versionCmd.Transaction = tx;
-                versionCmd.CommandText = """
-                    SELECT ISNULL(MAX(position), 0)
-                    FROM dbo.event_store WITH (UPDLOCK, HOLDLOCK)
-                    WHERE stream_id = @streamId
-                    """;
-                versionCmd.Parameters.AddWithValue("@streamId", id.Value);
-                current = (long)(await versionCmd.ExecuteScalarAsync(ct).ConfigureAwait(false) ?? 0L);
-            }
+            var current = await ReadCurrentVersionAsync(conn, tx, id, ct).ConfigureAwait(false);
 
             if (current != expectedVersion.Value)
             {
@@ -98,30 +87,8 @@ public sealed class SqlServerEventStoreAdapter : IEventStoreAdapter
                     StoreError.Conflict(id, expectedVersion, new StreamPosition(current)));
             }
 
-            // Insert events at successive positions.
-            for (var i = 0; i < eventsArray.Length; i++)
-            {
-                var e = eventsArray[i];
-                var position = expectedVersion.Value + i + 1;
-                await using var ins = conn.CreateCommand();
-                ins.Transaction = tx;
-                ins.CommandText = """
-                    INSERT INTO dbo.event_store
-                        (stream_id, position, event_type, event_id, occurred_at, correlation_id, causation_id, payload)
-                    VALUES
-                        (@streamId, @position, @eventType, @eventId, @occurredAt, @correlationId, @causationId, @payload)
-                    """;
-                ins.Parameters.AddWithValue("@streamId", id.Value);
-                ins.Parameters.AddWithValue("@position", position);
-                ins.Parameters.AddWithValue("@eventType", e.EventType);
-                ins.Parameters.AddWithValue("@eventId", e.Metadata.EventId);
-                ins.Parameters.AddWithValue("@occurredAt", e.Metadata.OccurredAt);
-                ins.Parameters.Add(new SqlParameter("@correlationId", SqlDbType.UniqueIdentifier) { Value = (object?)e.Metadata.CorrelationId ?? DBNull.Value });
-                ins.Parameters.Add(new SqlParameter("@causationId", SqlDbType.UniqueIdentifier) { Value = (object?)e.Metadata.CausationId ?? DBNull.Value });
-                ins.Parameters.Add(new SqlParameter("@payload", SqlDbType.VarBinary, -1) { Value = e.Payload.ToArray() });
-                await ins.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-            }
-
+            // Insert events at successive positions
+            await InsertEventsAsync(conn, tx, id, eventsArray, expectedVersion, ct).ConfigureAwait(false);
             await tx.CommitAsync(ct).ConfigureAwait(false);
 
             var nextVersion = new StreamPosition(expectedVersion.Value + eventsArray.Length);
@@ -132,6 +99,45 @@ public sealed class SqlServerEventStoreAdapter : IEventStoreAdapter
             // Use CancellationToken.None so a cancelled ct doesn't prevent the rollback from completing.
             try { await tx.RollbackAsync(CancellationToken.None).ConfigureAwait(false); } catch { /* connection may already be dead */ }
             throw;
+        }
+    }
+
+    private async ValueTask<long> ReadCurrentVersionAsync(SqlConnection conn, SqlTransaction tx, StreamId id, CancellationToken ct)
+    {
+        await using var versionCmd = conn.CreateCommand();
+        versionCmd.Transaction = tx;
+        versionCmd.CommandText = """
+            SELECT ISNULL(MAX(position), 0)
+            FROM dbo.event_store WITH (UPDLOCK, HOLDLOCK)
+            WHERE stream_id = @streamId
+            """;
+        versionCmd.Parameters.AddWithValue("@streamId", id.Value);
+        return (long)(await versionCmd.ExecuteScalarAsync(ct).ConfigureAwait(false) ?? 0L);
+    }
+
+    private async ValueTask InsertEventsAsync(SqlConnection conn, SqlTransaction tx, StreamId id, RawEvent[] eventsArray, StreamPosition expectedVersion, CancellationToken ct)
+    {
+        for (var i = 0; i < eventsArray.Length; i++)
+        {
+            var e = eventsArray[i];
+            var position = expectedVersion.Value + i + 1;
+            await using var ins = conn.CreateCommand();
+            ins.Transaction = tx;
+            ins.CommandText = """
+                INSERT INTO dbo.event_store
+                    (stream_id, position, event_type, event_id, occurred_at, correlation_id, causation_id, payload)
+                VALUES
+                    (@streamId, @position, @eventType, @eventId, @occurredAt, @correlationId, @causationId, @payload)
+                """;
+            ins.Parameters.AddWithValue("@streamId", id.Value);
+            ins.Parameters.AddWithValue("@position", position);
+            ins.Parameters.AddWithValue("@eventType", e.EventType);
+            ins.Parameters.AddWithValue("@eventId", e.Metadata.EventId);
+            ins.Parameters.AddWithValue("@occurredAt", e.Metadata.OccurredAt);
+            ins.Parameters.Add(new SqlParameter("@correlationId", SqlDbType.UniqueIdentifier) { Value = (object?)e.Metadata.CorrelationId ?? DBNull.Value });
+            ins.Parameters.Add(new SqlParameter("@causationId", SqlDbType.UniqueIdentifier) { Value = (object?)e.Metadata.CausationId ?? DBNull.Value });
+            ins.Parameters.Add(new SqlParameter("@payload", SqlDbType.VarBinary, -1) { Value = e.Payload.ToArray() });
+            await ins.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
         }
     }
 
