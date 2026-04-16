@@ -26,11 +26,9 @@ public sealed class KafkaConsumerOptions
     public required string GroupId { get; set; }
 
     /// <summary>
-    /// Kafka partition to consume from.
-    /// Phase 6: Single partition support only.
-    /// Default: 0.
+    /// Kafka partitions to consume from. Defaults to partition 0 only.
     /// </summary>
-    public int Partition { get; set; } = 0;
+    public int[] Partitions { get; set; } = [0];
 
     /// <summary>
     /// Consumer identifier used in checkpoint store.
@@ -56,6 +54,7 @@ public sealed class KafkaConsumerOptions
     /// </summary>
     /// <exception cref="ArgumentException">If required fields are null or whitespace.</exception>
     /// <exception cref="ArgumentOutOfRangeException">If PollTimeout is not positive.</exception>
+    /// <exception cref="InvalidOperationException">If Partitions is null or empty.</exception>
 #pragma warning disable MA0015
     public void Validate()
     {
@@ -67,6 +66,9 @@ public sealed class KafkaConsumerOptions
 
         if (string.IsNullOrWhiteSpace(GroupId))
             throw new ArgumentException("GroupId cannot be null or whitespace", nameof(GroupId));
+
+        if (Partitions == null || Partitions.Length == 0)
+            throw new InvalidOperationException("Partitions must contain at least one partition.");
 
         if (PollTimeout <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(PollTimeout), "PollTimeout must be positive");

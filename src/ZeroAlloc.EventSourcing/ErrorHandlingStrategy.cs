@@ -11,6 +11,6 @@ public enum ErrorHandlingStrategy
     /// <summary>Skip failing event, continue processing with next event</summary>
     Skip = 1,
 
-    /// <summary>Route to dead-letter store for later analysis (future feature)</summary>
+    /// <summary>Route failed events to a dead-letter store for later analysis or manual replay.</summary>
     DeadLetter = 2,
 }

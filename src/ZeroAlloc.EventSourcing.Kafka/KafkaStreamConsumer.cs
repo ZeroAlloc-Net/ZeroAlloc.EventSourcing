@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Confluent.Kafka;
 
 namespace ZeroAlloc.EventSourcing.Kafka;
@@ -14,10 +15,13 @@ public sealed class KafkaStreamConsumer : IStreamConsumer, IDisposable
     private readonly IEventTypeRegistry _registry;
     private readonly IConsumer<string, byte[]> _consumer;
     private readonly bool _ownsConsumer;  // true if we created the consumer internally
-    private StreamPosition? _currentPosition;
+    private readonly ConcurrentDictionary<int, StreamPosition> _lastPositionPerPartition;
+    private readonly IDeadLetterStore? _deadLetterStore;
 
     /// <inheritdoc/>
     public string ConsumerId => _options.ConsumerId ?? _options.GroupId;
+
+    private string CheckpointKey(int partition) => $"{ConsumerId}:p{partition}";
 
     /// <summary>
     /// Creates a new Kafka stream consumer that builds its own IConsumer internally.
@@ -26,17 +30,20 @@ public sealed class KafkaStreamConsumer : IStreamConsumer, IDisposable
     /// <param name="checkpointStore">Checkpoint store for position persistence.</param>
     /// <param name="serializer">Event serializer for deserializing message payloads.</param>
     /// <param name="registry">Event type registry for type resolution.</param>
-    /// <exception cref="ArgumentNullException">If any parameter is null.</exception>
+    /// <param name="deadLetterStore">Optional dead-letter store used when <see cref="StreamConsumerOptions.ErrorStrategy"/> is <see cref="ErrorHandlingStrategy.DeadLetter"/>.</param>
+    /// <exception cref="ArgumentNullException">If any required parameter is null.</exception>
     public KafkaStreamConsumer(
         KafkaConsumerOptions options,
         ICheckpointStore checkpointStore,
         IEventSerializer serializer,
-        IEventTypeRegistry registry)
+        IEventTypeRegistry registry,
+        IDeadLetterStore? deadLetterStore = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _checkpointStore = checkpointStore ?? throw new ArgumentNullException(nameof(checkpointStore));
         _serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
+        _deadLetterStore = deadLetterStore;
 
         // Validate options
         _options.Validate();
@@ -44,6 +51,7 @@ public sealed class KafkaStreamConsumer : IStreamConsumer, IDisposable
         // Build the Kafka consumer internally
         _consumer = BuildConsumer(_options);
         _ownsConsumer = true;
+        _lastPositionPerPartition = new ConcurrentDictionary<int, StreamPosition>();
     }
 
     /// <summary>
@@ -54,18 +62,21 @@ public sealed class KafkaStreamConsumer : IStreamConsumer, IDisposable
         ICheckpointStore checkpointStore,
         IEventSerializer serializer,
         IEventTypeRegistry registry,
-        IConsumer<string, byte[]> consumer)
+        IConsumer<string, byte[]> consumer,
+        IDeadLetterStore? deadLetterStore = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _checkpointStore = checkpointStore ?? throw new ArgumentNullException(nameof(checkpointStore));
         _serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
         _consumer = consumer ?? throw new ArgumentNullException(nameof(consumer));
+        _deadLetterStore = deadLetterStore;
 
         // Validate options
         _options.Validate();
 
         _ownsConsumer = false;  // don't close/dispose injected consumer
+        _lastPositionPerPartition = new ConcurrentDictionary<int, StreamPosition>();
     }
 
     /// <inheritdoc/>
@@ -78,15 +89,15 @@ public sealed class KafkaStreamConsumer : IStreamConsumer, IDisposable
 
         try
         {
-            // Read the last checkpoint position, default to start
-            var position = await _checkpointStore.ReadAsync(ConsumerId, ct).ConfigureAwait(false) ?? StreamPosition.Start;
-            _currentPosition = position;
+            // Read the last checkpoint position per partition, default to start
+            var topicPartitions = new List<TopicPartitionOffset>(_options.Partitions.Length);
+            foreach (var partition in _options.Partitions)
+            {
+                var position = await _checkpointStore.ReadAsync(CheckpointKey(partition), ct).ConfigureAwait(false) ?? StreamPosition.Start;
+                topicPartitions.Add(new TopicPartitionOffset(_options.Topic, new Partition(partition), new Offset(position.Value)));
+            }
 
-            // Assign the partition and seek to start position
-            _consumer.Assign(new TopicPartitionOffset(
-                _options.Topic,
-                _options.Partition,
-                new Offset(position.Value)));
+            _consumer.Assign(topicPartitions);
 
             // Continuously process batches until no more events or cancellation requested
             await ProcessBatchesAsync(handler, ct).ConfigureAwait(false);
@@ -112,11 +123,14 @@ public sealed class KafkaStreamConsumer : IStreamConsumer, IDisposable
             if (batch.Count == 0)
                 break;
 
-            await ProcessBatchAsync(handler, batch, ct).ConfigureAwait(false);
+            var lastPositionPerPartition = await ProcessBatchAsync(handler, batch, ct).ConfigureAwait(false);
 
             // Commit position after entire batch if configured
-            if (_options.ConsumerOptions.CommitStrategy == CommitStrategy.AfterBatch && _currentPosition.HasValue)
-                await _checkpointStore.WriteAsync(ConsumerId, _currentPosition.Value, ct).ConfigureAwait(false);
+            if (_options.ConsumerOptions.CommitStrategy == CommitStrategy.AfterBatch)
+            {
+                foreach (var (partition, position) in lastPositionPerPartition)
+                    await _checkpointStore.WriteAsync(CheckpointKey(partition), position, ct).ConfigureAwait(false);
+            }
         }
     }
 
@@ -140,12 +154,15 @@ public sealed class KafkaStreamConsumer : IStreamConsumer, IDisposable
 
     /// <summary>
     /// Process a batch of Kafka messages.
+    /// Returns the last processed position per partition for AfterBatch checkpointing.
     /// </summary>
-    private async Task ProcessBatchAsync(
+    private async Task<Dictionary<int, StreamPosition>> ProcessBatchAsync(
         Func<EventEnvelope, CancellationToken, Task> handler,
         List<ConsumeResult<string, byte[]>> batch,
         CancellationToken ct)
     {
+        var lastPositionPerPartition = new Dictionary<int, StreamPosition>();
+
         foreach (var kafkaMessage in batch)
         {
             // Map Kafka message to EventEnvelope
@@ -156,12 +173,16 @@ public sealed class KafkaStreamConsumer : IStreamConsumer, IDisposable
 
             // Update position to the event we just processed
             var messagePosition = KafkaMessageMapper.ToStreamPosition(kafkaMessage.Offset);
-            _currentPosition = messagePosition;
+            var messagePartition = kafkaMessage.Partition.Value;
+            _lastPositionPerPartition[messagePartition] = messagePosition;
+            lastPositionPerPartition[messagePartition] = messagePosition;
 
             // Commit position after each event if configured
             if (_options.ConsumerOptions.CommitStrategy == CommitStrategy.AfterEvent)
-                await _checkpointStore.WriteAsync(ConsumerId, messagePosition, ct).ConfigureAwait(false);
+                await _checkpointStore.WriteAsync(CheckpointKey(messagePartition), messagePosition, ct).ConfigureAwait(false);
         }
+
+        return lastPositionPerPartition;
     }
 
     /// <summary>
@@ -184,40 +205,47 @@ public sealed class KafkaStreamConsumer : IStreamConsumer, IDisposable
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// For multi-partition consumers, returns the checkpoint position for the first configured partition only.
+    /// </remarks>
     public async Task<StreamPosition?> GetPositionAsync(CancellationToken ct = default)
     {
-        return await _checkpointStore.ReadAsync(ConsumerId, ct).ConfigureAwait(false);
+        return await _checkpointStore.ReadAsync(CheckpointKey(_options.Partitions[0]), ct).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
     public async Task ResetPositionAsync(StreamPosition position, CancellationToken ct = default)
     {
-        // Delete the checkpoint to reset
-        await _checkpointStore.DeleteAsync(ConsumerId, ct).ConfigureAwait(false);
-
-        // If position is not the start, write the new position
-        if (position.Value > 0)
-            await _checkpointStore.WriteAsync(ConsumerId, position, ct).ConfigureAwait(false);
-
-        // Seek to the new position in Kafka (only valid if partition is assigned)
-        try
+        // Delete and rewrite checkpoints for all partitions
+        foreach (var partition in _options.Partitions)
         {
-            _consumer.Seek(new TopicPartitionOffset(
-                _options.Topic,
-                _options.Partition,
-                new Offset(position.Value)));
-        }
-        catch (InvalidOperationException)
-        {
-            // Partition not assigned yet, will be assigned in next ConsumeAsync call
+            await _checkpointStore.DeleteAsync(CheckpointKey(partition), ct).ConfigureAwait(false);
+
+            if (position.Value > 0)
+                await _checkpointStore.WriteAsync(CheckpointKey(partition), position, ct).ConfigureAwait(false);
+
+            // Seek to the new position in Kafka (only valid if partition is assigned)
+            try
+            {
+                _consumer.Seek(new TopicPartitionOffset(
+                    _options.Topic,
+                    new Partition(partition),
+                    new Offset(position.Value)));
+            }
+            catch (InvalidOperationException)
+            {
+                // Partition not assigned yet, will be assigned in next ConsumeAsync call
+            }
         }
     }
 
     /// <inheritdoc/>
     public async Task CommitAsync(CancellationToken ct = default)
     {
-        if (_currentPosition.HasValue)
-            await _checkpointStore.WriteAsync(ConsumerId, _currentPosition.Value, ct).ConfigureAwait(false);
+        foreach (var (partition, position) in _lastPositionPerPartition)
+        {
+            await _checkpointStore.WriteAsync(CheckpointKey(partition), position, ct).ConfigureAwait(false);
+        }
     }
 
     /// <summary>
@@ -245,7 +273,7 @@ public sealed class KafkaStreamConsumer : IStreamConsumer, IDisposable
                 var delay = _options.ConsumerOptions.RetryPolicy.GetDelay(attemptCount);
                 await Task.Delay(delay, ct).ConfigureAwait(false);
             }
-            catch (Exception) when (attemptCount >= _options.ConsumerOptions.MaxRetries)
+            catch (Exception ex) when (attemptCount >= _options.ConsumerOptions.MaxRetries)
             {
                 // Handle error based on strategy
                 switch (_options.ConsumerOptions.ErrorStrategy)
@@ -256,7 +284,12 @@ public sealed class KafkaStreamConsumer : IStreamConsumer, IDisposable
                         // Skip this event and continue with the next
                         return;
                     case ErrorHandlingStrategy.DeadLetter:
-                        throw new NotSupportedException("Dead-letter strategy not yet implemented");
+                        if (_deadLetterStore == null)
+                            throw new InvalidOperationException(
+                                "ErrorHandlingStrategy.DeadLetter requires a dead-letter store. " +
+                                "Pass an IDeadLetterStore to the KafkaStreamConsumer constructor.");
+                        await _deadLetterStore.WriteAsync(ConsumerId, envelope, ex, ct).ConfigureAwait(false);
+                        return; // skip event, continue consuming
                     default:
                         throw;
                 }
