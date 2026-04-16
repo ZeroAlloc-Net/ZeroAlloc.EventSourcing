@@ -16,7 +16,7 @@ public class PostgreSqlCheckpointStoreTests : CheckpointStoreContractTests, IAsy
 
     public async Task InitializeAsync()
     {
-        _container = new PostgreSqlBuilder().Build();
+        _container = new PostgreSqlBuilder("postgres:16-alpine").Build();
         await _container.StartAsync();
 
         _dataSource = NpgsqlDataSource.Create(_container.GetConnectionString());

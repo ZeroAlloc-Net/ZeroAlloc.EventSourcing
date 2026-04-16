@@ -9,7 +9,7 @@ namespace ZeroAlloc.EventSourcing.PostgreSql.Tests;
 
 public sealed class PostgreSqlSubscriptionTests : IAsyncLifetime
 {
-    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder().Build();
+    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:16-alpine").Build();
     private PostgreSqlEventStoreAdapter _adapter = null!;
     private NpgsqlDataSource _dataSource = null!;
 
