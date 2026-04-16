@@ -28,6 +28,5 @@ public sealed class InMemoryDeadLetterStore : IDeadLetterStore
             ct.ThrowIfCancellationRequested();
             yield return entry;
         }
-        await Task.CompletedTask.ConfigureAwait(false);
     }
 }
