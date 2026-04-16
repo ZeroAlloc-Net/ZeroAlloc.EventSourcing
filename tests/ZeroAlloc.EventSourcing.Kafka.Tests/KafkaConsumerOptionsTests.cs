@@ -34,4 +34,19 @@ public class KafkaConsumerOptionsTests
         // Assert
         options.Partitions.Should().Equal([0, 1, 2]);
     }
+
+    [Fact]
+    public void KafkaConsumerOptions_EmptyPartitions_ThrowsOnValidate()
+    {
+        var opts = new KafkaConsumerOptions
+        {
+            BootstrapServers = "localhost:9092",
+            Topic = "events",
+            GroupId = "g1",
+            Partitions = []
+        };
+        var act = () => opts.Validate();
+        act.Should().Throw<InvalidOperationException>()
+           .WithMessage("*Partitions*");
+    }
 }

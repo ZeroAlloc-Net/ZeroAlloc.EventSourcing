@@ -54,6 +54,7 @@ public sealed class KafkaConsumerOptions
     /// </summary>
     /// <exception cref="ArgumentException">If required fields are null or whitespace.</exception>
     /// <exception cref="ArgumentOutOfRangeException">If PollTimeout is not positive.</exception>
+    /// <exception cref="InvalidOperationException">If Partitions is null or empty.</exception>
 #pragma warning disable MA0015
     public void Validate()
     {
@@ -65,6 +66,9 @@ public sealed class KafkaConsumerOptions
 
         if (string.IsNullOrWhiteSpace(GroupId))
             throw new ArgumentException("GroupId cannot be null or whitespace", nameof(GroupId));
+
+        if (Partitions == null || Partitions.Length == 0)
+            throw new InvalidOperationException("Partitions must contain at least one partition.");
 
         if (PollTimeout <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(PollTimeout), "PollTimeout must be positive");

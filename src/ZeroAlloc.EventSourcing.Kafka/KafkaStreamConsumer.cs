@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Confluent.Kafka;
 
 namespace ZeroAlloc.EventSourcing.Kafka;
@@ -14,8 +15,7 @@ public sealed class KafkaStreamConsumer : IStreamConsumer, IDisposable
     private readonly IEventTypeRegistry _registry;
     private readonly IConsumer<string, byte[]> _consumer;
     private readonly bool _ownsConsumer;  // true if we created the consumer internally
-    private StreamPosition? _currentPosition;
-    private int _currentPartition;
+    private readonly ConcurrentDictionary<int, StreamPosition> _lastPositionPerPartition;
 
     /// <inheritdoc/>
     public string ConsumerId => _options.ConsumerId ?? _options.GroupId;
@@ -47,6 +47,7 @@ public sealed class KafkaStreamConsumer : IStreamConsumer, IDisposable
         // Build the Kafka consumer internally
         _consumer = BuildConsumer(_options);
         _ownsConsumer = true;
+        _lastPositionPerPartition = new ConcurrentDictionary<int, StreamPosition>();
     }
 
     /// <summary>
@@ -69,6 +70,7 @@ public sealed class KafkaStreamConsumer : IStreamConsumer, IDisposable
         _options.Validate();
 
         _ownsConsumer = false;  // don't close/dispose injected consumer
+        _lastPositionPerPartition = new ConcurrentDictionary<int, StreamPosition>();
     }
 
     /// <inheritdoc/>
@@ -166,8 +168,7 @@ public sealed class KafkaStreamConsumer : IStreamConsumer, IDisposable
             // Update position to the event we just processed
             var messagePosition = KafkaMessageMapper.ToStreamPosition(kafkaMessage.Offset);
             var messagePartition = kafkaMessage.Partition.Value;
-            _currentPosition = messagePosition;
-            _currentPartition = messagePartition;
+            _lastPositionPerPartition[messagePartition] = messagePosition;
             lastPositionPerPartition[messagePartition] = messagePosition;
 
             // Commit position after each event if configured
@@ -198,6 +199,9 @@ public sealed class KafkaStreamConsumer : IStreamConsumer, IDisposable
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// For multi-partition consumers, returns the checkpoint position for the first configured partition only.
+    /// </remarks>
     public async Task<StreamPosition?> GetPositionAsync(CancellationToken ct = default)
     {
         return await _checkpointStore.ReadAsync(CheckpointKey(_options.Partitions[0]), ct).ConfigureAwait(false);
@@ -232,8 +236,10 @@ public sealed class KafkaStreamConsumer : IStreamConsumer, IDisposable
     /// <inheritdoc/>
     public async Task CommitAsync(CancellationToken ct = default)
     {
-        if (_currentPosition.HasValue)
-            await _checkpointStore.WriteAsync(CheckpointKey(_currentPartition), _currentPosition.Value, ct).ConfigureAwait(false);
+        foreach (var (partition, position) in _lastPositionPerPartition)
+        {
+            await _checkpointStore.WriteAsync(CheckpointKey(partition), position, ct).ConfigureAwait(false);
+        }
     }
 
     /// <summary>
