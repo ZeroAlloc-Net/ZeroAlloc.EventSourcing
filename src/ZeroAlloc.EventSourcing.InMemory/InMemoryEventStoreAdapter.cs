@@ -40,7 +40,7 @@ public sealed class InMemoryEventStoreAdapter : IEventStoreAdapter
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         // Special handling for "$all" pseudo-stream: reads from all streams in order
-        if (string.Equals(id.Value, "$all") || string.Equals(id.Value, "*"))
+        if (string.Equals(id.Value, "$all", StringComparison.Ordinal) || string.Equals(id.Value, "*", StringComparison.Ordinal))
         {
             var allEvents = new List<RawEvent>();
             foreach (var stream in _streams.Values)

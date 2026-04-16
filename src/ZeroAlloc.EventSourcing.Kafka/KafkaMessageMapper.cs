@@ -82,7 +82,7 @@ internal static class KafkaMessageMapper
         if (headers == null)
             return null;
 
-        var header = headers.FirstOrDefault(h => string.Equals(h.Key, headerName));
+        var header = headers.FirstOrDefault(h => string.Equals(h.Key, headerName, StringComparison.Ordinal));
         if (header == null)
             return null;
 

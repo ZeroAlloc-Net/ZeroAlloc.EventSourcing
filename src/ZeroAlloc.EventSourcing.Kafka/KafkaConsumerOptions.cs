@@ -60,16 +60,16 @@ public sealed class KafkaConsumerOptions
     public void Validate()
     {
         if (string.IsNullOrWhiteSpace(BootstrapServers))
-            throw new ArgumentException("bootstrapServers cannot be null or whitespace", "bootstrapServers");
+            throw new ArgumentException("BootstrapServers cannot be null or whitespace", nameof(BootstrapServers));
 
         if (string.IsNullOrWhiteSpace(Topic))
-            throw new ArgumentException("topic cannot be null or whitespace", "topic");
+            throw new ArgumentException("Topic cannot be null or whitespace", nameof(Topic));
 
         if (string.IsNullOrWhiteSpace(GroupId))
-            throw new ArgumentException("groupId cannot be null or whitespace", "groupId");
+            throw new ArgumentException("GroupId cannot be null or whitespace", nameof(GroupId));
 
         if (PollTimeout <= TimeSpan.Zero)
-            throw new ArgumentOutOfRangeException("pollTimeout", "pollTimeout must be positive");
+            throw new ArgumentOutOfRangeException(nameof(PollTimeout), "PollTimeout must be positive");
 
         // Validate nested StreamConsumerOptions through its property setters (which validate)
         // No additional validation needed — the setters handle BatchSize, MaxRetries range checks

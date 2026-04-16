@@ -63,7 +63,7 @@ public sealed class SqlServerSnapshotStore<TState> : ISnapshotStore<TState> wher
             var payload = (byte[])reader.GetValue(2);
 
             // Type validation: if stateType doesn't match TState, return null (treat as missing)
-            if (!string.Equals(stateType, typeof(TState).FullName))
+            if (!string.Equals(stateType, typeof(TState).FullName, StringComparison.Ordinal))
             {
                 return null;
             }
