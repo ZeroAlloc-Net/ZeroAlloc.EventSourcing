@@ -95,15 +95,15 @@ public abstract class ReplayableProjection<TReadModel> : Projection<TReadModel>
         Current = default!;
 
         // Replay all events from the store
-        await foreach (var @event in eventStore.ReadAsync(streamId, StreamPosition.Start, ct))
+        await foreach (var @event in eventStore.ReadAsync(streamId, StreamPosition.Start, ct).ConfigureAwait(false))
         {
             ct.ThrowIfCancellationRequested();
-            await HandleAsync(@event, ct);
+            await HandleAsync(@event, ct).ConfigureAwait(false);
         }
 
         // Serialize and save the rebuilt state
         var key = GetProjectionKey();
         var serialized = System.Text.Json.JsonSerializer.Serialize(Current);
-        await store.SaveAsync(key, serialized, ct);
+        await store.SaveAsync(key, serialized, ct).ConfigureAwait(false);
     }
 }

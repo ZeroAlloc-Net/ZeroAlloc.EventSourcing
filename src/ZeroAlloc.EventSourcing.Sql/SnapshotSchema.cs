@@ -56,8 +56,11 @@ public static class SnapshotSchema
     {
         ArgumentNullException.ThrowIfNull(dataSource);
 
-        await using var conn = await dataSource.OpenConnectionAsync(ct).ConfigureAwait(false);
-        await using var cmd = conn.CreateCommand();
+        var conn = await dataSource.OpenConnectionAsync(ct).ConfigureAwait(false);
+        #pragma warning disable MA0004
+        await using var _ = conn;
+        #pragma warning restore MA0004
+        using var cmd = conn.CreateCommand();
         cmd.CommandText = PostgreSqlCreateTable;
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
@@ -74,9 +77,11 @@ public static class SnapshotSchema
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
 
-        await using var conn = new SqlConnection(connectionString);
+        using var conn = new SqlConnection(connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
-        await using var cmd = conn.CreateCommand();
+        #pragma warning disable MA0004
+        using var cmd = conn.CreateCommand();
+        #pragma warning restore MA0004
         cmd.CommandText = SqlServerCreateTable;
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }

@@ -56,33 +56,3 @@ public class StreamConsumerOptions
     /// </summary>
     public CommitStrategy CommitStrategy { get; set; } = CommitStrategy.AfterBatch;
 }
-
-/// <summary>
-/// Strategy for handling processing errors after retries exhausted.
-/// </summary>
-public enum ErrorHandlingStrategy
-{
-    /// <summary>Stop consumer immediately on error (fail-fast, throws exception)</summary>
-    FailFast = 0,
-
-    /// <summary>Skip failing event, continue processing with next event</summary>
-    Skip = 1,
-
-    /// <summary>Route to dead-letter store for later analysis (future feature)</summary>
-    DeadLetter = 2,
-}
-
-/// <summary>
-/// Strategy for when to commit consumer position to checkpoint store.
-/// </summary>
-public enum CommitStrategy
-{
-    /// <summary>Commit position after each event processed</summary>
-    AfterEvent = 0,
-
-    /// <summary>Commit position after entire batch processed (default, better performance)</summary>
-    AfterBatch = 1,
-
-    /// <summary>Manual commits (application calls CommitAsync explicitly)</summary>
-    Manual = 2,
-}

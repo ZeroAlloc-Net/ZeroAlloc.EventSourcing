@@ -56,6 +56,7 @@ public sealed class KafkaConsumerOptions
     /// </summary>
     /// <exception cref="ArgumentException">If required fields are null or whitespace.</exception>
     /// <exception cref="ArgumentOutOfRangeException">If PollTimeout is not positive.</exception>
+#pragma warning disable MA0015
     public void Validate()
     {
         if (string.IsNullOrWhiteSpace(BootstrapServers))
@@ -73,4 +74,5 @@ public sealed class KafkaConsumerOptions
         // Validate nested StreamConsumerOptions through its property setters (which validate)
         // No additional validation needed — the setters handle BatchSize, MaxRetries range checks
     }
+#pragma warning restore MA0015
 }

@@ -42,9 +42,9 @@ public sealed class SqlServerSnapshotStore<TState> : ISnapshotStore<TState> wher
     {
         ct.ThrowIfCancellationRequested();
 
-        await using var conn = new SqlConnection(_connectionString);
+        using var conn = new SqlConnection(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
-        await using var cmd = conn.CreateCommand();
+        using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             SELECT position, state_type, payload
             FROM snapshots
@@ -52,7 +52,9 @@ public sealed class SqlServerSnapshotStore<TState> : ISnapshotStore<TState> wher
             """;
         cmd.Parameters.AddWithValue("@stream_id", streamId.Value);
 
+        #pragma warning disable MA0004
         await using var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        #pragma warning restore MA0004
 
         if (await reader.ReadAsync(ct).ConfigureAwait(false))
         {
@@ -61,7 +63,7 @@ public sealed class SqlServerSnapshotStore<TState> : ISnapshotStore<TState> wher
             var payload = (byte[])reader.GetValue(2);
 
             // Type validation: if stateType doesn't match TState, return null (treat as missing)
-            if (stateType != typeof(TState).FullName)
+            if (!string.Equals(stateType, typeof(TState).FullName, StringComparison.Ordinal))
             {
                 return null;
             }
@@ -94,9 +96,9 @@ public sealed class SqlServerSnapshotStore<TState> : ISnapshotStore<TState> wher
         var stateType = typeof(TState).FullName ?? typeof(TState).Name;
         var createdAt = DateTime.UtcNow;
 
-        await using var conn = new SqlConnection(_connectionString);
+        using var conn = new SqlConnection(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
-        await using var cmd = conn.CreateCommand();
+        using var cmd = conn.CreateCommand();
         cmd.CommandText = """
             MERGE INTO snapshots AS target
             USING (SELECT @stream_id AS stream_id) AS source

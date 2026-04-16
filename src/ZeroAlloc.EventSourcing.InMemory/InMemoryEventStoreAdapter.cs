@@ -12,7 +12,7 @@ namespace ZeroAlloc.EventSourcing.InMemory;
 /// </summary>
 public sealed class InMemoryEventStoreAdapter : IEventStoreAdapter
 {
-    private readonly ConcurrentDictionary<string, InMemoryStream> _streams = new();
+    private readonly ConcurrentDictionary<string, InMemoryStream> _streams = new(StringComparer.Ordinal);
 
     /// <inheritdoc/>
     public ValueTask<Result<AppendResult, StoreError>> AppendAsync(
@@ -40,7 +40,7 @@ public sealed class InMemoryEventStoreAdapter : IEventStoreAdapter
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         // Special handling for "$all" pseudo-stream: reads from all streams in order
-        if (id.Value == "$all" || id.Value == "*")
+        if (string.Equals(id.Value, "$all", StringComparison.Ordinal) || string.Equals(id.Value, "*", StringComparison.Ordinal))
         {
             var allEvents = new List<RawEvent>();
             foreach (var stream in _streams.Values)
@@ -90,7 +90,7 @@ public sealed class InMemoryEventStoreAdapter : IEventStoreAdapter
         var callback = new ZeroAlloc.AsyncEvents.AsyncEvent<RawEvent>(async (e, token) =>
         {
             if (sub?.IsRunning == true)
-                await handler(e, token);
+                await handler(e, token).ConfigureAwait(false);
         });
 
         stream.Subscribe(callback);

@@ -46,7 +46,7 @@ public sealed class StreamConsumer : IStreamConsumer
             throw new ArgumentNullException(nameof(handler));
 
         // Read starting position from checkpoint
-        var position = await _checkpointStore.ReadAsync(ConsumerId, cancellationToken) ?? StreamPosition.Start;
+        var position = await _checkpointStore.ReadAsync(ConsumerId, cancellationToken).ConfigureAwait(false) ?? StreamPosition.Start;
         _currentPosition = position;
 
         // Consume events in batches
@@ -55,7 +55,7 @@ public sealed class StreamConsumer : IStreamConsumer
             var batch = new List<EventEnvelope>();
 
             // Fetch batch of events
-            await foreach (var envelope in _eventStore.ReadAsync(_streamId, position, cancellationToken))
+            await foreach (var envelope in _eventStore.ReadAsync(_streamId, position, cancellationToken).ConfigureAwait(false))
             {
                 batch.Add(envelope);
                 if (batch.Count >= _options.BatchSize)
@@ -68,39 +68,39 @@ public sealed class StreamConsumer : IStreamConsumer
             // Process batch
             foreach (var envelope in batch)
             {
-                await ProcessEventWithRetryAsync(handler, envelope, cancellationToken);
+                await ProcessEventWithRetryAsync(handler, envelope, cancellationToken).ConfigureAwait(false);
                 position = envelope.Position;
                 _currentPosition = position;
 
                 if (_options.CommitStrategy == CommitStrategy.AfterEvent)
-                    await _checkpointStore.WriteAsync(ConsumerId, position, cancellationToken);
+                    await _checkpointStore.WriteAsync(ConsumerId, position, cancellationToken).ConfigureAwait(false);
             }
 
             // Commit after batch if configured
             if (_options.CommitStrategy == CommitStrategy.AfterBatch)
-                await _checkpointStore.WriteAsync(ConsumerId, position, cancellationToken);
+                await _checkpointStore.WriteAsync(ConsumerId, position, cancellationToken).ConfigureAwait(false);
         }
     }
 
     /// <inheritdoc/>
     public async Task<StreamPosition?> GetPositionAsync(CancellationToken cancellationToken = default)
     {
-        return await _checkpointStore.ReadAsync(ConsumerId, cancellationToken);
+        return await _checkpointStore.ReadAsync(ConsumerId, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
     public async Task ResetPositionAsync(StreamPosition position, CancellationToken cancellationToken = default)
     {
-        await _checkpointStore.DeleteAsync(ConsumerId, cancellationToken);
+        await _checkpointStore.DeleteAsync(ConsumerId, cancellationToken).ConfigureAwait(false);
         if (position.Value > 0)
-            await _checkpointStore.WriteAsync(ConsumerId, position, cancellationToken);
+            await _checkpointStore.WriteAsync(ConsumerId, position, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
     public async Task CommitAsync(CancellationToken cancellationToken = default)
     {
         if (_currentPosition.HasValue)
-            await _checkpointStore.WriteAsync(ConsumerId, _currentPosition.Value, cancellationToken);
+            await _checkpointStore.WriteAsync(ConsumerId, _currentPosition.Value, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task ProcessEventWithRetryAsync(
@@ -114,14 +114,14 @@ public sealed class StreamConsumer : IStreamConsumer
         {
             try
             {
-                await handler(envelope, cancellationToken);
+                await handler(envelope, cancellationToken).ConfigureAwait(false);
                 return; // Success
             }
             catch (Exception) when (attemptCount < _options.MaxRetries)
             {
                 attemptCount++;
                 var delay = _options.RetryPolicy.GetDelay(attemptCount);
-                await Task.Delay(delay, cancellationToken);
+                await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception) when (attemptCount >= _options.MaxRetries)
             {
@@ -134,8 +134,7 @@ public sealed class StreamConsumer : IStreamConsumer
                         // Log and continue silently
                         return;
                     case ErrorHandlingStrategy.DeadLetter:
-                        // TODO: Route to dead-letter store
-                        throw new NotImplementedException("Dead-letter strategy not yet implemented");
+                        throw new NotSupportedException("Dead-letter strategy not yet implemented");
                     default:
                         throw;
                 }

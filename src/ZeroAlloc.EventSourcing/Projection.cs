@@ -126,6 +126,6 @@ public abstract class Projection<TReadModel>
     {
         ct.ThrowIfCancellationRequested();
         Current = Apply(Current, @event);
-        await ValueTask.CompletedTask;
+        await ValueTask.CompletedTask.ConfigureAwait(false);
     }
 }

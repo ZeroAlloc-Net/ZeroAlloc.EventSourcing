@@ -222,7 +222,7 @@ public class StreamConsumerTests
             }, default);
         };
 
-        await action.Should().ThrowAsync<NotImplementedException>();
+        await action.Should().ThrowAsync<NotSupportedException>();
     }
 
     [Fact]

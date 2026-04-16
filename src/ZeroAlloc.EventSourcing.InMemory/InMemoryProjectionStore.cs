@@ -9,7 +9,7 @@ namespace ZeroAlloc.EventSourcing.InMemory;
 /// </summary>
 public sealed class InMemoryProjectionStore : IProjectionStore
 {
-    private readonly ConcurrentDictionary<string, string> _projections = new();
+    private readonly ConcurrentDictionary<string, string> _projections = new(StringComparer.Ordinal);
 
     /// <inheritdoc/>
     public ValueTask SaveAsync(string key, string state, CancellationToken ct = default)

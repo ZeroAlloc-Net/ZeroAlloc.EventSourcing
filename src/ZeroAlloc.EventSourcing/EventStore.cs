@@ -47,7 +47,7 @@ public sealed class EventStore : IEventStore
                 EventMetadata.New(typeName));
         }
 
-        return await _adapter.AppendAsync(id, raw.AsMemory(), expectedVersion, ct);
+        return await _adapter.AppendAsync(id, raw.AsMemory(), expectedVersion, ct).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>
@@ -80,7 +80,7 @@ public sealed class EventStore : IEventStore
 
             var deserialized = _serializer.Deserialize(raw.Payload, type);
             var envelope = new EventEnvelope(id, raw.Position, deserialized, raw.Metadata);
-            await handler(envelope, token);
-        }, ct);
+            await handler(envelope, token).ConfigureAwait(false);
+        }, ct).ConfigureAwait(false);
     }
 }
