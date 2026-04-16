@@ -28,7 +28,7 @@ public sealed class SqlServerCheckpointStore : ICheckpointStore
     /// This method is idempotent and safe to call multiple times.
     /// </summary>
     /// <param name="ct">A cancellation token.</param>
-    public async Task EnsureSchemaAsync(CancellationToken ct = default)
+    public async ValueTask EnsureSchemaAsync(CancellationToken ct = default)
     {
         using var conn = new SqlConnection(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
