@@ -16,6 +16,7 @@ public sealed class KafkaStreamConsumer : IStreamConsumer, IDisposable
     private readonly IConsumer<string, byte[]> _consumer;
     private readonly bool _ownsConsumer;  // true if we created the consumer internally
     private readonly ConcurrentDictionary<int, StreamPosition> _lastPositionPerPartition;
+    private readonly IDeadLetterStore? _deadLetterStore;
 
     /// <inheritdoc/>
     public string ConsumerId => _options.ConsumerId ?? _options.GroupId;
@@ -29,17 +30,20 @@ public sealed class KafkaStreamConsumer : IStreamConsumer, IDisposable
     /// <param name="checkpointStore">Checkpoint store for position persistence.</param>
     /// <param name="serializer">Event serializer for deserializing message payloads.</param>
     /// <param name="registry">Event type registry for type resolution.</param>
-    /// <exception cref="ArgumentNullException">If any parameter is null.</exception>
+    /// <param name="deadLetterStore">Optional dead-letter store used when <see cref="StreamConsumerOptions.ErrorStrategy"/> is <see cref="ErrorHandlingStrategy.DeadLetter"/>.</param>
+    /// <exception cref="ArgumentNullException">If any required parameter is null.</exception>
     public KafkaStreamConsumer(
         KafkaConsumerOptions options,
         ICheckpointStore checkpointStore,
         IEventSerializer serializer,
-        IEventTypeRegistry registry)
+        IEventTypeRegistry registry,
+        IDeadLetterStore? deadLetterStore = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _checkpointStore = checkpointStore ?? throw new ArgumentNullException(nameof(checkpointStore));
         _serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
+        _deadLetterStore = deadLetterStore;
 
         // Validate options
         _options.Validate();
@@ -58,13 +62,15 @@ public sealed class KafkaStreamConsumer : IStreamConsumer, IDisposable
         ICheckpointStore checkpointStore,
         IEventSerializer serializer,
         IEventTypeRegistry registry,
-        IConsumer<string, byte[]> consumer)
+        IConsumer<string, byte[]> consumer,
+        IDeadLetterStore? deadLetterStore = null)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
         _checkpointStore = checkpointStore ?? throw new ArgumentNullException(nameof(checkpointStore));
         _serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
         _consumer = consumer ?? throw new ArgumentNullException(nameof(consumer));
+        _deadLetterStore = deadLetterStore;
 
         // Validate options
         _options.Validate();
@@ -267,7 +273,7 @@ public sealed class KafkaStreamConsumer : IStreamConsumer, IDisposable
                 var delay = _options.ConsumerOptions.RetryPolicy.GetDelay(attemptCount);
                 await Task.Delay(delay, ct).ConfigureAwait(false);
             }
-            catch (Exception) when (attemptCount >= _options.ConsumerOptions.MaxRetries)
+            catch (Exception ex) when (attemptCount >= _options.ConsumerOptions.MaxRetries)
             {
                 // Handle error based on strategy
                 switch (_options.ConsumerOptions.ErrorStrategy)
@@ -278,7 +284,12 @@ public sealed class KafkaStreamConsumer : IStreamConsumer, IDisposable
                         // Skip this event and continue with the next
                         return;
                     case ErrorHandlingStrategy.DeadLetter:
-                        throw new NotSupportedException("Dead-letter strategy not yet implemented");
+                        if (_deadLetterStore == null)
+                            throw new InvalidOperationException(
+                                "ErrorHandlingStrategy.DeadLetter requires a dead-letter store. " +
+                                "Pass an IDeadLetterStore to the KafkaStreamConsumer constructor.");
+                        await _deadLetterStore.WriteAsync(ConsumerId, envelope, ex, ct).ConfigureAwait(false);
+                        return; // skip event, continue consuming
                     default:
                         throw;
                 }
