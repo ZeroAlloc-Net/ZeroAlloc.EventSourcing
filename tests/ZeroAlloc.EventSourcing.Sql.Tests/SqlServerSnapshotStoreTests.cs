@@ -1,15 +1,20 @@
+using System.Text.Json;
 using FluentAssertions;
+using Testcontainers.MsSql;
 using ZeroAlloc.EventSourcing;
 using ZeroAlloc.EventSourcing.Sql;
 
 namespace ZeroAlloc.EventSourcing.Sql.Tests;
 
 /// <summary>
-/// Contract tests for <see cref="SqlServerSnapshotStore{TState}"/>.
+/// Contract tests for <see cref="SqlServerSnapshotStore{TState}"/> against a real SQL Server database.
 /// Inherits all contract tests from <see cref="SnapshotStoreContractTests{TStore}"/>.
 /// </summary>
-public class SqlServerSnapshotStoreTests : SnapshotStoreContractTests<SqlServerSnapshotStore<SnapshotTestState>>
+[Collection("SqlServer")]
+public sealed class SqlServerSnapshotStoreTests : SnapshotStoreContractTests<SqlServerSnapshotStore<SnapshotTestState>>
 {
+    private readonly MsSqlContainer _container = new MsSqlBuilder("mcr.microsoft.com/mssql/server:2022-latest").Build();
+
     /// <summary>Test that constructor rejects null connection string.</summary>
     [Fact]
     public void Constructor_NullConnectionString_ThrowsArgumentNullException()
@@ -34,39 +39,28 @@ public class SqlServerSnapshotStoreTests : SnapshotStoreContractTests<SqlServerS
             .Should().Throw<ArgumentException>();
     }
 
-    /// <summary>Test that constructor accepts valid connection string.</summary>
-    [Fact]
-    public void Constructor_ValidConnectionString_Succeeds()
-    {
-        const string connectionString = "Server=localhost;Database=test;User Id=sa;Password=YourPassword123!;Trust Server Certificate=true;";
-
-        FluentActions.Invoking(() => new SqlServerSnapshotStore<SnapshotTestState>(connectionString))
-            .Should().NotThrow();
-    }
-
     /// <inheritdoc/>
     protected override async Task<SqlServerSnapshotStore<SnapshotTestState>> CreateStoreAsync()
     {
-        const string connectionString = "Server=localhost;Database=test;User Id=sa;Password=YourPassword123!;Trust Server Certificate=true;";
-        var store = new SqlServerSnapshotStore<SnapshotTestState>(connectionString);
-        // EnsureSchemaAsync is called to initialize the database schema
-        // In real tests with a database, this would create the table
-        // For unit tests with dummy connection strings, this is a no-op
-        try
-        {
-            await store.EnsureSchemaAsync();
-        }
-        catch
-        {
-            // Ignore connection errors for unit tests with dummy connection strings
-        }
+        await _container.StartAsync();
+        var store = new SqlServerSnapshotStore<SnapshotTestState>(_container.GetConnectionString(), new JsonEventSerializer());
+        await store.EnsureSchemaAsync();
         return store;
     }
 
     /// <inheritdoc/>
     public override async Task DisposeAsync()
     {
-        // No resources to dispose for unit tests with dummy connection strings
-        await Task.CompletedTask;
+        await _container.StopAsync();
+    }
+
+    private sealed class JsonEventSerializer : IEventSerializer
+    {
+        public ReadOnlyMemory<byte> Serialize<TEvent>(TEvent @event) where TEvent : notnull
+            => System.Text.Encoding.UTF8.GetBytes(JsonSerializer.Serialize(@event));
+
+        public object Deserialize(ReadOnlyMemory<byte> data, Type targetType)
+            => JsonSerializer.Deserialize(System.Text.Encoding.UTF8.GetString(data.Span), targetType)
+               ?? throw new InvalidOperationException("Deserialization returned null");
     }
 }
