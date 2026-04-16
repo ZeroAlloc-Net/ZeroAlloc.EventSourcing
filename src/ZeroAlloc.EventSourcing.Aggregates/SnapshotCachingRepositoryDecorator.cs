@@ -58,8 +58,8 @@ public sealed class SnapshotCachingRepositoryDecorator<TAggregate, TId, TState> 
         if (strategy != SnapshotLoadingStrategy.IgnoreSnapshot && eventStore == null)
             throw new ArgumentNullException(nameof(eventStore), "Event store is required when strategy is not IgnoreSnapshot");
 
-        if (snapshotPolicy != null && snapshotPolicy != SnapshotPolicy.Never && extractState == null)
-            throw new ArgumentNullException(nameof(extractState), "extractState is required when a non-Never snapshotPolicy is provided");
+        if (snapshotPolicy != null && extractState == null)
+            throw new ArgumentNullException(nameof(extractState), "extractState is required when a snapshotPolicy is provided");
 
         _innerRepository = innerRepository;
         _snapshotStore = snapshotStore;
@@ -158,13 +158,13 @@ public sealed class SnapshotCachingRepositoryDecorator<TAggregate, TId, TState> 
     {
         var result = await _innerRepository.SaveAsync(aggregate, id, ct).ConfigureAwait(false);
 
-        if (result.IsSuccess && _snapshotPolicy != SnapshotPolicy.Never)
+        if (result.IsSuccess && _extractState != null)
         {
             var streamId = _streamIdFactory(id);
             var lastSnapshot = await _snapshotStore.ReadAsync(streamId, ct).ConfigureAwait(false);
             if (_snapshotPolicy.ShouldSnapshot(result.Value.NextExpectedVersion, lastSnapshot?.Position))
             {
-                var state = _extractState!(aggregate);
+                var state = _extractState(aggregate);
                 await _snapshotStore.WriteAsync(streamId, result.Value.NextExpectedVersion, state, ct).ConfigureAwait(false);
             }
         }

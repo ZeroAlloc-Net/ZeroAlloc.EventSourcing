@@ -48,6 +48,7 @@ public sealed class PostgreSqlProjectionStore : IProjectionStore
     public async ValueTask SaveAsync(string key, string state, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        ValidateKey(key);
 
         #pragma warning disable MA0004
         await using var connection = await _dataSource.OpenConnectionAsync(ct).ConfigureAwait(false);
@@ -70,6 +71,7 @@ public sealed class PostgreSqlProjectionStore : IProjectionStore
     public async ValueTask<string?> LoadAsync(string key, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        ValidateKey(key);
 
         #pragma warning disable MA0004
         await using var connection = await _dataSource.OpenConnectionAsync(ct).ConfigureAwait(false);
@@ -88,6 +90,7 @@ public sealed class PostgreSqlProjectionStore : IProjectionStore
     public async ValueTask ClearAsync(string key, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        ValidateKey(key);
 
         #pragma warning disable MA0004
         await using var connection = await _dataSource.OpenConnectionAsync(ct).ConfigureAwait(false);
@@ -97,5 +100,11 @@ public sealed class PostgreSqlProjectionStore : IProjectionStore
         command.Parameters.AddWithValue("@projection_key", key);
 
         await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    private static void ValidateKey(string key)
+    {
+        if (key.Length > 256)
+            throw new ArgumentException("Projection key must not exceed 256 characters.", nameof(key));
     }
 }

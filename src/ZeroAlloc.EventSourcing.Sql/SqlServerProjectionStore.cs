@@ -56,6 +56,7 @@ public sealed class SqlServerProjectionStore : IProjectionStore
     public async ValueTask SaveAsync(string key, string state, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        ValidateKey(key);
 
         using var conn = new SqlConnection(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
@@ -83,6 +84,7 @@ public sealed class SqlServerProjectionStore : IProjectionStore
     public async ValueTask<string?> LoadAsync(string key, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        ValidateKey(key);
 
         using var conn = new SqlConnection(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
@@ -102,6 +104,7 @@ public sealed class SqlServerProjectionStore : IProjectionStore
     public async ValueTask ClearAsync(string key, CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
+        ValidateKey(key);
 
         using var conn = new SqlConnection(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
@@ -112,5 +115,11 @@ public sealed class SqlServerProjectionStore : IProjectionStore
         cmd.Parameters.AddWithValue("@projection_key", key);
 
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    private static void ValidateKey(string key)
+    {
+        if (key.Length > 256)
+            throw new ArgumentException("Projection key must not exceed 256 characters.", nameof(key));
     }
 }
