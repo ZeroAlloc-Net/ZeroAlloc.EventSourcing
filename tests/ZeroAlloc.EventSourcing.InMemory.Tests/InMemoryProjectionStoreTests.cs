@@ -1,14 +1,19 @@
 using FluentAssertions;
+using ZeroAlloc.EventSourcing;
 using ZeroAlloc.EventSourcing.InMemory;
+using ZeroAlloc.EventSourcing.Tests;
 
 namespace ZeroAlloc.EventSourcing.InMemory.Tests;
 
 /// <summary>
 /// Unit tests for <see cref="InMemoryProjectionStore"/>. Verifies that the in-memory store
 /// correctly saves, loads, and clears projection state.
+/// Also inherits all contract tests from <see cref="ProjectionStoreContractTests"/>.
 /// </summary>
-public class InMemoryProjectionStoreTests
+public class InMemoryProjectionStoreTests : ProjectionStoreContractTests
 {
+    protected override IProjectionStore CreateStore() => new InMemoryProjectionStore();
+
     [Fact]
     public async Task SaveThenLoad_ReturnsStoredState()
     {
