@@ -18,7 +18,7 @@ public class KafkaStreamConsumerTests
             BootstrapServers = "localhost:9092",
             Topic = TestTopic,
             GroupId = TestGroupId,
-            Partition = TestPartition,
+            Partitions = [TestPartition],
             ConsumerId = consumerId,
             ConsumerOptions = new()
             {

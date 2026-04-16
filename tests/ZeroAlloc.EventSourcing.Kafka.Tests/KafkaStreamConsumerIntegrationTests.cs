@@ -38,7 +38,7 @@ public class KafkaStreamConsumerIntegrationTests : IAsyncLifetime
             BootstrapServers = _bootstrapServers,
             Topic = topic,
             GroupId = "test-group-1",
-            Partition = TestPartition,
+            Partitions = [TestPartition],
             ConsumerOptions = new()
             {
                 BatchSize = 100,
@@ -83,7 +83,7 @@ public class KafkaStreamConsumerIntegrationTests : IAsyncLifetime
             BootstrapServers = _bootstrapServers,
             Topic = topic,
             GroupId = "test-group-2",
-            Partition = TestPartition,
+            Partitions = [TestPartition],
             ConsumerOptions = new()
             {
                 BatchSize = 100,
@@ -144,7 +144,7 @@ public class KafkaStreamConsumerIntegrationTests : IAsyncLifetime
             BootstrapServers = _bootstrapServers,
             Topic = topic,
             GroupId = "test-group-3",
-            Partition = TestPartition,
+            Partitions = [TestPartition],
             ConsumerOptions = new()
             {
                 BatchSize = 100,
@@ -198,7 +198,7 @@ public class KafkaStreamConsumerIntegrationTests : IAsyncLifetime
             BootstrapServers = _bootstrapServers,
             Topic = topic,
             GroupId = "test-group-4",
-            Partition = TestPartition,
+            Partitions = [TestPartition],
             ConsumerOptions = new()
             {
                 BatchSize = 100,
@@ -241,7 +241,7 @@ public class KafkaStreamConsumerIntegrationTests : IAsyncLifetime
             BootstrapServers = _bootstrapServers,
             Topic = topic,
             GroupId = "test-group-5a",
-            Partition = TestPartition,
+            Partitions = [TestPartition],
             ConsumerOptions = new()
             {
                 BatchSize = 100,
@@ -256,7 +256,7 @@ public class KafkaStreamConsumerIntegrationTests : IAsyncLifetime
             BootstrapServers = _bootstrapServers,
             Topic = topic,
             GroupId = "test-group-5b",
-            Partition = TestPartition,
+            Partitions = [TestPartition],
             ConsumerOptions = new()
             {
                 BatchSize = 100,

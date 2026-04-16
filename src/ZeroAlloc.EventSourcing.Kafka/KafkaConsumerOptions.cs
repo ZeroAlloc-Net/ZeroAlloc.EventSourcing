@@ -26,11 +26,9 @@ public sealed class KafkaConsumerOptions
     public required string GroupId { get; set; }
 
     /// <summary>
-    /// Kafka partition to consume from.
-    /// Phase 6: Single partition support only.
-    /// Default: 0.
+    /// Kafka partitions to consume from. Defaults to partition 0 only.
     /// </summary>
-    public int Partition { get; set; } = 0;
+    public int[] Partitions { get; set; } = [0];
 
     /// <summary>
     /// Consumer identifier used in checkpoint store.
