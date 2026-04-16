@@ -37,7 +37,7 @@ public sealed class SnapshotCachingRepositoryDecorator<TAggregate, TId, TState> 
     /// <param name="restoreState">Callback to restore aggregate state from a snapshot before replaying events.</param>
     /// <param name="eventStore">Optional event store for reading events. Required if strategy is not IgnoreSnapshot.</param>
     /// <param name="streamIdFactory">Optional factory to map aggregate ID to stream ID. If not provided, standard convention is used.</param>
-    /// <param name="aggregateFactory">Optional factory to create fresh aggregate instances. Must be provided if snapshot optimization is used.</param>
+    /// <param name="aggregateFactory">Factory to create fresh aggregate instances. Required when <paramref name="strategy"/> is not <see cref="SnapshotLoadingStrategy.IgnoreSnapshot"/>.</param>
     /// <param name="snapshotPolicy">Optional policy controlling when snapshots are written on save. Defaults to <see cref="SnapshotPolicy.Never"/>.</param>
     /// <param name="extractState">Factory to extract state from an aggregate for snapshotting. Required when <paramref name="snapshotPolicy"/> is not Never.</param>
     public SnapshotCachingRepositoryDecorator(
@@ -67,7 +67,9 @@ public sealed class SnapshotCachingRepositoryDecorator<TAggregate, TId, TState> 
         _restoreState = restoreState;
         _eventStore = eventStore!;
         _streamIdFactory = streamIdFactory ?? (id => new StreamId($"aggregate-{id}"));
-        _aggregateFactory = aggregateFactory ?? throw new ArgumentNullException(nameof(aggregateFactory), "Aggregate factory is required for snapshot optimization");
+        if (strategy != SnapshotLoadingStrategy.IgnoreSnapshot && aggregateFactory == null)
+            throw new ArgumentNullException(nameof(aggregateFactory), "Aggregate factory is required when strategy is not IgnoreSnapshot");
+        _aggregateFactory = aggregateFactory!;
         _snapshotPolicy = snapshotPolicy ?? SnapshotPolicy.Never;
         _extractState = extractState;
     }
