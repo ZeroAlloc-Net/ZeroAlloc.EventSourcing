@@ -25,6 +25,8 @@ public sealed class SnapshotCachingRepositoryDecorator<TAggregate, TId, TState> 
     private readonly Func<TId, StreamId> _streamIdFactory;
     private readonly IEventStore _eventStore;
     private readonly Func<TAggregate> _aggregateFactory;
+    private readonly ISnapshotPolicy _snapshotPolicy;
+    private readonly Func<TAggregate, TState>? _extractState;
 
     /// <summary>
     /// Initializes the decorator with snapshot loading configuration.
@@ -36,6 +38,8 @@ public sealed class SnapshotCachingRepositoryDecorator<TAggregate, TId, TState> 
     /// <param name="eventStore">Optional event store for reading events. Required if strategy is not IgnoreSnapshot.</param>
     /// <param name="streamIdFactory">Optional factory to map aggregate ID to stream ID. If not provided, standard convention is used.</param>
     /// <param name="aggregateFactory">Optional factory to create fresh aggregate instances. Must be provided if snapshot optimization is used.</param>
+    /// <param name="snapshotPolicy">Optional policy controlling when snapshots are written on save. Defaults to <see cref="SnapshotPolicy.Never"/>.</param>
+    /// <param name="extractState">Factory to extract state from an aggregate for snapshotting. Required when <paramref name="snapshotPolicy"/> is not Never.</param>
     public SnapshotCachingRepositoryDecorator(
         IAggregateRepository<TAggregate, TId> innerRepository,
         ISnapshotStore<TState> snapshotStore,
@@ -43,7 +47,9 @@ public sealed class SnapshotCachingRepositoryDecorator<TAggregate, TId, TState> 
         Action<TAggregate, TState, StreamPosition> restoreState,
         IEventStore? eventStore = null,
         Func<TId, StreamId>? streamIdFactory = null,
-        Func<TAggregate>? aggregateFactory = null)
+        Func<TAggregate>? aggregateFactory = null,
+        ISnapshotPolicy? snapshotPolicy = null,
+        Func<TAggregate, TState>? extractState = null)
     {
         ArgumentNullException.ThrowIfNull(innerRepository);
         ArgumentNullException.ThrowIfNull(snapshotStore);
@@ -52,6 +58,9 @@ public sealed class SnapshotCachingRepositoryDecorator<TAggregate, TId, TState> 
         if (strategy != SnapshotLoadingStrategy.IgnoreSnapshot && eventStore == null)
             throw new ArgumentNullException(nameof(eventStore), "Event store is required when strategy is not IgnoreSnapshot");
 
+        if (snapshotPolicy != null && snapshotPolicy != SnapshotPolicy.Never && extractState == null)
+            throw new ArgumentNullException(nameof(extractState), "extractState is required when a non-Never snapshotPolicy is provided");
+
         _innerRepository = innerRepository;
         _snapshotStore = snapshotStore;
         _strategy = strategy;
@@ -59,6 +68,8 @@ public sealed class SnapshotCachingRepositoryDecorator<TAggregate, TId, TState> 
         _eventStore = eventStore!;
         _streamIdFactory = streamIdFactory ?? (id => new StreamId($"aggregate-{id}"));
         _aggregateFactory = aggregateFactory ?? throw new ArgumentNullException(nameof(aggregateFactory), "Aggregate factory is required for snapshot optimization");
+        _snapshotPolicy = snapshotPolicy ?? SnapshotPolicy.Never;
+        _extractState = extractState;
     }
 
     /// <inheritdoc/>
@@ -143,7 +154,19 @@ public sealed class SnapshotCachingRepositoryDecorator<TAggregate, TId, TState> 
     /// <inheritdoc/>
     public async ValueTask<Result<AppendResult, StoreError>> SaveAsync(TAggregate aggregate, TId id, CancellationToken ct = default)
     {
-        // SaveAsync is not modified — always delegate to inner repository
-        return await _innerRepository.SaveAsync(aggregate, id, ct).ConfigureAwait(false);
+        var result = await _innerRepository.SaveAsync(aggregate, id, ct).ConfigureAwait(false);
+
+        if (result.IsSuccess && _snapshotPolicy != SnapshotPolicy.Never)
+        {
+            var streamId = _streamIdFactory(id);
+            var lastSnapshot = await _snapshotStore.ReadAsync(streamId, ct).ConfigureAwait(false);
+            if (_snapshotPolicy.ShouldSnapshot(result.Value.NextExpectedVersion, lastSnapshot?.Position))
+            {
+                var state = _extractState!(aggregate);
+                await _snapshotStore.WriteAsync(streamId, result.Value.NextExpectedVersion, state, ct).ConfigureAwait(false);
+            }
+        }
+
+        return result;
     }
 }
