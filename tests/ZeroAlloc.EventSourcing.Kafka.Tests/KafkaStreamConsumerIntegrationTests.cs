@@ -13,8 +13,7 @@ public class KafkaStreamConsumerIntegrationTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        _kafkaContainer = new KafkaBuilder()
-            .WithImage("confluentinc/cp-kafka:7.5.0")
+        _kafkaContainer = new KafkaBuilder("confluentinc/cp-kafka:7.5.0")
             .Build();
 
         await _kafkaContainer.StartAsync();

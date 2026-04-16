@@ -8,7 +8,7 @@ namespace ZeroAlloc.EventSourcing.SqlServer.Tests;
 
 public sealed class SqlServerAdapterTests : IAsyncLifetime
 {
-    private readonly MsSqlContainer _container = new MsSqlBuilder().Build();
+    private readonly MsSqlContainer _container = new MsSqlBuilder("mcr.microsoft.com/mssql/server:2022-latest").Build();
     private SqlServerEventStoreAdapter _adapter = null!;
 
     public async Task InitializeAsync()

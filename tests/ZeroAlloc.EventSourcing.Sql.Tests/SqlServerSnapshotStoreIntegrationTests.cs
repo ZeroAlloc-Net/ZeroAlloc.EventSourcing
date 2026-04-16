@@ -26,7 +26,7 @@ public sealed class SqlServerSnapshotStoreIntegrationTests : IAsyncLifetime
         public string Status { get; set; }
     }
 
-    private readonly MsSqlContainer _container = new MsSqlBuilder().Build();
+    private readonly MsSqlContainer _container = new MsSqlBuilder("mcr.microsoft.com/mssql/server:2022-latest").Build();
     private SqlServerSnapshotStore<OrderState> _store = null!;
     private TestEventSerializer _serializer = null!;
 

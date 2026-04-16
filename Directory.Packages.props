@@ -3,7 +3,7 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
   <ItemGroup>
-    <PackageVersion Include="ZeroAlloc.Results"                  Version="0.1.5" />
+    <PackageVersion Include="ZeroAlloc.Results"                  Version="0.1.4" />
     <PackageVersion Include="ZeroAlloc.Collections"              Version="0.1.5" />
     <PackageVersion Include="ZeroAlloc.AsyncEvents"              Version="1.0.0" />
     <PackageVersion Include="ZeroAlloc.ValueObjects"             Version="1.1.6" />
@@ -22,10 +22,10 @@
     <PackageVersion Include="Npgsql"                             Version="10.0.2" />
     <PackageVersion Include="NSubstitute"                        Version="5.3.0" />
     <PackageVersion Include="Microsoft.Data.SqlClient"           Version="7.0.0" />
-    <PackageVersion Include="Testcontainers.PostgreSql"          Version="4.1.0" />
-    <PackageVersion Include="Testcontainers.MsSql"               Version="4.1.0" />
+    <PackageVersion Include="Testcontainers.PostgreSql"          Version="4.11.0" />
+    <PackageVersion Include="Testcontainers.MsSql"               Version="4.11.0" />
     <PackageVersion Include="BenchmarkDotNet"                    Version="0.15.8" />
     <PackageVersion Include="Confluent.Kafka"                    Version="2.14.0" />
-    <PackageVersion Include="Testcontainers.Kafka"               Version="4.1.0" />
+    <PackageVersion Include="Testcontainers.Kafka"               Version="4.11.0" />
   </ItemGroup>
 </Project>

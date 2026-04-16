@@ -27,7 +27,7 @@ public sealed class PostgreSqlSnapshotStoreIntegrationTests : IAsyncLifetime
         public string Status { get; set; }
     }
 
-    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder().Build();
+    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:16-alpine").Build();
     private NpgsqlDataSource _dataSource = null!;
     private PostgreSqlSnapshotStore<OrderState> _store = null!;
     private TestEventSerializer _serializer = null!;
