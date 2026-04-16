@@ -9,6 +9,7 @@ public sealed class StreamConsumer : IStreamConsumer
     private readonly ICheckpointStore _checkpointStore;
     private readonly StreamConsumerOptions _options;
     private readonly StreamId _streamId;
+    private readonly IDeadLetterStore? _deadLetterStore;
     private StreamPosition? _currentPosition;
 
     /// <inheritdoc/>
@@ -20,12 +21,14 @@ public sealed class StreamConsumer : IStreamConsumer
     /// <param name="consumerId">Unique identifier for this consumer.</param>
     /// <param name="options">Configuration options (uses defaults if null).</param>
     /// <param name="streamId">The stream to consume from (defaults to "*" for global stream).</param>
+    /// <param name="deadLetterStore">Optional dead-letter store used when <see cref="StreamConsumerOptions.ErrorStrategy"/> is <see cref="ErrorHandlingStrategy.DeadLetter"/>.</param>
     public StreamConsumer(
         IEventStore eventStore,
         ICheckpointStore checkpointStore,
         string consumerId,
         StreamConsumerOptions? options = null,
-        StreamId? streamId = null)
+        StreamId? streamId = null,
+        IDeadLetterStore? deadLetterStore = null)
     {
         if (string.IsNullOrWhiteSpace(consumerId))
             throw new ArgumentException("Consumer ID cannot be null or whitespace", nameof(consumerId));
@@ -34,6 +37,7 @@ public sealed class StreamConsumer : IStreamConsumer
         _checkpointStore = checkpointStore ?? throw new ArgumentNullException(nameof(checkpointStore));
         _options = options ?? new StreamConsumerOptions();
         _streamId = streamId ?? new StreamId("*");
+        _deadLetterStore = deadLetterStore;
         ConsumerId = consumerId;
     }
 
@@ -123,7 +127,7 @@ public sealed class StreamConsumer : IStreamConsumer
                 var delay = _options.RetryPolicy.GetDelay(attemptCount);
                 await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
             }
-            catch (Exception) when (attemptCount >= _options.MaxRetries)
+            catch (Exception ex) when (attemptCount >= _options.MaxRetries)
             {
                 // Retries exhausted
                 switch (_options.ErrorStrategy)
@@ -134,7 +138,12 @@ public sealed class StreamConsumer : IStreamConsumer
                         // Log and continue silently
                         return;
                     case ErrorHandlingStrategy.DeadLetter:
-                        throw new NotSupportedException("Dead-letter strategy not yet implemented");
+                        if (_deadLetterStore == null)
+                            throw new InvalidOperationException(
+                                "ErrorHandlingStrategy.DeadLetter requires a dead-letter store. " +
+                                "Pass an IDeadLetterStore to the StreamConsumer constructor.");
+                        await _deadLetterStore.WriteAsync(ConsumerId, envelope, ex, cancellationToken).ConfigureAwait(false);
+                        return; // skip this event and continue consuming
                     default:
                         throw;
                 }

@@ -222,7 +222,8 @@ public class StreamConsumerTests
             }, default);
         };
 
-        await action.Should().ThrowAsync<NotSupportedException>();
+        await action.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*dead-letter store*");
     }
 
     [Fact]
