@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Npgsql;
 using ZeroAlloc.EventSourcing;
 
@@ -194,5 +195,55 @@ public static class EventSourcingBuilderExtensions
         builder.Services.TryAddSingleton<IProjectionStore>(
             _ => new SqlServerProjectionStore(connectionString));
         return builder;
+    }
+
+    // ── Health Checks ─────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Registers <see cref="PostgreSqlEventStoreHealthCheck"/> with the health check system.
+    /// Performs a <c>SELECT 1</c> against the PostgreSQL data source.
+    /// </summary>
+    /// <param name="builder">The health checks builder.</param>
+    /// <param name="connectionString">PostgreSQL connection string used to create the data source.</param>
+    /// <param name="name">Health check registration name. Defaults to <c>postgresql-event-store</c>.</param>
+    /// <param name="failureStatus">Status to report on failure. Defaults to <see cref="HealthStatus.Unhealthy"/>.</param>
+    /// <param name="tags">Optional tags for filtering.</param>
+    public static IHealthChecksBuilder AddPostgreSqlEventStore(
+        this IHealthChecksBuilder builder,
+        string connectionString,
+        string name = "postgresql-event-store",
+        HealthStatus? failureStatus = null,
+        IEnumerable<string>? tags = null)
+    {
+        builder.Services.TryAddSingleton(_ => NpgsqlDataSource.Create(connectionString));
+        return builder.Add(new HealthCheckRegistration(
+            name,
+            sp => new PostgreSqlEventStoreHealthCheck(sp.GetRequiredService<NpgsqlDataSource>()),
+            failureStatus,
+            tags));
+    }
+
+    /// <summary>
+    /// Registers <see cref="PostgreSqlCheckpointStoreHealthCheck"/> with the health check system.
+    /// Performs a <c>SELECT 1</c> against the PostgreSQL data source.
+    /// </summary>
+    /// <param name="builder">The health checks builder.</param>
+    /// <param name="connectionString">PostgreSQL connection string used to create the data source.</param>
+    /// <param name="name">Health check registration name. Defaults to <c>postgresql-checkpoint-store</c>.</param>
+    /// <param name="failureStatus">Status to report on failure. Defaults to <see cref="HealthStatus.Unhealthy"/>.</param>
+    /// <param name="tags">Optional tags for filtering.</param>
+    public static IHealthChecksBuilder AddPostgreSqlCheckpointStore(
+        this IHealthChecksBuilder builder,
+        string connectionString,
+        string name = "postgresql-checkpoint-store",
+        HealthStatus? failureStatus = null,
+        IEnumerable<string>? tags = null)
+    {
+        builder.Services.TryAddSingleton(_ => NpgsqlDataSource.Create(connectionString));
+        return builder.Add(new HealthCheckRegistration(
+            name,
+            sp => new PostgreSqlCheckpointStoreHealthCheck(sp.GetRequiredService<NpgsqlDataSource>()),
+            failureStatus,
+            tags));
     }
 }
