@@ -9,6 +9,7 @@
     <PackageReference Include="ZeroAlloc.Collections" />
     <PackageReference Include="ZeroAlloc.AsyncEvents" />
     <PackageReference Include="ZeroAlloc.ValueObjects" />
+    <PackageReference Include="ZeroAlloc.Serialisation" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(IsRoslynComponent)' != 'true'">
