@@ -90,14 +90,8 @@ public class EventStoreUpcasterTests
 
         var store = new EventStore(adapter, serializer, registry, pipeline);
 
-        // Write a V1 event before subscribing
-        var v1 = new OrderCreatedV1("order-2");
-        await store.AppendAsync(
-            new StreamId("orders-2"),
-            new ReadOnlyMemory<object>([v1]),
-            StreamPosition.Start);
-
-        // Act — subscribe and collect the first delivered event
+        // Act — subscribe first, then write the V1 event (InMemory subscription only delivers
+        // events written after StartAsync; it does not replay pre-existing events)
         var received = new List<EventEnvelope>();
         var tcs = new TaskCompletionSource();
 
@@ -111,6 +105,12 @@ public class EventStoreUpcasterTests
                 return ValueTask.CompletedTask;
             });
         await sub.StartAsync();
+
+        var v1 = new OrderCreatedV1("order-2");
+        await store.AppendAsync(
+            new StreamId("orders-2"),
+            new ReadOnlyMemory<object>([v1]),
+            StreamPosition.Start);
 
         await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
