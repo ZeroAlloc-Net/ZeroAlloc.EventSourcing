@@ -9,17 +9,31 @@ public sealed class UpcasterPipeline : IUpcasterPipeline
     private readonly Dictionary<Type, (Func<object, object> Apply, Type ToType)> _chain;
     private const int MaxDepth = 32;
 
-    /// <summary>Initializes a pipeline from the given set of registrations.</summary>
+    /// <summary>Initialises a pipeline from the given set of registrations.</summary>
     public UpcasterPipeline(IEnumerable<UpcasterRegistration> registrations)
     {
         ArgumentNullException.ThrowIfNull(registrations);
-        _chain = registrations.ToDictionary(
+
+        var list = registrations.ToList();
+        var duplicates = list
+            .GroupBy(r => r.FromType)
+            .Where(g => g.Count() > 1)
+            .Select(g => g.Key.FullName ?? g.Key.Name)
+            .ToList();
+
+        if (duplicates.Count > 0)
+            throw new ArgumentException(
+                $"Duplicate upcaster registrations for type(s): {string.Join(", ", duplicates)}. " +
+                "Only one upcaster may be registered per source type.",
+                nameof(registrations));
+
+        _chain = list.ToDictionary(
             r => r.FromType,
             r => (r.Apply, r.ToType));
     }
 
     /// <inheritdoc/>
-    public bool TryUpcast(object oldEvent, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out object? upgraded)
+    public bool TryUpcast(object oldEvent, out object upgraded)
     {
         ArgumentNullException.ThrowIfNull(oldEvent);
 

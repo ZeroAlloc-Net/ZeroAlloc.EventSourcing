@@ -16,5 +16,5 @@ public interface IUpcasterPipeline
     /// one upcaster applied; returns <see langword="false"/> when no upcaster is registered
     /// for <paramref name="oldEvent"/>'s type (event passes through unchanged).
     /// </summary>
-    bool TryUpcast(object oldEvent, [System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out object? upgraded);
+    bool TryUpcast(object oldEvent, out object upgraded);
 }

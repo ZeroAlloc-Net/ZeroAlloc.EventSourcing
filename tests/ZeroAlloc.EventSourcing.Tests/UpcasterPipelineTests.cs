@@ -13,9 +13,10 @@ public class UpcasterPipelineTests
     public void TryUpcast_ReturnsFalse_WhenNoUpcasterRegistered()
     {
         var pipeline = new UpcasterPipeline([]);
-        var result = pipeline.TryUpcast(new V1("x"), out var upgraded);
+        var input = new V1("x");
+        var result = pipeline.TryUpcast(input, out var upgraded);
         result.Should().BeFalse();
-        upgraded.Should().BeEquivalentTo(new V1("x"));
+        upgraded.Should().BeSameAs(input);
     }
 
     [Fact]
@@ -44,6 +45,17 @@ public class UpcasterPipelineTests
 
         result.Should().BeTrue();
         upgraded.Should().BeEquivalentTo(new V3("abc", "default", 3));
+    }
+
+    [Fact]
+    public void Constructor_ThrowsOnDuplicateFromType()
+    {
+        var reg1 = new UpcasterRegistration(typeof(V1), typeof(V2), o => new V2(((V1)o).Id, "x"));
+        var reg2 = new UpcasterRegistration(typeof(V1), typeof(V3), o => new V3(((V1)o).Id, "y", 1));
+
+        var act = () => new UpcasterPipeline([reg1, reg2]);
+        act.Should().Throw<ArgumentException>()
+            .WithMessage("*Duplicate upcaster registrations*");
     }
 
     [Fact]
