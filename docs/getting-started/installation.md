@@ -27,6 +27,31 @@ dotnet add package ZeroAlloc.EventSourcing.Sql
 dotnet add package ZeroAlloc.EventSourcing.Generators
 ```
 
+**For source-generated, allocation-friendly serialization:**
+```bash
+dotnet add package ZeroAlloc.Serialisation
+```
+
+Then add a serializer adapter for your chosen format, e.g.:
+```bash
+dotnet add package ZeroAlloc.Serialisation.SystemTextJson
+```
+
+## Wiring Up Dependency Injection
+
+After installing the packages, register services in your DI container. Mark your event types with
+`[ZeroAllocSerializable]` so the source generator can emit the dispatcher, then call:
+
+```csharp
+services
+    .AddSerializerDispatcher()  // emitted by ZeroAlloc.Serialisation source generator
+    .AddEventSourcing();        // registers IEventSerializer → ZeroAllocEventSerializer
+```
+
+`AddSerializerDispatcher()` is generated per assembly at compile time — no reflection, AOT-safe.
+`AddEventSourcing()` wires `IEventSerializer` to the built-in `ZeroAllocEventSerializer`, which
+delegates to the dispatcher.
+
 ## Minimum Requirements
 
 - **.NET 8+**

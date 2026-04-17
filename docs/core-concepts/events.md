@@ -265,7 +265,33 @@ public interface IEventSerializer
 }
 ```
 
-You implement these once for your domain:
+### Built-in: ZeroAllocEventSerializer (recommended)
+
+The `ZeroAlloc.Serialisation` package provides `ZeroAllocEventSerializer` — a built-in
+implementation of `IEventSerializer` that uses source-generated, reflection-free dispatch.
+
+Mark your event types with `[ZeroAllocSerializable]` and a serializer adapter attribute, then
+wire up DI:
+
+```csharp
+// Mark your event types
+[ZeroAllocSerializable]
+[JsonSerializable(typeof(OrderPlacedEvent))]  // adapter-specific attribute
+public record OrderPlacedEvent(string OrderId, decimal Total);
+
+// In your composition root
+services
+    .AddSerializerDispatcher()  // generated at compile time — no reflection
+    .AddEventSourcing();        // registers IEventSerializer → ZeroAllocEventSerializer
+```
+
+`AddSerializerDispatcher()` is emitted by the `ZeroAlloc.Serialisation` source generator: a
+compile-time switch over every `[ZeroAllocSerializable]` type in your assembly. AOT-safe, zero
+allocations on the dispatch path.
+
+### Custom: implementing IEventSerializer yourself
+
+For full control, implement `IEventSerializer` and `IEventTypeRegistry` manually:
 
 ```csharp
 public class OrderEventTypeRegistry : IEventTypeRegistry
@@ -290,6 +316,9 @@ public class JsonEventSerializer : IEventSerializer
         => JsonSerializer.Deserialize(payload.Span, eventType)!;
 }
 ```
+
+This approach uses reflection — useful for prototyping but not recommended for production hot
+paths. Prefer `ZeroAllocEventSerializer` when throughput matters.
 
 ## Good vs. Problematic Event Definitions
 
