@@ -147,6 +147,20 @@ public partial class InvoiceProjection : Projection<InvoiceSummary>
         // Try to use the generated ApplyTyped first
         return ApplyTyped(current, @event.Event);
     }
+
+    /// <summary>
+    /// Fallback dispatch method — normally emitted by ProjectionDispatchGenerator.
+    /// Present here so the test project compiles when the generator cannot run
+    /// (e.g. SDK/Roslyn version mismatch).
+    /// </summary>
+    private InvoiceSummary ApplyTyped(InvoiceSummary current, object @event)
+        => @event switch
+        {
+            InvoiceCreatedEvent e => Apply(current, e),
+            InvoicePaidEvent e => Apply(current, e),
+            InvoiceRefundedEvent e => Apply(current, e),
+            _ => current
+        };
 }
 
 public class ProjectionDispatchGeneratorTests

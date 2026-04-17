@@ -1,3 +1,4 @@
+using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using NSubstitute;
 using ZeroAlloc.Serialisation;
@@ -16,8 +17,7 @@ public class ServiceCollectionExtensionsTests
         services.AddEventSourcing();
 
         var provider = services.BuildServiceProvider();
-        var serializer = provider.GetRequiredService<IEventSerializer>();
-        Assert.IsType<ZeroAllocEventSerializer>(serializer);
+        provider.GetRequiredService<IEventSerializer>().Should().BeOfType<ZeroAllocEventSerializer>();
     }
 
     [Fact]
@@ -30,15 +30,52 @@ public class ServiceCollectionExtensionsTests
         services.AddEventSourcing();
 
         var provider = services.BuildServiceProvider();
-        var serializer = provider.GetRequiredService<IEventSerializer>();
-        Assert.Same(custom, serializer);
+        provider.GetRequiredService<IEventSerializer>().Should().BeSameAs(custom);
     }
 
     [Fact]
-    public void AddEventSourcing_ReturnsServices_ForChaining()
+    public void AddEventSourcing_ReturnsBuilder_WithSameServices()
     {
         var services = new ServiceCollection();
-        var result = services.AddEventSourcing();
-        Assert.Same(services, result);
+
+        var builder = services.AddEventSourcing();
+
+        builder.Should().BeOfType<EventSourcingBuilder>();
+        builder.Services.Should().BeSameAs(services);
+    }
+
+    [Fact]
+    public void UseInMemoryCheckpointStore_RegistersInMemoryCheckpointStore()
+    {
+        var services = new ServiceCollection();
+
+        services.AddEventSourcing().UseInMemoryCheckpointStore();
+
+        var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<ICheckpointStore>().Should().BeOfType<InMemoryCheckpointStore>();
+    }
+
+    [Fact]
+    public void UseInMemoryCheckpointStore_DoesNotOverwriteUserRegistration()
+    {
+        var services = new ServiceCollection();
+        var custom = Substitute.For<ICheckpointStore>();
+        services.AddSingleton(custom);
+
+        services.AddEventSourcing().UseInMemoryCheckpointStore();
+
+        var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<ICheckpointStore>().Should().BeSameAs(custom);
+    }
+
+    [Fact]
+    public void UseInMemoryCheckpointStore_ReturnsBuilder_ForChaining()
+    {
+        var services = new ServiceCollection();
+        var builder = services.AddEventSourcing();
+
+        var result = builder.UseInMemoryCheckpointStore();
+
+        result.Should().BeSameAs(builder);
     }
 }
