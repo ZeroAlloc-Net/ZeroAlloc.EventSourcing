@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 
 namespace ZeroAlloc.EventSourcing.InMemory;
 
@@ -69,4 +70,24 @@ public static class EventSourcingBuilderExtensions
         builder.Services.TryAddSingleton<IProjectionStore, InMemoryProjectionStore>();
         return builder;
     }
+
+    /// <summary>
+    /// Registers <see cref="InMemoryEventStoreHealthCheck"/> with the health check system.
+    /// Always reports <see cref="HealthStatus.Healthy"/> — use mainly to keep health check
+    /// registration consistent across environments.
+    /// </summary>
+    /// <param name="builder">The health checks builder.</param>
+    /// <param name="name">Health check registration name. Defaults to <c>inmemory-event-store</c>.</param>
+    /// <param name="failureStatus">Status to report on failure.</param>
+    /// <param name="tags">Optional tags for filtering.</param>
+    public static IHealthChecksBuilder AddInMemoryEventStore(
+        this IHealthChecksBuilder builder,
+        string name = "inmemory-event-store",
+        HealthStatus? failureStatus = null,
+        IEnumerable<string>? tags = null)
+        => builder.Add(new HealthCheckRegistration(
+            name,
+            _ => new InMemoryEventStoreHealthCheck(),
+            failureStatus,
+            tags));
 }
