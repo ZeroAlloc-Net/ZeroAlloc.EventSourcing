@@ -73,4 +73,50 @@ public class EventStoreUpcasterTests
         result.Should().BeTrue();
         upgraded.Should().BeOfType<OrderCreated>().Which.OrderId.Should().Be("y");
     }
+
+    [Fact]
+    public async Task SubscribeAsync_UpcasesV1EventToCurrentType()
+    {
+        // Arrange — build EventStore directly to avoid DI serializer wiring complexity
+        var adapter  = new InMemoryEventStoreAdapter();
+        var serializer  = new JsonEventSerializer();
+        var registry    = new UpcasterTestTypeRegistry();
+        var pipeline    = new UpcasterPipeline([
+            new UpcasterRegistration(
+                typeof(OrderCreatedV1),
+                typeof(OrderCreated),
+                o => { var v = (OrderCreatedV1)o; return new OrderCreated(v.OrderId, "subbed"); })
+        ]);
+
+        var store = new EventStore(adapter, serializer, registry, pipeline);
+
+        // Write a V1 event before subscribing
+        var v1 = new OrderCreatedV1("order-2");
+        await store.AppendAsync(
+            new StreamId("orders-2"),
+            new ReadOnlyMemory<object>([v1]),
+            StreamPosition.Start);
+
+        // Act — subscribe and collect the first delivered event
+        var received = new List<EventEnvelope>();
+        var tcs = new TaskCompletionSource();
+
+        var sub = await store.SubscribeAsync(
+            new StreamId("orders-2"),
+            StreamPosition.Start,
+            (e, _) =>
+            {
+                received.Add(e);
+                tcs.TrySetResult();
+                return ValueTask.CompletedTask;
+            });
+        await sub.StartAsync();
+
+        await tcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        // Assert — the V1 event must arrive as the current OrderCreated type with the mapped CustomerId
+        received.Should().ContainSingle();
+        received[0].Event.Should().BeOfType<OrderCreated>()
+            .Which.CustomerId.Should().Be("subbed");
+    }
 }

@@ -30,6 +30,10 @@ public static class EventSourcingBuilderUpcasterExtensions
     /// Registers a class-based upcaster <typeparamref name="TUpcaster"/> that transforms
     /// <typeparamref name="TOld"/> events to <typeparamref name="TNew"/>.
     /// </summary>
+    /// <remarks>
+    /// <typeparamref name="TUpcaster"/> is registered as a singleton.
+    /// Avoid injecting scoped services into <typeparamref name="TUpcaster"/> to prevent lifetime mismatch.
+    /// </remarks>
     public static EventSourcingBuilder AddUpcaster<TOld, TNew, TUpcaster>(
         this EventSourcingBuilder builder)
         where TOld : notnull
