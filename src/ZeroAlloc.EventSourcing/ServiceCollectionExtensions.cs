@@ -30,6 +30,12 @@ public static class ServiceCollectionExtensions
     /// <summary>
     /// Registers <see cref="InMemoryCheckpointStore"/> as <see cref="ICheckpointStore"/>.
     /// </summary>
+    /// <remarks>
+    /// Checkpoints are stored in memory and lost on application restart.
+    /// Use only for testing or single-process applications.
+    /// Register a durable <see cref="ICheckpointStore"/> before calling
+    /// <see cref="AddEventSourcing"/> to opt out of this default.
+    /// </remarks>
     public static EventSourcingBuilder UseInMemoryCheckpointStore(this EventSourcingBuilder builder)
     {
         builder.Services.TryAddSingleton<ICheckpointStore, InMemoryCheckpointStore>();
