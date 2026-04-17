@@ -1,20 +1,77 @@
-# ZeroAlloc.EventSourcing Documentation Index
+---
+id: index
+title: ZeroAlloc.EventSourcing
+slug: /
+description: Zero-allocation event sourcing library for .NET 8+.
+sidebar_position: 1
+---
 
-## Quick Navigation
+# ZeroAlloc.EventSourcing
+
+Zero-allocation event sourcing for .NET 8+. Struct-based aggregate state, in-memory and SQL backends, source-generated aggregate boilerplate, optional OpenTelemetry instrumentation.
+
+```bash
+dotnet add package ZeroAlloc.EventSourcing
+dotnet add package ZeroAlloc.EventSourcing.InMemory
+```
+
+## Quick Start
+
+```csharp
+// Wire up DI
+services
+    .AddEventSourcing()
+    .UseInMemoryEventStore();
+
+// Define an aggregate
+public sealed class OrderAggregate : Aggregate<OrderState>
+{
+    public Result<Unit, string> Place(string orderId, decimal total)
+    {
+        if (State.Placed) return "already placed";
+        Raise(new OrderPlacedEvent(orderId, total));
+        return Unit.Value;
+    }
+
+    protected override OrderState Apply(OrderState state, object @event) => @event switch
+    {
+        OrderPlacedEvent e => state with { OrderId = e.OrderId, Total = e.Total, Placed = true },
+        _ => state,
+    };
+}
+
+// Use
+var repo = sp.GetRequiredService<IAggregateRepository<OrderAggregate, string>>();
+var order = new OrderAggregate();
+order.Place("order-1", 99.99m);
+await repo.SaveAsync("order-1", order, CancellationToken.None);
+```
+
+## Packages
+
+| Package | Purpose |
+|---|---|
+| `ZeroAlloc.EventSourcing` | Core abstractions — `IEventStore`, `IAggregateRepository`, `Aggregate<TState>` |
+| `ZeroAlloc.EventSourcing.InMemory` | In-memory event store for tests and development |
+| `ZeroAlloc.EventSourcing.Sql` | SQL Server and PostgreSQL backends |
+| `ZeroAlloc.EventSourcing.Generators` | Roslyn source generators for aggregate boilerplate |
+| `ZeroAlloc.EventSourcing.Telemetry` | BCL ActivitySource + Meter decorator — spans and metrics with no OTel SDK |
+
+## Documentation
 
 ### Getting Started
-- **[Installation](getting-started/installation.md)** - Install the NuGet package
-- **[Quick Start Example](getting-started/quick-start-example.md)** - 5-minute intro
-- **[Your First Aggregate](getting-started/first-aggregate.md)** - Build your first aggregate
+- **[Installation](getting-started/installation)** - Install the NuGet package
+- **[Quick Start Example](getting-started/quick-start-example)** - 5-minute intro
+- **[Your First Aggregate](getting-started/first-aggregate)** - Build your first aggregate
 
 ### Core Concepts (Read These First)
-- **[Event Sourcing Fundamentals](core-concepts/fundamentals.md)** - Core principles and motivations
-- **[Aggregates](core-concepts/aggregates.md)** - Domain entities that handle commands and raise events
-- **[Events](core-concepts/events.md)** - Immutable facts that model what happened
-- **[Event Store](core-concepts/event-store.md)** - How events are persisted and retrieved
-- **[Snapshots](core-concepts/snapshots.md)** - Optimize large aggregates with snapshots
-- **[Projections](core-concepts/projections.md)** - Build read models for queries
-- **[Architecture](core-concepts/architecture.md)** - System design and patterns
+- **[Event Sourcing Fundamentals](core-concepts/fundamentals)** - Core principles and motivations
+- **[Aggregates](core-concepts/aggregates)** - Domain entities that handle commands and raise events
+- **[Events](core-concepts/events)** - Immutable facts that model what happened
+- **[Event Store](core-concepts/event-store)** - How events are persisted and retrieved
+- **[Snapshots](core-concepts/snapshots)** - Optimize large aggregates with snapshots
+- **[Projections](core-concepts/projections)** - Build read models for queries
+- **[Architecture](core-concepts/architecture)** - System design and patterns
 
 ### Code Examples (Learn by Doing)
 - **[Getting Started Examples](examples/01-getting-started/)** - CreateFirstAggregate, AppendAndRead
