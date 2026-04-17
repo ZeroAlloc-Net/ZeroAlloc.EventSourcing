@@ -40,7 +40,7 @@ public class EventSourcingBuilderExtensionsTests
         services.AddEventSourcing().UseKafka(FakeOptions());
 
         var provider = services.BuildServiceProvider();
-        provider.GetRequiredService<KafkaStreamConsumer>().Should().NotBeNull();
+        provider.GetRequiredService<KafkaStreamConsumer>().Should().BeOfType<KafkaStreamConsumer>();
     }
 
     [Fact]
