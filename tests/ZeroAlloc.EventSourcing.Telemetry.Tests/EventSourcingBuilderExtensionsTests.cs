@@ -23,7 +23,7 @@ public class EventSourcingBuilderExtensionsTests
     {
         var services = BaseServices();
         services.AddEventSourcing().UseEventSourcingTelemetry();
-        var provider = services.BuildServiceProvider();
+        using var provider = services.BuildServiceProvider();
         provider.GetRequiredService<IEventStore>().Should().BeOfType<InstrumentedEventStore>();
     }
 
@@ -33,5 +33,15 @@ public class EventSourcingBuilderExtensionsTests
         var services = BaseServices();
         var builder = services.AddEventSourcing();
         builder.UseEventSourcingTelemetry().Should().BeSameAs(builder);
+    }
+
+    [Fact]
+    public void UseEventSourcingTelemetry_Throws_WhenNoIEventStoreRegistered()
+    {
+        var services = new ServiceCollection();
+        var builder = services.AddEventSourcing();
+        var act = () => builder.UseEventSourcingTelemetry();
+        act.Should().Throw<InvalidOperationException>()
+           .WithMessage("*IEventStore*");
     }
 }

@@ -16,21 +16,22 @@ public static class EventSourcingBuilderExtensions
     public static EventSourcingBuilder UseEventSourcingTelemetry(this EventSourcingBuilder builder)
     {
         var descriptor = builder.Services.FirstOrDefault(d => d.ServiceType == typeof(IEventStore));
-        if (descriptor is not null)
+        if (descriptor is null)
+            throw new InvalidOperationException(
+                "No IEventStore registration found. Register an event store (e.g. UseInMemoryEventStore, UsePostgreSqlEventStore) before calling UseEventSourcingTelemetry.");
+
+        builder.Services.Remove(descriptor);
+        builder.Services.AddSingleton<IEventStore>(sp =>
         {
-            builder.Services.Remove(descriptor);
-            builder.Services.AddSingleton<IEventStore>(sp =>
-            {
-                IEventStore inner;
-                if (descriptor.ImplementationInstance is IEventStore instance)
-                    inner = instance;
-                else if (descriptor.ImplementationFactory is not null)
-                    inner = (IEventStore)descriptor.ImplementationFactory(sp);
-                else
-                    inner = (IEventStore)ActivatorUtilities.CreateInstance(sp, descriptor.ImplementationType!);
-                return new InstrumentedEventStore(inner);
-            });
-        }
+            IEventStore inner;
+            if (descriptor.ImplementationInstance is IEventStore instance)
+                inner = instance;
+            else if (descriptor.ImplementationFactory is not null)
+                inner = (IEventStore)descriptor.ImplementationFactory(sp);
+            else
+                inner = (IEventStore)ActivatorUtilities.CreateInstance(sp, descriptor.ImplementationType!);
+            return new InstrumentedEventStore(inner);
+        });
 
         return builder;
     }
