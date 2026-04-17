@@ -9,6 +9,8 @@ namespace ZeroAlloc.EventSourcing.Telemetry;
 /// </summary>
 public sealed class InstrumentedStreamConsumer : IStreamConsumer
 {
+    // Static fields are intentional: ActivitySource and Meter register globally by name and
+    // share listeners across all instances. Creating one per process avoids duplicate registrations.
     private static readonly ActivitySource _activitySource = new("ZeroAlloc.EventSourcing");
 
     private readonly IStreamConsumer _inner;

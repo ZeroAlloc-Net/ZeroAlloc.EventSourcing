@@ -160,4 +160,19 @@ public sealed class InstrumentedAggregateRepositoryTests : IDisposable
             .Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task SaveAsync_DoesNotIncrementCounter_OnResultFailure()
+    {
+        _inner.SaveAsync(default!, default, default)
+              .ReturnsForAnyArgs(ValueTask.FromResult(
+                  Result<AppendResult, StoreError>.Failure(StoreError.Unknown("store failure"))));
+
+        await _sut.SaveAsync(new FakeAggregate(), _orderId);
+
+        _meterListener.RecordObservableInstruments();
+        _counterMeasurements
+            .Where(m => m.Name == "aggregate.saves_total")
+            .Should().BeEmpty();
+    }
+
 }

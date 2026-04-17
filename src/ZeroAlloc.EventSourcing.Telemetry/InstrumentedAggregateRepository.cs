@@ -12,6 +12,8 @@ namespace ZeroAlloc.EventSourcing.Telemetry;
 public sealed class InstrumentedAggregateRepository<TAggregate, TId> : IAggregateRepository<TAggregate, TId>
     where TId : struct
 {
+    // Static fields are intentional: ActivitySource and Meter register globally by name and
+    // share listeners across all instances. Creating one per process avoids duplicate registrations.
     private static readonly ActivitySource _activitySource = new("ZeroAlloc.EventSourcing");
     private static readonly Meter _meter = new("ZeroAlloc.EventSourcing");
     private static readonly Counter<long> _savesTotal = _meter.CreateCounter<long>("aggregate.saves_total");
@@ -45,7 +47,8 @@ public sealed class InstrumentedAggregateRepository<TAggregate, TId> : IAggregat
         try
         {
             var result = await _inner.SaveAsync(aggregate, id, ct).ConfigureAwait(false);
-            _savesTotal.Add(1);
+            if (result.IsSuccess)
+                _savesTotal.Add(1);
             return result;
         }
         catch (Exception ex)

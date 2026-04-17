@@ -12,6 +12,8 @@ namespace ZeroAlloc.EventSourcing.Telemetry;
 /// </summary>
 public sealed class InstrumentedEventStore : IEventStore
 {
+    // Static fields are intentional: ActivitySource and Meter register globally by name and
+    // share listeners across all instances. Creating one per process avoids duplicate registrations.
     private static readonly ActivitySource _activitySource = new("ZeroAlloc.EventSourcing");
     private static readonly Meter _meter = new("ZeroAlloc.EventSourcing");
     private static readonly Counter<long> _appendsTotal = _meter.CreateCounter<long>("event_store.appends_total");
@@ -38,7 +40,8 @@ public sealed class InstrumentedEventStore : IEventStore
         try
         {
             var result = await _inner.AppendAsync(id, events, expectedVersion, ct).ConfigureAwait(false);
-            _appendsTotal.Add(1);
+            if (result.IsSuccess)
+                _appendsTotal.Add(1);
             return result;
         }
         catch (Exception ex)

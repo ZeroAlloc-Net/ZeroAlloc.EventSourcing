@@ -147,6 +147,21 @@ public sealed class InstrumentedEventStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task AppendAsync_DoesNotIncrementCounter_OnResultFailure()
+    {
+        _inner.AppendAsync(default, default, default, default)
+              .ReturnsForAnyArgs(ValueTask.FromResult(
+                  Result<AppendResult, StoreError>.Failure(StoreError.Unknown("store failure"))));
+
+        await _sut.AppendAsync(_streamId, ReadOnlyMemory<object>.Empty, StreamPosition.Start);
+
+        _meterListener.RecordObservableInstruments();
+        _counterMeasurements
+            .Where(m => m.Name == "event_store.appends_total")
+            .Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task AppendAsync_SetsCorrelationIdTag_WhenBaggagePresent()
     {
         _inner.AppendAsync(default, default, default, default)
