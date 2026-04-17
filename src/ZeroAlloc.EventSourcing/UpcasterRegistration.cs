@@ -1,12 +1,10 @@
 namespace ZeroAlloc.EventSourcing;
 
-#pragma warning disable CS1574 // XML comment has cref attribute that could not be resolved
 /// <summary>
 /// Describes a single upcasting hop: from <see cref="FromType"/> to <see cref="ToType"/>.
-/// Registered in DI by <see cref="EventSourcingBuilderExtensions.AddUpcaster{TOld,TNew}"/> and
+/// Registered in DI by <see cref="EventSourcingBuilderUpcasterExtensions.AddUpcaster{TOld,TNew}"/> and
 /// consumed by <see cref="UpcasterPipeline"/> at construction time.
 /// </summary>
-#pragma warning restore CS1574
 public sealed class UpcasterRegistration
 {
     /// <summary>The CLR type being replaced.</summary>
