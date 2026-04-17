@@ -104,6 +104,30 @@ public class EventSourcingBuilderExtensionsTests
     }
 
     [Fact]
+    public void UseInMemorySnapshotStore_ReturnsBuilder_ForChaining()
+    {
+        var services = BaseServices();
+        var builder = services.AddEventSourcing();
+        builder.UseInMemorySnapshotStore().Should().BeSameAs(builder);
+    }
+
+    [Fact]
+    public void UseInMemoryDeadLetterStore_ReturnsBuilder_ForChaining()
+    {
+        var services = BaseServices();
+        var builder = services.AddEventSourcing();
+        builder.UseInMemoryDeadLetterStore().Should().BeSameAs(builder);
+    }
+
+    [Fact]
+    public void UseInMemoryProjectionStore_ReturnsBuilder_ForChaining()
+    {
+        var services = BaseServices();
+        var builder = services.AddEventSourcing();
+        builder.UseInMemoryProjectionStore().Should().BeSameAs(builder);
+    }
+
+    [Fact]
     public void UseInMemorySnapshotStore_DoesNotOverwriteUserSnapshotStore()
     {
         var services = BaseServices();

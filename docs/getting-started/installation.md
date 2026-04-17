@@ -57,12 +57,13 @@ internal partial class DomainJsonContext : JsonSerializerContext { }
 services
     .AddJsonSerializer<OrderPlacedEvent>(DomainJsonContext.Default.OrderPlacedEvent)
     .AddSerializerDispatcher()  // emitted by ZeroAlloc.Serialisation source generator
-    .AddEventSourcing();        // registers IEventSerializer → ZeroAllocEventSerializer
+    .AddEventSourcing()         // registers IEventSerializer → ZeroAllocEventSerializer; returns EventSourcingBuilder
+    .UseInMemoryEventStore();   // swap for .UsePostgreSqlEventStore(cs) or .UseSqlServerEventStore(cs) in production
 ```
 
 `AddSerializerDispatcher()` is generated per assembly at compile time — no reflection, AOT-safe.
-`AddEventSourcing()` wires `IEventSerializer` to the built-in `ZeroAllocEventSerializer`, which
-delegates to the dispatcher.
+`AddEventSourcing()` wires `IEventSerializer` to the built-in `ZeroAllocEventSerializer` and returns
+an `EventSourcingBuilder`. Chain `.Use*()` calls on the builder to register the store adapter.
 
 ### Without ZeroAlloc.Serialisation (custom serializer)
 

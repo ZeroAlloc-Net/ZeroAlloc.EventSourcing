@@ -778,74 +778,43 @@ services.AddScoped<IAggregateRepository<Order, OrderId>>(sp =>
 ## Complete Setup Example
 
 ```csharp
-public class EventSourcingSetup
-{
-    public static IServiceCollection AddEventSourcing(
-        this IServiceCollection services,
-        string connectionString,
-        DatabaseType dbType)
-    {
-        // Adapter
-        var adapter = dbType switch
-        {
-            DatabaseType.PostgreSql => 
-                (IEventStoreAdapter)new PostgreSqlEventStoreAdapter(connectionString),
-            DatabaseType.SqlServer => 
-                (IEventStoreAdapter)new SqlServerEventStoreAdapter(connectionString),
-            _ => throw new ArgumentException($"Unknown database: {dbType}")
-        };
-        
-        // Event serializer
-        services.AddScoped<IEventSerializer>(_ => new JsonEventSerializer());
-        
-        // Event type registry
-        services.AddScoped<IEventTypeRegistry, OrderEventTypeRegistry>();
-        
-        // Event store
-        services.AddScoped<IEventStore>(sp =>
-            new EventStore(
-                adapter,
-                sp.GetRequiredService<IEventSerializer>(),
-                sp.GetRequiredService<IEventTypeRegistry>()));
-        
-        // Snapshot store
-        services.AddScoped<ISnapshotStore<OrderState>>(sp =>
-            dbType == DatabaseType.PostgreSql
-                ? new PostgreSqlSnapshotStore<OrderState>(connectionString)
-                : new SqlServerSnapshotStore<OrderState>(connectionString));
-        
-        // Repository
-        services.AddScoped<IAggregateRepository<Order, OrderId>>(sp =>
-            new SnapshotCachingRepositoryDecorator<Order, OrderId, OrderState>(
-                innerRepository: new AggregateRepository<Order, OrderId>(
-                    sp.GetRequiredService<IEventStore>(),
-                    () => new Order(),
-                    id => new StreamId($"order-{id.Value}")),
-                snapshotStore: sp.GetRequiredService<ISnapshotStore<OrderState>>(),
-                strategy: SnapshotLoadingStrategy.ValidateAndReplay,
-                restoreState: (o, s, p) => o.RestoreState(s, p),
-                eventStore: sp.GetRequiredService<IEventStore>(),
-                streamIdFactory: id => new StreamId($"order-{id.Value}"),
-                aggregateFactory: () => new Order()));
-        
-        return services;
-    }
-}
+// PostgreSQL
+services
+    .AddSingleton<IEventTypeRegistry, OrderEventTypeRegistry>()
+    .AddJsonSerializer<OrderPlacedEvent>(DomainJsonContext.Default.OrderPlacedEvent)
+    .AddSerializerDispatcher()
+    .AddEventSourcing()
+    .UsePostgreSqlEventStore("Host=localhost;Database=EventStore;User=postgres;Password=password")
+    .UsePostgreSqlSnapshotStore("Host=localhost;Database=EventStore;User=postgres;Password=password")
+    .UseAggregateRepository<Order, OrderId>(
+        () => new Order(),
+        id => new StreamId($"order-{id.Value}"))
+    .Services  // back to IServiceCollection if you need to register non-builder services
+    .AddSingleton<OrderProjection>();
 
-// Usage
-var services = new ServiceCollection();
-var connectionString = "Host=localhost;Database=EventStore;User=postgres;Password=password";
-services.AddEventSourcing(connectionString, DatabaseType.PostgreSql);
+// SQL Server
+services
+    .AddSingleton<IEventTypeRegistry, OrderEventTypeRegistry>()
+    .AddJsonSerializer<OrderPlacedEvent>(DomainJsonContext.Default.OrderPlacedEvent)
+    .AddSerializerDispatcher()
+    .AddEventSourcing()
+    .UseSqlServerEventStore("Server=localhost;Database=EventStore;Trusted_Connection=True")
+    .UseSqlServerSnapshotStore<OrderState>("Server=localhost;Database=EventStore;Trusted_Connection=True")
+    .UseAggregateRepository<Order, OrderId>(
+        () => new Order(),
+        id => new StreamId($"order-{id.Value}"));
 
 var sp = services.BuildServiceProvider();
 var repository = sp.GetRequiredService<IAggregateRepository<Order, OrderId>>();
 
-// Use it
 var order = new Order();
 order.SetId(new OrderId(Guid.NewGuid()));
 order.Place("ORD-001", 1500m);
 await repository.SaveAsync(order);
 ```
+
+> `AddEventSourcing()` returns `EventSourcingBuilder`. Chain `.Use*()` calls to register store adapters.
+> Call `.Services` on the builder when you need to return to `IServiceCollection`.
 
 ## Summary
 

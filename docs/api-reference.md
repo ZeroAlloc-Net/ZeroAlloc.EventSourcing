@@ -678,23 +678,21 @@ public class OrderProjection : Projection<OrderSummary>
 
 ### Plugin Architecture
 
-**Entry Point:** `IServiceCollection.AddEventSourcing()`
+**Entry Point:** `IServiceCollection.AddEventSourcing()` → `EventSourcingBuilder`
 
-Use Dependency Injection to plug in implementations.
+Use Dependency Injection to plug in implementations. `AddEventSourcing()` returns an
+`EventSourcingBuilder`; chain `.Use*()` methods on it to register adapters.
 
-**Example:** Custom DI registration
+**Example:** Fluent DI registration
 
 ```csharp
-services.AddSingleton<IEventStore>(sp =>
-{
-    var adapter = new PostgreSqlEventStoreAdapter("...");
-    var serializer = new JsonEventSerializer();
-    return new EventStore(adapter, serializer);
-});
-
-services.AddSingleton<ISnapshotStore<OrderState>, PostgreSqlSnapshotStore<OrderState>>();
-services.AddSingleton<OrderRepository>();
-services.AddSingleton<OrderProjection>();
+services
+    .AddEventSourcing()                    // returns EventSourcingBuilder
+    .UsePostgreSqlEventStore(connStr)      // IEventStoreAdapter + IEventStore
+    .UsePostgreSqlSnapshotStore(connStr)   // ISnapshotStore<>
+    .UseAggregateRepository<Order, OrderId>(
+        () => new Order(),
+        id => new StreamId($"order-{id.Value}"));
 ```
 
 **See Also:**
