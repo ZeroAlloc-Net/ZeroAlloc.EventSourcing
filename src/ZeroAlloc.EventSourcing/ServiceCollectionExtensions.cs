@@ -24,6 +24,8 @@ public static class ServiceCollectionExtensions
     public static EventSourcingBuilder AddEventSourcing(this IServiceCollection services)
     {
         services.TryAddSingleton<IEventSerializer, ZeroAllocEventSerializer>();
+        services.TryAddSingleton<IUpcasterPipeline>(sp =>
+            new UpcasterPipeline(sp.GetServices<UpcasterRegistration>()));
         return new EventSourcingBuilder(services);
     }
 

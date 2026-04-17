@@ -12,9 +12,14 @@ public sealed class EventStore : IEventStore
     private readonly IEventStoreAdapter _adapter;
     private readonly IEventSerializer _serializer;
     private readonly IEventTypeRegistry _registry;
+    private readonly IUpcasterPipeline? _upcasterPipeline;
 
     /// <summary>Initialises an <see cref="EventStore"/> with the given adapter, serializer, and type registry.</summary>
-    public EventStore(IEventStoreAdapter adapter, IEventSerializer serializer, IEventTypeRegistry registry)
+    public EventStore(
+        IEventStoreAdapter adapter,
+        IEventSerializer serializer,
+        IEventTypeRegistry registry,
+        IUpcasterPipeline? upcasterPipeline = null)
     {
         ArgumentNullException.ThrowIfNull(adapter);
         ArgumentNullException.ThrowIfNull(serializer);
@@ -22,6 +27,7 @@ public sealed class EventStore : IEventStore
         _adapter = adapter;
         _serializer = serializer;
         _registry = registry;
+        _upcasterPipeline = upcasterPipeline;
     }
 
     /// <inheritdoc/>
@@ -62,6 +68,8 @@ public sealed class EventStore : IEventStore
                 continue; // unknown event type — skip for forward compatibility
 
             var deserialized = _serializer.Deserialize(raw.Payload, type);
+            if (_upcasterPipeline?.TryUpcast(deserialized, out var upgraded) == true)
+                deserialized = upgraded;
             yield return new EventEnvelope(id, raw.Position, deserialized, raw.Metadata);
         }
     }
@@ -79,6 +87,8 @@ public sealed class EventStore : IEventStore
                 return;
 
             var deserialized = _serializer.Deserialize(raw.Payload, type);
+            if (_upcasterPipeline?.TryUpcast(deserialized, out var upgradedSub) == true)
+                deserialized = upgradedSub;
             var envelope = new EventEnvelope(id, raw.Position, deserialized, raw.Metadata);
             await handler(envelope, token).ConfigureAwait(false);
         }, ct).ConfigureAwait(false);
