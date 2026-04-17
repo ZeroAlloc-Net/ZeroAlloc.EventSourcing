@@ -1,7 +1,6 @@
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
-using Microsoft.Extensions.Logging;
 using ZeroAlloc.EventSourcing.InMemory;
 
 namespace ZeroAlloc.EventSourcing.InMemory.Tests;
@@ -23,14 +22,18 @@ public class InMemoryEventStoreHealthCheckTests
     }
 
     [Fact]
-    public void AddInMemoryEventStore_RegistersHealthCheck()
+    public async Task AddInMemoryEventStore_RegistersHealthCheckUnderExpectedName()
     {
-        var services = new ServiceCollection();
+        var services = new Microsoft.Extensions.DependencyInjection.ServiceCollection();
         services.AddLogging();
         services.AddHealthChecks().AddInMemoryEventStore();
 
         var provider = services.BuildServiceProvider();
-        var healthCheckService = provider.GetRequiredService<HealthCheckService>();
-        healthCheckService.Should().NotBeNull();
+        var report = await provider
+            .GetRequiredService<HealthCheckService>()
+            .CheckHealthAsync();
+
+        report.Entries.Should().ContainKey("inmemory-event-store");
+        report.Entries["inmemory-event-store"].Status.Should().Be(HealthStatus.Healthy);
     }
 }
