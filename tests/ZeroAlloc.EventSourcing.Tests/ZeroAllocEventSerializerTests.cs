@@ -41,6 +41,7 @@ public class ZeroAllocEventSerializerTests
         var result = _sut.Deserialize(payload, typeof(TestEvent));
 
         Assert.Equal(expected, result);
+        _dispatcher.Received(1).Deserialize(payload, typeof(TestEvent));
     }
 
     [Fact]
