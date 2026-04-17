@@ -65,6 +65,27 @@ public class EventSourcingBuilderExtensionsTests
                 .Should().BeOfType<PostgreSqlSnapshotStore<TestState>>();
     }
 
+    [Fact]
+    public void UsePostgreSqlSnapshotStore_DoesNotOverwriteUserSnapshotStore()
+    {
+        var services = BaseServices();
+        var custom = new StubSnapshotStore();
+        services.AddSingleton<ISnapshotStore<TestState>>(custom);
+
+        services.AddEventSourcing().UsePostgreSqlSnapshotStore(FakePgCs);
+
+        var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<ISnapshotStore<TestState>>().Should().BeSameAs(custom);
+    }
+
+    [Fact]
+    public void UsePostgreSqlSnapshotStore_ReturnsBuilder_ForChaining()
+    {
+        var services = BaseServices();
+        var builder = services.AddEventSourcing();
+        builder.UsePostgreSqlSnapshotStore(FakePgCs).Should().BeSameAs(builder);
+    }
+
     // ── PostgreSQL dead-letter ───────────────────────────────────────────────
 
     [Fact]
@@ -75,6 +96,27 @@ public class EventSourcingBuilderExtensionsTests
 
         var provider = services.BuildServiceProvider();
         provider.GetRequiredService<IDeadLetterStore>().Should().BeOfType<PostgreSqlDeadLetterStore>();
+    }
+
+    [Fact]
+    public void UsePostgreSqlDeadLetterStore_DoesNotOverwrite()
+    {
+        var services = BaseServices();
+        var custom = Substitute.For<IDeadLetterStore>();
+        services.AddSingleton(custom);
+
+        services.AddEventSourcing().UsePostgreSqlDeadLetterStore(FakePgCs);
+
+        var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<IDeadLetterStore>().Should().BeSameAs(custom);
+    }
+
+    [Fact]
+    public void UsePostgreSqlDeadLetterStore_ReturnsBuilder_ForChaining()
+    {
+        var services = BaseServices();
+        var builder = services.AddEventSourcing();
+        builder.UsePostgreSqlDeadLetterStore(FakePgCs).Should().BeSameAs(builder);
     }
 
     // ── PostgreSQL projection ────────────────────────────────────────────────
@@ -89,6 +131,27 @@ public class EventSourcingBuilderExtensionsTests
         provider.GetRequiredService<IProjectionStore>().Should().BeOfType<PostgreSqlProjectionStore>();
     }
 
+    [Fact]
+    public void UsePostgreSqlProjectionStore_DoesNotOverwrite()
+    {
+        var services = BaseServices();
+        var custom = Substitute.For<IProjectionStore>();
+        services.AddSingleton(custom);
+
+        services.AddEventSourcing().UsePostgreSqlProjectionStore(FakePgCs);
+
+        var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<IProjectionStore>().Should().BeSameAs(custom);
+    }
+
+    [Fact]
+    public void UsePostgreSqlProjectionStore_ReturnsBuilder_ForChaining()
+    {
+        var services = BaseServices();
+        var builder = services.AddEventSourcing();
+        builder.UsePostgreSqlProjectionStore(FakePgCs).Should().BeSameAs(builder);
+    }
+
     // ── SQL Server checkpoint ────────────────────────────────────────────────
 
     [Fact]
@@ -99,6 +162,27 @@ public class EventSourcingBuilderExtensionsTests
 
         var provider = services.BuildServiceProvider();
         provider.GetRequiredService<ICheckpointStore>().Should().BeOfType<SqlServerCheckpointStore>();
+    }
+
+    [Fact]
+    public void UseSqlServerCheckpointStore_DoesNotOverwrite()
+    {
+        var services = BaseServices();
+        var custom = Substitute.For<ICheckpointStore>();
+        services.AddSingleton(custom);
+
+        services.AddEventSourcing().UseSqlServerCheckpointStore(FakeSsCs);
+
+        var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<ICheckpointStore>().Should().BeSameAs(custom);
+    }
+
+    [Fact]
+    public void UseSqlServerCheckpointStore_ReturnsBuilder_ForChaining()
+    {
+        var services = BaseServices();
+        var builder = services.AddEventSourcing();
+        builder.UseSqlServerCheckpointStore(FakeSsCs).Should().BeSameAs(builder);
     }
 
     // ── SQL Server snapshot (closed generic) ─────────────────────────────────
@@ -114,6 +198,27 @@ public class EventSourcingBuilderExtensionsTests
                 .Should().BeOfType<SqlServerSnapshotStore<TestState>>();
     }
 
+    [Fact]
+    public void UseSqlServerSnapshotStore_DoesNotOverwrite()
+    {
+        var services = BaseServices();
+        var custom = new StubSnapshotStore();
+        services.AddSingleton<ISnapshotStore<TestState>>(custom);
+
+        services.AddEventSourcing().UseSqlServerSnapshotStore<TestState>(FakeSsCs);
+
+        var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<ISnapshotStore<TestState>>().Should().BeSameAs(custom);
+    }
+
+    [Fact]
+    public void UseSqlServerSnapshotStore_ReturnsBuilder_ForChaining()
+    {
+        var services = BaseServices();
+        var builder = services.AddEventSourcing();
+        builder.UseSqlServerSnapshotStore<TestState>(FakeSsCs).Should().BeSameAs(builder);
+    }
+
     // ── SQL Server dead-letter ───────────────────────────────────────────────
 
     [Fact]
@@ -124,6 +229,27 @@ public class EventSourcingBuilderExtensionsTests
 
         var provider = services.BuildServiceProvider();
         provider.GetRequiredService<IDeadLetterStore>().Should().BeOfType<SqlServerDeadLetterStore>();
+    }
+
+    [Fact]
+    public void UseSqlServerDeadLetterStore_DoesNotOverwrite()
+    {
+        var services = BaseServices();
+        var custom = Substitute.For<IDeadLetterStore>();
+        services.AddSingleton(custom);
+
+        services.AddEventSourcing().UseSqlServerDeadLetterStore(FakeSsCs);
+
+        var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<IDeadLetterStore>().Should().BeSameAs(custom);
+    }
+
+    [Fact]
+    public void UseSqlServerDeadLetterStore_ReturnsBuilder_ForChaining()
+    {
+        var services = BaseServices();
+        var builder = services.AddEventSourcing();
+        builder.UseSqlServerDeadLetterStore(FakeSsCs).Should().BeSameAs(builder);
     }
 
     // ── SQL Server projection ────────────────────────────────────────────────
@@ -138,5 +264,39 @@ public class EventSourcingBuilderExtensionsTests
         provider.GetRequiredService<IProjectionStore>().Should().BeOfType<SqlServerProjectionStore>();
     }
 
+    [Fact]
+    public void UseSqlServerProjectionStore_DoesNotOverwrite()
+    {
+        var services = BaseServices();
+        var custom = Substitute.For<IProjectionStore>();
+        services.AddSingleton(custom);
+
+        services.AddEventSourcing().UseSqlServerProjectionStore(FakeSsCs);
+
+        var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<IProjectionStore>().Should().BeSameAs(custom);
+    }
+
+    [Fact]
+    public void UseSqlServerProjectionStore_ReturnsBuilder_ForChaining()
+    {
+        var services = BaseServices();
+        var builder = services.AddEventSourcing();
+        builder.UseSqlServerProjectionStore(FakeSsCs).Should().BeSameAs(builder);
+    }
+
     private struct TestState { }
+
+    /// <summary>
+    /// Hand-written stub for ISnapshotStore&lt;TestState&gt;.
+    /// NSubstitute/Castle DynamicProxy cannot mock interfaces with struct type parameters.
+    /// </summary>
+    private sealed class StubSnapshotStore : ISnapshotStore<TestState>
+    {
+        public ValueTask<(StreamPosition Position, TestState State)?> ReadAsync(StreamId streamId, CancellationToken ct = default)
+            => ValueTask.FromResult<(StreamPosition, TestState)?>(null);
+
+        public ValueTask WriteAsync(StreamId streamId, StreamPosition position, TestState state, CancellationToken ct = default)
+            => ValueTask.CompletedTask;
+    }
 }
