@@ -25,12 +25,11 @@ public sealed class PostgreSqlCheckpointStoreHealthCheck : IHealthCheck
             #pragma warning disable MA0004
             await using var conn = await _dataSource.OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
             #pragma warning restore MA0004
-            var cmd = conn.CreateCommand();
+            #pragma warning disable MA0004
+            await using var cmd = conn.CreateCommand();
+            #pragma warning restore MA0004
             cmd.CommandText = "SELECT 1";
-            await using (cmd.ConfigureAwait(false))
-            {
-                await cmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
-            }
+            await cmd.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
             return HealthCheckResult.Healthy();
         }
         catch (Exception ex)
