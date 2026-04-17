@@ -11,6 +11,7 @@
   <ItemGroup>
     <PackageReference Include="ZeroAlloc.Collections" />
     <PackageReference Include="ZeroAlloc.Results" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
   </ItemGroup>
 
   <ItemGroup>
