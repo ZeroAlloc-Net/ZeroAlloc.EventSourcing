@@ -107,8 +107,10 @@ public class EventSourcingBuilderExtensionsTests
     public void UseInMemorySnapshotStore_DoesNotOverwriteUserSnapshotStore()
     {
         var services = BaseServices();
-        var custom = Substitute.For<ISnapshotStore<TestState>>();
-        services.AddSingleton(custom);
+        // NSubstitute/Castle cannot proxy ISnapshotStore<TestState> when TestState is a private struct
+        // (Castle DynamicProxy requires type parameter to be accessible). Use a hand-written stub.
+        var custom = new StubSnapshotStore();
+        services.AddSingleton<ISnapshotStore<TestState>>(custom);
 
         services.AddEventSourcing().UseInMemorySnapshotStore();
 
@@ -143,4 +145,13 @@ public class EventSourcingBuilderExtensionsTests
     }
 
     private struct TestState { }
+
+    private sealed class StubSnapshotStore : ISnapshotStore<TestState>
+    {
+        public ValueTask<(StreamPosition Position, TestState State)?> ReadAsync(StreamId streamId, CancellationToken ct = default)
+            => ValueTask.FromResult<(StreamPosition, TestState)?>(null);
+
+        public ValueTask WriteAsync(StreamId streamId, StreamPosition position, TestState state, CancellationToken ct = default)
+            => ValueTask.CompletedTask;
+    }
 }
