@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Runtime.CompilerServices;
@@ -24,8 +25,8 @@ public sealed class InstrumentedEventStoreTests : IDisposable
     private readonly ActivityListener _activityListener;
 
     // Track metric measurements
-    private readonly List<(string Name, long Value)> _counterMeasurements = [];
-    private readonly List<(string Name, double Value)> _histogramMeasurements = [];
+    private readonly ConcurrentBag<(string Name, long Value)> _counterMeasurements = [];
+    private readonly ConcurrentBag<(string Name, double Value)> _histogramMeasurements = [];
     private readonly MeterListener _meterListener;
 
     public InstrumentedEventStoreTests()

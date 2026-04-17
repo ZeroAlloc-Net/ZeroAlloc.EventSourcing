@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using FluentAssertions;
@@ -28,7 +29,7 @@ public sealed class InstrumentedAggregateRepositoryTests : IDisposable
     private readonly ActivityListener _activityListener;
 
     // Track metric measurements
-    private readonly List<(string Name, long Value)> _counterMeasurements = [];
+    private readonly ConcurrentBag<(string Name, long Value)> _counterMeasurements = [];
     private readonly MeterListener _meterListener;
 
     public InstrumentedAggregateRepositoryTests()
