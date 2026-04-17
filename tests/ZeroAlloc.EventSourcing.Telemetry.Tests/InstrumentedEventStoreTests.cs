@@ -145,6 +145,24 @@ public sealed class InstrumentedEventStoreTests : IDisposable
             .Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task AppendAsync_SetsCorrelationIdTag_WhenBaggagePresent()
+    {
+        _inner.AppendAsync(default, default, default, default)
+              .ReturnsForAnyArgs(ValueTask.FromResult(OkAppendResult()));
+
+        var correlationId = Guid.NewGuid().ToString();
+        using var parent = new Activity("test.parent").Start();
+        parent.AddBaggage("correlation.id", correlationId);
+        parent.AddBaggage("causation.id", "some-causation-id");
+
+        await _sut.AppendAsync(_streamId, ReadOnlyMemory<object>.Empty, StreamPosition.Start);
+
+        var activity = _startedActivities.Should().ContainSingle(a => a.OperationName == "event_store.append").Subject;
+        activity.GetTagItem("correlation.id").Should().Be(correlationId);
+        activity.GetTagItem("causation.id").Should().Be("some-causation-id");
+    }
+
     // -------------------------------------------------------------------------
     // ReadAsync tests
     // -------------------------------------------------------------------------

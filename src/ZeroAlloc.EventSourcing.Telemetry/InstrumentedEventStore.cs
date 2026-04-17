@@ -31,6 +31,10 @@ public sealed class InstrumentedEventStore : IEventStore
     {
         using var activity = _activitySource.StartActivity("event_store.append");
         activity?.SetTag("stream.id", id.Value);
+        var correlationId = Activity.Current?.GetBaggageItem("correlation.id");
+        var causationId = Activity.Current?.GetBaggageItem("causation.id");
+        if (correlationId is not null) activity?.SetTag("correlation.id", correlationId);
+        if (causationId is not null) activity?.SetTag("causation.id", causationId);
         try
         {
             var result = await _inner.AppendAsync(id, events, expectedVersion, ct).ConfigureAwait(false);
