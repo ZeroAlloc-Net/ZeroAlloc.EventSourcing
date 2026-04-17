@@ -90,5 +90,57 @@ public class EventSourcingBuilderExtensionsTests
         provider.GetRequiredService<IProjectionStore>().Should().BeOfType<InMemoryProjectionStore>();
     }
 
+    [Fact]
+    public void UseInMemoryEventStore_DoesNotOverwriteUserEventStore()
+    {
+        var services = BaseServices();
+        var custom = Substitute.For<IEventStore>();
+        services.AddSingleton(custom);
+
+        services.AddEventSourcing().UseInMemoryEventStore();
+
+        var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<IEventStore>().Should().BeSameAs(custom);
+    }
+
+    [Fact]
+    public void UseInMemorySnapshotStore_DoesNotOverwriteUserSnapshotStore()
+    {
+        var services = BaseServices();
+        var custom = Substitute.For<ISnapshotStore<TestState>>();
+        services.AddSingleton(custom);
+
+        services.AddEventSourcing().UseInMemorySnapshotStore();
+
+        var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<ISnapshotStore<TestState>>().Should().BeSameAs(custom);
+    }
+
+    [Fact]
+    public void UseInMemoryDeadLetterStore_DoesNotOverwriteUserDeadLetterStore()
+    {
+        var services = BaseServices();
+        var custom = Substitute.For<IDeadLetterStore>();
+        services.AddSingleton(custom);
+
+        services.AddEventSourcing().UseInMemoryDeadLetterStore();
+
+        var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<IDeadLetterStore>().Should().BeSameAs(custom);
+    }
+
+    [Fact]
+    public void UseInMemoryProjectionStore_DoesNotOverwriteUserProjectionStore()
+    {
+        var services = BaseServices();
+        var custom = Substitute.For<IProjectionStore>();
+        services.AddSingleton(custom);
+
+        services.AddEventSourcing().UseInMemoryProjectionStore();
+
+        var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<IProjectionStore>().Should().BeSameAs(custom);
+    }
+
     private struct TestState { }
 }
