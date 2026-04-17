@@ -270,17 +270,21 @@ public interface IEventSerializer
 The `ZeroAlloc.Serialisation` package provides `ZeroAllocEventSerializer` — a built-in
 implementation of `IEventSerializer` that uses source-generated, reflection-free dispatch.
 
-Mark your event types with `[ZeroAllocSerializable]` and a serializer adapter attribute, then
-wire up DI:
+Mark your event types with `[ZeroAllocSerializable(SerializationFormat.SystemTextJson)]`, create a
+`JsonSerializerContext` for AOT-safe type metadata, then wire up DI:
 
 ```csharp
-// Mark your event types
-[ZeroAllocSerializable]
-[JsonSerializable(typeof(OrderPlacedEvent))]  // adapter-specific attribute
+// 1. Mark your event types with the chosen serialization format
+[ZeroAllocSerializable(SerializationFormat.SystemTextJson)]
 public record OrderPlacedEvent(string OrderId, decimal Total);
 
-// In your composition root
+// 2. Provide a JsonSerializerContext so System.Text.Json can serialize without reflection
+[JsonSerializable(typeof(OrderPlacedEvent))]
+internal partial class DomainJsonContext : JsonSerializerContext { }
+
+// 3. In your composition root
 services
+    .AddJsonSerializer<OrderPlacedEvent>(DomainJsonContext.Default.OrderPlacedEvent)
     .AddSerializerDispatcher()  // generated at compile time — no reflection
     .AddEventSourcing();        // registers IEventSerializer → ZeroAllocEventSerializer
 ```

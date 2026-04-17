@@ -10,11 +10,16 @@ namespace ZeroAlloc.EventSourcing.Benchmarks;
 /// In production the dispatcher is source-generated (compile-time switch, no reflection),
 /// so the real gap is even larger than what this benchmark shows.
 /// </summary>
-[SimpleJob(warmupCount: 3, invocationCount: 5)]
+// Sub-microsecond range: let BenchmarkDotNet auto-tune iteration count rather than
+// using the low invocationCount from the I/O-bound benchmarks.
+[SimpleJob(warmupCount: 3)]
 [MemoryDiagnoser]
 public class SerializerBenchmarks
 {
     private BenchmarkEvent _event = null!;
+    // Both serializers produce identical UTF-8 JSON for BenchmarkEvent, so a single
+    // _serialized buffer is valid as shared deserialization input. If the wire formats
+    // diverge in future, split into _reflectionSerialized / _dispatchSerialized.
     private ReadOnlyMemory<byte> _serialized;
     private BenchmarkSerializer _reflectionSerializer = null!;
     private ZeroAllocEventSerializer _dispatchSerializer = null!;

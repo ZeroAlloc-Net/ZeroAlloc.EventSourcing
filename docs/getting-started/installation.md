@@ -39,11 +39,23 @@ dotnet add package ZeroAlloc.Serialisation.SystemTextJson
 
 ## Wiring Up Dependency Injection
 
-After installing the packages, register services in your DI container. Mark your event types with
-`[ZeroAllocSerializable]` so the source generator can emit the dispatcher, then call:
+### With ZeroAlloc.Serialisation (recommended)
+
+Mark each event type with `[ZeroAllocSerializable(SerializationFormat.SystemTextJson)]`, create a
+`JsonSerializerContext` for the type, then register in DI:
 
 ```csharp
+// Annotate your event types
+[ZeroAllocSerializable(SerializationFormat.SystemTextJson)]
+public record OrderPlacedEvent(string OrderId, decimal Total);
+
+// Provide AOT-safe type metadata
+[JsonSerializable(typeof(OrderPlacedEvent))]
+internal partial class DomainJsonContext : JsonSerializerContext { }
+
+// Wire up services
 services
+    .AddJsonSerializer<OrderPlacedEvent>(DomainJsonContext.Default.OrderPlacedEvent)
     .AddSerializerDispatcher()  // emitted by ZeroAlloc.Serialisation source generator
     .AddEventSourcing();        // registers IEventSerializer → ZeroAllocEventSerializer
 ```
@@ -51,6 +63,18 @@ services
 `AddSerializerDispatcher()` is generated per assembly at compile time — no reflection, AOT-safe.
 `AddEventSourcing()` wires `IEventSerializer` to the built-in `ZeroAllocEventSerializer`, which
 delegates to the dispatcher.
+
+### Without ZeroAlloc.Serialisation (custom serializer)
+
+Register your own `IEventSerializer` before calling `AddEventSourcing()`, or skip that call
+and register `IEventSerializer` directly:
+
+```csharp
+services.AddSingleton<IEventSerializer, MyJsonEventSerializer>();
+```
+
+See [Custom serializer](../core-concepts/events.md#custom-implementing-ieventserializer-yourself)
+for a full example.
 
 ## Minimum Requirements
 
