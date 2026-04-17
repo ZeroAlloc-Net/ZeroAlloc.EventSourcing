@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <PackageId>ZeroAlloc.EventSourcing.Telemetry</PackageId>
+    <Description>OpenTelemetry instrumentation for ZeroAlloc.EventSourcing — Activity spans and Meter instruments on IEventStore, IAggregateRepository, and IStreamConsumer. No OpenTelemetry SDK dependency required.</Description>
+    <Version>0.0.0-local</Version>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\ZeroAlloc.EventSourcing\ZeroAlloc.EventSourcing.csproj" />
+    <ProjectReference Include="..\ZeroAlloc.EventSourcing.Aggregates\ZeroAlloc.EventSourcing.Aggregates.csproj" />
+  </ItemGroup>
+</Project>
