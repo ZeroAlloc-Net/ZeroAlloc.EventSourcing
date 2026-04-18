@@ -504,6 +504,10 @@ public sealed class KafkaConsumerGroupConsumerIntegrationTests : IAsyncLifetime
         await KafkaIntegrationHelpers.ProduceAsync(_bootstrapServers, topic, 0, new IntegrationTestEvent("p0-event"), "TestEvent");
         await KafkaIntegrationHelpers.ProduceAsync(_bootstrapServers, topic, 1, new IntegrationTestEvent("p1-event"), "TestEvent");
 
+        // Small delay to ensure Kafka has fully committed the messages to storage
+        // before the consumer connects.
+        await Task.Delay(TimeSpan.FromSeconds(1));
+
         var options = new KafkaConsumerGroupOptions
         {
             BootstrapServers = _bootstrapServers,
