@@ -212,4 +212,56 @@ public sealed class KafkaConsumerBaseTests
             Arg.Any<string>(), Arg.Any<EventEnvelope>(),
             Arg.Any<Exception>(), Arg.Any<CancellationToken>());
     }
+
+    // ── commit strategies ─────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ConsumeAsync_WritesCheckpointAfterBatch_WhenCommitStrategyIsAfterBatch()
+    {
+        var store      = Substitute.For<ICheckpointStore>();
+        var consumer   = Substitute.For<IConsumer<string, byte[]>>();
+        var serializer = Substitute.For<IEventSerializer>();
+        var registry   = Substitute.For<IEventTypeRegistry>();
+
+        registry.TryGetType("OrderCreated", out _).Returns(x => { x[1] = typeof(object); return true; });
+        serializer.Deserialize(Arg.Any<ReadOnlyMemory<byte>>(), Arg.Any<Type>()).Returns(new object());
+
+        var messages = new Queue<ConsumeResult<string, byte[]>?>(
+        [MakeMessage(0, 1), MakeMessage(0, 2), null]);
+        consumer.Consume(Arg.Any<TimeSpan>()).Returns(_ => messages.Count > 0 ? messages.Dequeue() : null);
+
+        var options = new StreamConsumerOptions { CommitStrategy = CommitStrategy.AfterBatch };
+        var sut     = new StubConsumer(consumer, store, serializer, registry, "c", options: options);
+
+        await sut.ConsumeAsync((_, _) => Task.CompletedTask);
+
+        // After the batch, WriteAsync should be called for partition 0 with the last offset (2)
+        await store.Received(1).WriteAsync("c:p0", new StreamPosition(2), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ConsumeAsync_WritesCheckpointAfterEachEvent_WhenCommitStrategyIsAfterEvent()
+    {
+        var store      = Substitute.For<ICheckpointStore>();
+        var consumer   = Substitute.For<IConsumer<string, byte[]>>();
+        var serializer = Substitute.For<IEventSerializer>();
+        var registry   = Substitute.For<IEventTypeRegistry>();
+
+        registry.TryGetType("OrderCreated", out _).Returns(x => { x[1] = typeof(object); return true; });
+        serializer.Deserialize(Arg.Any<ReadOnlyMemory<byte>>(), Arg.Any<Type>()).Returns(new object());
+
+        var messages = new Queue<ConsumeResult<string, byte[]>?>(
+        [MakeMessage(0, 1), MakeMessage(0, 2), null]);
+        consumer.Consume(Arg.Any<TimeSpan>()).Returns(_ => messages.Count > 0 ? messages.Dequeue() : null);
+
+        var options = new StreamConsumerOptions { CommitStrategy = CommitStrategy.AfterEvent };
+        var sut     = new StubConsumer(consumer, store, serializer, registry, "c", options: options);
+
+        await sut.ConsumeAsync((_, _) => Task.CompletedTask);
+
+        // WriteAsync called once per event (2 times total)
+        await store.Received(2).WriteAsync(Arg.Any<string>(), Arg.Any<StreamPosition>(), Arg.Any<CancellationToken>());
+        await store.Received(1).WriteAsync("c:p0", new StreamPosition(1), Arg.Any<CancellationToken>());
+        await store.Received(1).WriteAsync("c:p0", new StreamPosition(2), Arg.Any<CancellationToken>());
+    }
 }

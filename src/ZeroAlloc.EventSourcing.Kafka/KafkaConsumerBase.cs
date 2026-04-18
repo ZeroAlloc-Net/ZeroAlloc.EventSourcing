@@ -136,6 +136,8 @@ public abstract class KafkaConsumerBase : IStreamConsumer, IDisposable
             await DrainPendingSeeksAsync(ct).ConfigureAwait(false);
 
             var batch = PollBatch();
+            // No messages received within the poll timeout — the batch is complete; exit the loop.
+            // This gives a catch-up consumer model: process all available messages, then stop.
             if (batch.Count == 0) break;
 
             var lastPerPartition = await ProcessBatchAsync(handler, batch, ct).ConfigureAwait(false);
@@ -198,6 +200,10 @@ public abstract class KafkaConsumerBase : IStreamConsumer, IDisposable
             {
                 await handler(envelope, ct).ConfigureAwait(false);
                 return;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
             }
             catch (Exception) when (attempts < _options.MaxRetries)
             {
@@ -271,13 +277,14 @@ public abstract class KafkaConsumerBase : IStreamConsumer, IDisposable
                 CheckpointKey(ConsumerId, partition), position, ct).ConfigureAwait(false);
     }
 
+    private int _closed; // 0 = open, 1 = closed — Interlocked-guarded
+
     private void CloseConsumer()
     {
-        if (_ownsConsumer)
-        {
-            try { _consumer.Close(); } catch (ObjectDisposedException) { }
-            _consumer.Dispose();
-        }
+        if (!_ownsConsumer) return;
+        if (Interlocked.Exchange(ref _closed, 1) == 1) return; // already closed
+        try { _consumer.Close(); } catch (ObjectDisposedException) { }
+        _consumer.Dispose();
     }
 
     /// <inheritdoc/>
