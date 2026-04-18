@@ -2,6 +2,7 @@ using Confluent.Kafka;
 using FluentAssertions;
 using NSubstitute;
 using Xunit;
+using ZeroAlloc.EventSourcing;
 using ZeroAlloc.EventSourcing.Kafka;
 
 namespace ZeroAlloc.EventSourcing.Kafka.Tests;
@@ -98,21 +99,31 @@ public sealed class KafkaManualPartitionConsumerTests
         var messages = new Queue<ConsumeResult<string, byte[]>?>(
         [
             MakeMessage(0, 1),
-            MakeMessage(1, 1),
+            MakeMessage(1, 2),
             null,
         ]);
         consumer.Consume(Arg.Any<TimeSpan>()).Returns(_ => messages.Count > 0 ? messages.Dequeue() : null);
 
-        var sut      = new KafkaManualPartitionConsumer(Options([0, 1]), store, serializer, registry, consumer);
-        var received = new List<(int partition, long offset)>();
-
-        await sut.ConsumeAsync((env, _) =>
+        var opts = new KafkaManualPartitionOptions
         {
-            received.Add(((int)env.Position.Value, (long)env.Position.Value));
-            return Task.CompletedTask;
-        });
+            BootstrapServers = "localhost:9092",
+            Topic            = "orders",
+            ConsumerId       = "orders-consumer",
+            Partitions       = [0, 1],
+            ConsumerOptions  = new StreamConsumerOptions { CommitStrategy = CommitStrategy.Manual },
+        };
+        var sut      = new KafkaManualPartitionConsumer(opts, store, serializer, registry, consumer);
+        int received = 0;
 
-        received.Should().HaveCount(2);
+        await sut.ConsumeAsync((_, _) => { received++; return Task.CompletedTask; });
+
+        // Both events were processed
+        received.Should().Be(2);
+
+        // And tracking was updated for both partitions (verified via CommitAsync writing both keys)
+        await sut.CommitAsync();
+        await store.Received(1).WriteAsync("orders-consumer:p0", new StreamPosition(1), Arg.Any<CancellationToken>());
+        await store.Received(1).WriteAsync("orders-consumer:p1", new StreamPosition(2), Arg.Any<CancellationToken>());
     }
 
     [Fact]

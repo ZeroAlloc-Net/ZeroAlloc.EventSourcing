@@ -24,12 +24,11 @@ public sealed class KafkaManualPartitionConsumer : KafkaConsumerBase
         IEventTypeRegistry registry,
         IDeadLetterStore? deadLetterStore = null)
         : base(
-            (options ?? throw new ArgumentNullException(nameof(options))).BootstrapServers,
+            Validated(options).BootstrapServers,
             options.GroupId,
             checkpointStore, serializer, registry,
             options.Topic, options.PollTimeout, options.ConsumerOptions, deadLetterStore)
     {
-        options.Validate();
         _options = options;
     }
 
@@ -42,11 +41,16 @@ public sealed class KafkaManualPartitionConsumer : KafkaConsumerBase
         IConsumer<string, byte[]> consumer,
         IDeadLetterStore? deadLetterStore = null)
         : base(consumer, checkpointStore, serializer, registry,
-               (options ?? throw new ArgumentNullException(nameof(options))).Topic,
+               Validated(options).Topic,
                options.PollTimeout, options.ConsumerOptions, deadLetterStore)
     {
-        options.Validate();
         _options = options;
+    }
+
+    private static KafkaManualPartitionOptions Validated(KafkaManualPartitionOptions options)
+    {
+        (options ?? throw new ArgumentNullException(nameof(options))).Validate();
+        return options;
     }
 
     /// <inheritdoc/>
