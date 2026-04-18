@@ -87,8 +87,8 @@ public sealed class EventStore : IEventStore
                 return;
 
             var deserialized = _serializer.Deserialize(raw.Payload, type);
-            if (_upcasterPipeline?.TryUpcast(deserialized, out var upgradedSub) == true)
-                deserialized = upgradedSub;
+            if (_upcasterPipeline?.TryUpcast(deserialized, out var upgraded) == true)
+                deserialized = upgraded;
             var envelope = new EventEnvelope(id, raw.Position, deserialized, raw.Metadata);
             await handler(envelope, token).ConfigureAwait(false);
         }, ct).ConfigureAwait(false);

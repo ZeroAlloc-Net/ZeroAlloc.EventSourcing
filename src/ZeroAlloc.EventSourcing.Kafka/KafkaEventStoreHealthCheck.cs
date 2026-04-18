@@ -13,6 +13,10 @@ public sealed class KafkaEventStoreHealthCheck : IHealthCheck, IDisposable
     private static readonly TimeSpan MetadataTimeout = TimeSpan.FromSeconds(5);
 
     /// <summary>Initializes the health check with the given bootstrap servers.</summary>
+    /// <remarks>
+    /// The <see cref="Confluent.Kafka.IAdminClient"/> is built eagerly at construction time and
+    /// reused across all subsequent <see cref="CheckHealthAsync"/> invocations.
+    /// </remarks>
     public KafkaEventStoreHealthCheck(string bootstrapServers)
     {
         ArgumentNullException.ThrowIfNull(bootstrapServers);
