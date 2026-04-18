@@ -15,6 +15,12 @@ public sealed class PostgreSqlEventStoreHealthCheck : IHealthCheck
     public PostgreSqlEventStoreHealthCheck(NpgsqlDataSource dataSource)
         => _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
 
+    /// <summary>Initializes the health check by creating an owned data source from <paramref name="connectionString"/>.</summary>
+    internal PostgreSqlEventStoreHealthCheck(string connectionString)
+        : this(NpgsqlDataSource.Create(connectionString ?? throw new ArgumentNullException(nameof(connectionString))))
+    {
+    }
+
     /// <inheritdoc/>
     public async Task<HealthCheckResult> CheckHealthAsync(
         HealthCheckContext context,

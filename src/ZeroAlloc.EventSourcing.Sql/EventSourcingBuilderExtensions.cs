@@ -201,8 +201,14 @@ public static class EventSourcingBuilderExtensions
 
     /// <summary>
     /// Registers <see cref="PostgreSqlEventStoreHealthCheck"/> with the health check system.
-    /// Performs a <c>SELECT 1</c> against the PostgreSQL data source.
+    /// Performs a <c>SELECT 1</c> against a newly created <see cref="NpgsqlDataSource"/>.
     /// </summary>
+    /// <remarks>
+    /// Each health check invocation creates a new <see cref="NpgsqlDataSource"/> from
+    /// <paramref name="connectionString"/>. This keeps every registration fully independent —
+    /// no shared singleton — so calling this method with different connection strings works
+    /// correctly. The overhead is acceptable for a periodic health check.
+    /// </remarks>
     /// <param name="builder">The health checks builder.</param>
     /// <param name="connectionString">PostgreSQL connection string used to create the data source.</param>
     /// <param name="name">Health check registration name. Defaults to <c>postgresql-event-store</c>.</param>
@@ -214,19 +220,46 @@ public static class EventSourcingBuilderExtensions
         string name = "postgresql-event-store",
         HealthStatus? failureStatus = null,
         IEnumerable<string>? tags = null)
-    {
-        builder.Services.TryAddSingleton(_ => NpgsqlDataSource.Create(connectionString));
-        return builder.Add(new HealthCheckRegistration(
+        => builder.Add(new HealthCheckRegistration(
             name,
-            sp => new PostgreSqlEventStoreHealthCheck(sp.GetRequiredService<NpgsqlDataSource>()),
+            _ => new PostgreSqlEventStoreHealthCheck(connectionString),
             failureStatus,
             tags));
-    }
+
+    /// <summary>
+    /// Registers <see cref="PostgreSqlEventStoreHealthCheck"/> using an existing <see cref="NpgsqlDataSource"/>.
+    /// </summary>
+    /// <remarks>
+    /// Use this overload when you already manage a <see cref="NpgsqlDataSource"/> externally
+    /// and want to share it with the health check.
+    /// </remarks>
+    /// <param name="builder">The health checks builder.</param>
+    /// <param name="dataSource">An existing <see cref="NpgsqlDataSource"/> to use.</param>
+    /// <param name="name">Health check registration name. Defaults to <c>postgresql-event-store</c>.</param>
+    /// <param name="failureStatus">Status to report on failure. Defaults to <see cref="HealthStatus.Unhealthy"/>.</param>
+    /// <param name="tags">Optional tags for filtering.</param>
+    public static IHealthChecksBuilder AddPostgreSqlEventStore(
+        this IHealthChecksBuilder builder,
+        NpgsqlDataSource dataSource,
+        string name = "postgresql-event-store",
+        HealthStatus? failureStatus = null,
+        IEnumerable<string>? tags = null)
+        => builder.Add(new HealthCheckRegistration(
+            name,
+            _ => new PostgreSqlEventStoreHealthCheck(dataSource),
+            failureStatus,
+            tags));
 
     /// <summary>
     /// Registers <see cref="PostgreSqlCheckpointStoreHealthCheck"/> with the health check system.
-    /// Performs a <c>SELECT 1</c> against the PostgreSQL data source.
+    /// Performs a <c>SELECT 1</c> against a newly created <see cref="NpgsqlDataSource"/>.
     /// </summary>
+    /// <remarks>
+    /// Each health check invocation creates a new <see cref="NpgsqlDataSource"/> from
+    /// <paramref name="connectionString"/>. This keeps every registration fully independent —
+    /// no shared singleton — so calling this method with different connection strings works
+    /// correctly. The overhead is acceptable for a periodic health check.
+    /// </remarks>
     /// <param name="builder">The health checks builder.</param>
     /// <param name="connectionString">PostgreSQL connection string used to create the data source.</param>
     /// <param name="name">Health check registration name. Defaults to <c>postgresql-checkpoint-store</c>.</param>
@@ -238,12 +271,33 @@ public static class EventSourcingBuilderExtensions
         string name = "postgresql-checkpoint-store",
         HealthStatus? failureStatus = null,
         IEnumerable<string>? tags = null)
-    {
-        builder.Services.TryAddSingleton(_ => NpgsqlDataSource.Create(connectionString));
-        return builder.Add(new HealthCheckRegistration(
+        => builder.Add(new HealthCheckRegistration(
             name,
-            sp => new PostgreSqlCheckpointStoreHealthCheck(sp.GetRequiredService<NpgsqlDataSource>()),
+            _ => new PostgreSqlCheckpointStoreHealthCheck(connectionString),
             failureStatus,
             tags));
-    }
+
+    /// <summary>
+    /// Registers <see cref="PostgreSqlCheckpointStoreHealthCheck"/> using an existing <see cref="NpgsqlDataSource"/>.
+    /// </summary>
+    /// <remarks>
+    /// Use this overload when you already manage a <see cref="NpgsqlDataSource"/> externally
+    /// and want to share it with the health check.
+    /// </remarks>
+    /// <param name="builder">The health checks builder.</param>
+    /// <param name="dataSource">An existing <see cref="NpgsqlDataSource"/> to use.</param>
+    /// <param name="name">Health check registration name. Defaults to <c>postgresql-checkpoint-store</c>.</param>
+    /// <param name="failureStatus">Status to report on failure. Defaults to <see cref="HealthStatus.Unhealthy"/>.</param>
+    /// <param name="tags">Optional tags for filtering.</param>
+    public static IHealthChecksBuilder AddPostgreSqlCheckpointStore(
+        this IHealthChecksBuilder builder,
+        NpgsqlDataSource dataSource,
+        string name = "postgresql-checkpoint-store",
+        HealthStatus? failureStatus = null,
+        IEnumerable<string>? tags = null)
+        => builder.Add(new HealthCheckRegistration(
+            name,
+            _ => new PostgreSqlCheckpointStoreHealthCheck(dataSource),
+            failureStatus,
+            tags));
 }
