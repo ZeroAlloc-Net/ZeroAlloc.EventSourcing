@@ -18,7 +18,7 @@ public abstract class KafkaBaseOptions
     /// <summary>Batch size, retry policy, error handling, and commit strategy.</summary>
     public StreamConsumerOptions ConsumerOptions { get; set; } = new();
 
-#pragma warning disable MA0015
+#pragma warning disable MA0015 // parameter name does not match property name — ArgumentException convention requires property name as the paramName
     /// <summary>Validates required fields. Called internally before consumption starts.</summary>
     public virtual void Validate()
     {

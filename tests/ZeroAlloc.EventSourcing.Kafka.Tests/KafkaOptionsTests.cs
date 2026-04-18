@@ -35,7 +35,23 @@ public sealed class KafkaManualPartitionOptionsTests
     {
         var o = new KafkaManualPartitionOptions { BootstrapServers = "localhost:9092", Topic = "orders", ConsumerId = "orders-consumer", Partitions = [] };
         var act = () => o.Validate();
-        act.Should().Throw<InvalidOperationException>().WithMessage("*Partitions*");
+        act.Should().Throw<ArgumentException>().WithMessage("*Partitions*");
+    }
+
+    [Fact]
+    public void Validate_ThrowsWhenPartitionIndexIsNegative()
+    {
+        var o = new KafkaManualPartitionOptions { BootstrapServers = "localhost:9092", Topic = "orders", ConsumerId = "c", Partitions = [-1] };
+        var act = () => o.Validate();
+        act.Should().Throw<ArgumentOutOfRangeException>().WithMessage("*Partitions*");
+    }
+
+    [Fact]
+    public void Validate_ThrowsWhenPollTimeoutIsZero()
+    {
+        var o = new KafkaManualPartitionOptions { BootstrapServers = "localhost:9092", Topic = "orders", ConsumerId = "c", Partitions = [0], PollTimeout = TimeSpan.Zero };
+        var act = () => o.Validate();
+        act.Should().Throw<ArgumentOutOfRangeException>().WithMessage("*PollTimeout*");
     }
 
     [Fact]
