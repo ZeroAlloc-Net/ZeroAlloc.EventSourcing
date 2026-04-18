@@ -10,10 +10,10 @@ namespace ZeroAlloc.EventSourcing.Kafka;
 public static class EventSourcingBuilderExtensions
 {
     /// <summary>
-    /// Registers <see cref="KafkaConsumerOptions"/> and <see cref="KafkaStreamConsumer"/>.
+    /// Registers <see cref="KafkaManualPartitionConsumer"/> with explicit partition assignment.
     /// </summary>
     /// <param name="builder">The event sourcing builder.</param>
-    /// <param name="options">Kafka consumer configuration.</param>
+    /// <param name="options">Kafka manual partition consumer configuration.</param>
     /// <remarks>
     /// <see cref="ICheckpointStore"/>, <see cref="IEventTypeRegistry"/>, and
     /// <see cref="IEventSerializer"/> must be registered separately.
@@ -21,12 +21,36 @@ public static class EventSourcingBuilderExtensions
     /// <see cref="IDeadLetterStore"/> is optional — if registered it will be injected automatically.
     /// </para>
     /// </remarks>
-    public static EventSourcingBuilder UseKafka(
+    public static EventSourcingBuilder UseKafkaManualPartitions(
         this EventSourcingBuilder builder,
-        KafkaConsumerOptions options)
+        KafkaManualPartitionOptions options)
     {
+        ArgumentNullException.ThrowIfNull(options);
         builder.Services.TryAddSingleton(options);
-        builder.Services.TryAddSingleton<KafkaStreamConsumer>();
+        builder.Services.TryAddSingleton<KafkaManualPartitionConsumer>();
+        return builder;
+    }
+
+    /// <summary>
+    /// Registers <see cref="KafkaConsumerGroupConsumer"/> with consumer-group subscription
+    /// and dynamic partition assignment.
+    /// </summary>
+    /// <param name="builder">The event sourcing builder.</param>
+    /// <param name="options">Kafka consumer group consumer configuration.</param>
+    /// <remarks>
+    /// <see cref="ICheckpointStore"/>, <see cref="IEventTypeRegistry"/>, and
+    /// <see cref="IEventSerializer"/> must be registered separately.
+    /// <para>
+    /// <see cref="IDeadLetterStore"/> is optional — if registered it will be injected automatically.
+    /// </para>
+    /// </remarks>
+    public static EventSourcingBuilder UseKafkaConsumerGroup(
+        this EventSourcingBuilder builder,
+        KafkaConsumerGroupOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        builder.Services.TryAddSingleton(options);
+        builder.Services.TryAddSingleton<KafkaConsumerGroupConsumer>();
         return builder;
     }
 
