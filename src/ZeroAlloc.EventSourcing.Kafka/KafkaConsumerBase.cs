@@ -87,6 +87,26 @@ public abstract class KafkaConsumerBase : IStreamConsumer, IDisposable
         TimeSpan pollTimeout,
         StreamConsumerOptions options,
         IDeadLetterStore? deadLetterStore = null)
+        : this(consumer, checkpointStore, serializer, registry, topic, pollTimeout, options,
+               deadLetterStore, ownsConsumer: false)
+    {
+    }
+
+    /// <summary>
+    /// Constructor that accepts a pre-built IConsumer and an explicit ownership flag.
+    /// Used when a subclass builds the consumer itself (e.g. with rebalance handlers registered
+    /// at builder time) and needs the base class to manage its lifetime.
+    /// </summary>
+    protected KafkaConsumerBase(
+        IConsumer<string, byte[]> consumer,
+        ICheckpointStore checkpointStore,
+        IEventSerializer serializer,
+        IEventTypeRegistry registry,
+        string topic,
+        TimeSpan pollTimeout,
+        StreamConsumerOptions options,
+        IDeadLetterStore? deadLetterStore,
+        bool ownsConsumer)
     {
         _consumer        = consumer        ?? throw new ArgumentNullException(nameof(consumer));
         _checkpointStore = checkpointStore ?? throw new ArgumentNullException(nameof(checkpointStore));
@@ -96,7 +116,7 @@ public abstract class KafkaConsumerBase : IStreamConsumer, IDisposable
         _pollTimeout     = pollTimeout;
         _options         = options ?? new StreamConsumerOptions();
         _deadLetterStore = deadLetterStore;
-        _ownsConsumer    = false;
+        _ownsConsumer    = ownsConsumer;
     }
 
     /// <summary>Directly inserts a position into the per-partition tracking dict. For test stubs only.</summary>
