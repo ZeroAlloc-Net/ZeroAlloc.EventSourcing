@@ -1,3 +1,4 @@
+#pragma warning disable CS1591 // Missing XML comment
 using BenchmarkDotNet.Attributes;
 using ZeroAlloc.Serialisation;
 

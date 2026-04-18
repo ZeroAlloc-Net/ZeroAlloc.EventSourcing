@@ -12,7 +12,7 @@ namespace ZeroAlloc.EventSourcing.Benchmarks;
 public class KafkaStreamConsumerBenchmarks
 {
     private IConsumer<string, byte[]> _fakeConsumer = null!;
-    private KafkaConsumerOptions _options = null!;
+    private KafkaManualPartitionOptions _options = null!;
     private ICheckpointStore _checkpointStore = null!;
     private IEventSerializer _serializer = null!;
     private IEventTypeRegistry _registry = null!;
@@ -24,12 +24,12 @@ public class KafkaStreamConsumerBenchmarks
     public void Setup()
     {
         _fakeConsumer = CreateFakeConsumer(MessageCount);
-        _options = new KafkaConsumerOptions
+        _options = new KafkaManualPartitionOptions
         {
             BootstrapServers = "localhost:9092",
             Topic = "bench-topic",
-            GroupId = "bench-group",
-            Partition = 0,
+            ConsumerId = "bench-consumer",
+            Partitions = [0],
             ConsumerOptions = new()
             {
                 BatchSize = 100,
@@ -55,7 +55,7 @@ public class KafkaStreamConsumerBenchmarks
     [Benchmark]
     public async Task ConsumeAllMessages_DefaultBatchSize()
     {
-        var consumer = new KafkaStreamConsumer(_options, _checkpointStore, _serializer, _registry, _fakeConsumer);
+        var consumer = new KafkaManualPartitionConsumer(_options, _checkpointStore, _serializer, _registry, _fakeConsumer);
         var count = 0;
 
         await consumer.ConsumeAsync(async (envelope, ct) =>
@@ -70,12 +70,12 @@ public class KafkaStreamConsumerBenchmarks
     [Benchmark]
     public async Task ConsumeAllMessages_SmallBatchSize()
     {
-        var options = new KafkaConsumerOptions
+        var options = new KafkaManualPartitionOptions
         {
             BootstrapServers = "localhost:9092",
             Topic = "bench-topic",
-            GroupId = "bench-group",
-            Partition = 0,
+            ConsumerId = "bench-consumer",
+            Partitions = [0],
             ConsumerOptions = new()
             {
                 BatchSize = 10,
@@ -85,7 +85,7 @@ public class KafkaStreamConsumerBenchmarks
             }
         };
 
-        var consumer = new KafkaStreamConsumer(options, _checkpointStore, _serializer, _registry, _fakeConsumer);
+        var consumer = new KafkaManualPartitionConsumer(options, _checkpointStore, _serializer, _registry, _fakeConsumer);
         var count = 0;
 
         await consumer.ConsumeAsync(async (envelope, ct) =>
@@ -100,12 +100,12 @@ public class KafkaStreamConsumerBenchmarks
     [Benchmark]
     public async Task ConsumeAllMessages_AfterEventCommit()
     {
-        var options = new KafkaConsumerOptions
+        var options = new KafkaManualPartitionOptions
         {
             BootstrapServers = "localhost:9092",
             Topic = "bench-topic",
-            GroupId = "bench-group",
-            Partition = 0,
+            ConsumerId = "bench-consumer",
+            Partitions = [0],
             ConsumerOptions = new()
             {
                 BatchSize = 100,
@@ -115,7 +115,7 @@ public class KafkaStreamConsumerBenchmarks
             }
         };
 
-        var consumer = new KafkaStreamConsumer(options, _checkpointStore, _serializer, _registry, _fakeConsumer);
+        var consumer = new KafkaManualPartitionConsumer(options, _checkpointStore, _serializer, _registry, _fakeConsumer);
         var count = 0;
 
         await consumer.ConsumeAsync(async (envelope, ct) =>

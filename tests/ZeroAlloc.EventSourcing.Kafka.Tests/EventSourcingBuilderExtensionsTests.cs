@@ -168,4 +168,20 @@ public class EventSourcingBuilderExtensionsTests
 
         result.Should().BeSameAs(builder);
     }
+
+    [Fact]
+    public void UseKafkaManualPartitions_ThrowsWhenOptionsIsNull()
+    {
+        var builder = new ServiceCollection().AddEventSourcing();
+        var act = () => builder.UseKafkaManualPartitions(null!);
+        act.Should().Throw<ArgumentNullException>();
+    }
+
+    [Fact]
+    public void UseKafkaConsumerGroup_ThrowsWhenOptionsIsNull()
+    {
+        var builder = new ServiceCollection().AddEventSourcing();
+        var act = () => builder.UseKafkaConsumerGroup(null!);
+        act.Should().Throw<ArgumentNullException>();
+    }
 }
