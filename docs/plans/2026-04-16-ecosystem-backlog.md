@@ -41,7 +41,7 @@ Foundation fixes. These are stubs, missing implementations, or constraints that 
 - Schema: `consumer_checkpoints(consumer_id PK, position BIGINT, updated_at DATETIME2)`
 - Contract tests via existing `CheckpointStoreContractTests` base class
 
-### P1.4 — Multi-partition Kafka support
+### ✅ P1.4 — Multi-partition Kafka support
 
 `KafkaConsumerOptions.Partition` is a single `int` (default `0`). Real Kafka topics are partitioned; single-partition support limits throughput and prevents production use on most topics.
 
@@ -275,7 +275,7 @@ Reading the `$all` stream requires a full table scan ordered by position. At sca
 
 | Phase | Theme | Items | Done | Remaining | Complexity |
 |---|---|---|---|---|---|
-| 1 | Complete half-done | 5 | 4 | P1.4 | Low–Medium |
+| 1 | Complete half-done | 5 | 5 | — | Low–Medium |
 | 2 | Production hardening | 6 | 6 | — | Medium–High |
 | 3 | Developer experience | 6 | 0 | all | Low–Medium |
 | 4 | Long-term / advanced | 7 | 0 | all | High |
