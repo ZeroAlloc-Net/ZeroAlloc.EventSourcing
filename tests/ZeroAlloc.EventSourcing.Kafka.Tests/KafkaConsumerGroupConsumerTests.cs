@@ -132,6 +132,10 @@ public sealed class KafkaConsumerGroupConsumerTests
 
         // Sync Commit() must have been called during revoke.
         consumer.Received().Commit();
+
+        // After revoke, no partitions should be tracked.
+        var pos = await sut.GetPositionAsync();
+        pos.Should().BeNull(); // no partitions assigned → null (consistent with base class behaviour)
     }
 
     [Fact]
