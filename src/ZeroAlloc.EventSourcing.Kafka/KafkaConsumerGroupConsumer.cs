@@ -171,7 +171,8 @@ public sealed class KafkaConsumerGroupConsumer : KafkaConsumerBase
             BootstrapServers = options.BootstrapServers,
             GroupId          = options.GroupId,
             AutoOffsetReset  = AutoOffsetReset.Earliest,
-            EnableAutoCommit = false,
+            EnableAutoCommit      = false,
+            EnableAutoOffsetStore = false, // StoreOffset is called manually in ProcessBatchAsync
         };
 
         return new ConsumerBuilder<string, byte[]>(config)
