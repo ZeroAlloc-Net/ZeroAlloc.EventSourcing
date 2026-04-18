@@ -36,12 +36,6 @@ public abstract class KafkaConsumerBase : IStreamConsumer, IDisposable
     /// <summary>Called once before the poll loop starts. Assign or subscribe partitions here.</summary>
     protected abstract Task InitializeAsync(CancellationToken ct);
 
-    /// <summary>
-    /// Called synchronously from a Kafka rebalance revoke callback (or on shutdown).
-    /// Must not call async code. Use synchronous Confluent.Kafka APIs only.
-    /// </summary>
-    protected abstract void OnRevoked(IReadOnlyList<TopicPartition> revoked);
-
     /// <summary>Checkpoint key format shared by all consumers: "{consumerId}:p{partition}"</summary>
     protected static string CheckpointKey(string consumerId, int partition)
         => $"{consumerId}:p{partition}";
@@ -68,10 +62,11 @@ public abstract class KafkaConsumerBase : IStreamConsumer, IDisposable
 
         var config = new ConsumerConfig
         {
-            BootstrapServers = bootstrapServers,
-            GroupId          = groupId,
-            AutoOffsetReset  = AutoOffsetReset.Earliest,
-            EnableAutoCommit = false,
+            BootstrapServers     = bootstrapServers,
+            GroupId              = groupId,
+            AutoOffsetReset      = AutoOffsetReset.Earliest,
+            EnableAutoCommit     = false,
+            EnableAutoOffsetStore = false,
         };
         _consumer     = BuildConsumer(config);
         _ownsConsumer = true;
@@ -199,6 +194,10 @@ public abstract class KafkaConsumerBase : IStreamConsumer, IDisposable
             var partition = msg.Partition.Value;
             LastPositionPerPartition[partition] = pos;
             lastPerPartition[partition]         = pos;
+
+            // Store offset with Kafka broker so the synchronous Commit() in the
+            // consumer-group revoke callback always has the most recent offsets available.
+            try { _consumer.StoreOffset(msg); } catch (KafkaException) { /* not fatal — best-effort */ }
 
             if (_options.CommitStrategy == CommitStrategy.AfterEvent)
                 await _checkpointStore.WriteAsync(

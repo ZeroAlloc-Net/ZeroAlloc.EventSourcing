@@ -28,7 +28,6 @@ public sealed class KafkaConsumerBaseTests
         public override string ConsumerId => consumerId;
         protected override IReadOnlyList<int> GetAssignedPartitions() => [0];
         protected override Task InitializeAsync(CancellationToken ct) => Task.CompletedTask;
-        protected override void OnRevoked(IReadOnlyList<TopicPartition> revoked) { }
     }
 
     private sealed class TwoPartitionStub(
@@ -44,7 +43,6 @@ public sealed class KafkaConsumerBaseTests
         public override string ConsumerId => consumerId;
         protected override IReadOnlyList<int> GetAssignedPartitions() => [0, 1];
         protected override Task InitializeAsync(CancellationToken ct) => Task.CompletedTask;
-        protected override void OnRevoked(IReadOnlyList<TopicPartition> revoked) { }
     }
 
     // ── helpers ───────────────────────────────────────────────────────────────

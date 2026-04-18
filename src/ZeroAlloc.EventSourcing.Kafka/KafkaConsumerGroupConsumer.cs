@@ -117,13 +117,6 @@ public sealed class KafkaConsumerGroupConsumer : KafkaConsumerBase
         return Task.CompletedTask;
     }
 
-    /// <inheritdoc/>
-    protected override void OnRevoked(IReadOnlyList<TopicPartition> revoked)
-    {
-        // Production path: handled in the SetPartitionsRevokedHandler closure.
-        // Test path: tests call SimulatePartitionsRevoked() directly.
-    }
-
     /// <summary>
     /// Drains pending partition assignments from <see cref="_pendingSeeks"/> before each poll.
     /// For each assigned partition, reads the checkpoint and seeks to that offset (or beginning).

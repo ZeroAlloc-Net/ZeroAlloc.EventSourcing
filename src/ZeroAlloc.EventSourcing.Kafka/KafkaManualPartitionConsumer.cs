@@ -66,9 +66,4 @@ public sealed class KafkaManualPartitionConsumer : KafkaConsumerBase
         _consumer.Assign(topicPartitions);
     }
 
-    /// <inheritdoc/>
-    protected override void OnRevoked(IReadOnlyList<TopicPartition> revoked)
-    {
-        // Manual assignment has no rebalancing; nothing to do on revoke.
-    }
 }
