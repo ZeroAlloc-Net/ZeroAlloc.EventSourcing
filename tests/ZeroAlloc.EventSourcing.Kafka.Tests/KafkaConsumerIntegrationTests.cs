@@ -104,7 +104,6 @@ internal static class KafkaIntegrationHelpers
                 Headers = headers,
             });
 
-        producer.Flush(TimeSpan.FromSeconds(5));
     }
 }
 
@@ -193,6 +192,9 @@ public sealed class KafkaManualPartitionConsumerIntegrationTests : IAsyncLifetim
         var cp1 = await checkpoints.ReadAsync($"{consumerId}:p1", CancellationToken.None);
         cp0.Should().NotBeNull("checkpoint for partition 0 should be written");
         cp1.Should().NotBeNull("checkpoint for partition 1 should be written");
+        // Kafka offsets are 0-based; a valid checkpoint must be a non-negative integer.
+        cp0!.Value.Value.Should().BeGreaterThanOrEqualTo(0);
+        cp1!.Value.Value.Should().BeGreaterThanOrEqualTo(0);
     }
 
     /// <summary>
@@ -470,5 +472,62 @@ public sealed class KafkaConsumerGroupConsumerIntegrationTests : IAsyncLifetime
         // The two new events must always be visible to the second consumer.
         secondRun.Should().Contain("event-4");
         secondRun.Should().Contain("event-5");
+        // Upper bound: must not replay all events from the start
+        secondRun.Count.Should().BeLessThanOrEqualTo(3,
+            "the second consumer must resume from the checkpoint, not replay from offset 0");
+    }
+
+    /// <summary>
+    /// Verifies that the consumer-group consumer processes events from all partitions of a
+    /// multi-partition topic. Events are pre-produced on each partition before the consumer
+    /// starts, and <c>AutoOffsetReset.Earliest</c> ensures all messages are read.
+    /// The consumer exits naturally after an empty poll (topic is drained).
+    /// </summary>
+    [Fact]
+    public async Task ConsumeAsync_ProcessesEventsFromMultiplePartitions_ViaRebalancing()
+    {
+        var topic      = $"test-{Guid.NewGuid():N}";
+        var groupId    = $"group-{Guid.NewGuid():N}";
+        var consumerId = "cg-multipartition-consumer";
+        var checkpoints = new InMemoryCheckpointStore();
+        var serializer  = new SystemTextJsonEventSerializer();
+        var registry    = new SimpleEventTypeRegistry();
+        registry.Register<IntegrationTestEvent>("TestEvent");
+
+        // Create topic with 2 partitions explicitly
+        using (var admin = new AdminClientBuilder(new AdminClientConfig { BootstrapServers = _bootstrapServers }).Build())
+        {
+            await admin.CreateTopicsAsync([new TopicSpecification { Name = topic, NumPartitions = 2, ReplicationFactor = 1 }]);
+        }
+
+        // Pre-produce 1 event on each partition so messages are available when the consumer starts.
+        await KafkaIntegrationHelpers.ProduceAsync(_bootstrapServers, topic, 0, new IntegrationTestEvent("p0-event"), "TestEvent");
+        await KafkaIntegrationHelpers.ProduceAsync(_bootstrapServers, topic, 1, new IntegrationTestEvent("p1-event"), "TestEvent");
+
+        var options = new KafkaConsumerGroupOptions
+        {
+            BootstrapServers = _bootstrapServers,
+            Topic            = topic,
+            GroupId          = groupId,
+            ConsumerId       = consumerId,
+            ConsumerOptions  = new StreamConsumerOptions { CommitStrategy = CommitStrategy.AfterEvent },
+            PollTimeout      = TimeSpan.FromSeconds(5),
+        };
+
+        var received = new System.Collections.Concurrent.ConcurrentBag<string>();
+        using var consumer = new KafkaConsumerGroupConsumer(options, checkpoints, serializer, registry);
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+
+        await consumer.ConsumeAsync((env, _) =>
+        {
+            if (env.Event is IntegrationTestEvent e) received.Add(e.Name);
+            return Task.CompletedTask;
+        }, cts.Token);
+
+        // At-least-once semantics: each event must appear at least once.
+        // Rebalancing may cause the consumer to re-read from offset 0, so duplicates are possible.
+        received.Should().Contain("p0-event");
+        received.Should().Contain("p1-event");
+        received.Count.Should().BeGreaterThanOrEqualTo(2, "both partitions must deliver at least one event");
     }
 }
