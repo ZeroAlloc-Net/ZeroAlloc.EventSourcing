@@ -11,7 +11,7 @@ This document is the canonical backlog for the ZeroAlloc.EventSourcing ecosystem
 
 Foundation fixes. These are stubs, missing implementations, or constraints that block real usage. Should be addressed before new features are added.
 
-### P1.1 — Implement `DeadLetterStrategy`
+### ✅ P1.1 — Implement `DeadLetterStrategy`
 
 `ErrorHandlingStrategy.DeadLetter` exists in the enum and is referenced in code comments as a placeholder. The actual routing of poison messages to a dead-letter store is not wired up.
 
@@ -21,7 +21,7 @@ Foundation fixes. These are stubs, missing implementations, or constraints that 
 - `PostgreSqlDeadLetterStore` and `SqlServerDeadLetterStore` SQL implementations
 - Wire into `StreamConsumer` error handling path
 
-### P1.2 — SQL-backed `IProjectionStore`
+### ✅ P1.2 — SQL-backed `IProjectionStore`
 
 `IProjectionStore` has only an in-memory implementation. Production projections need durable state.
 
@@ -31,7 +31,7 @@ Foundation fixes. These are stubs, missing implementations, or constraints that 
 - Schema: `projection_state(projection_id PK, state BYTEA/VARBINARY, updated_at)`
 - Match existing snapshot store pattern for consistency
 
-### P1.3 — `SqlServerCheckpointStore`
+### ✅ P1.3 — `SqlServerCheckpointStore`
 
 `PostgreSqlCheckpointStore` exists in `ZeroAlloc.EventSourcing.Sql`. SQL Server has no equivalent — consumers running on SQL Server cannot persist their position across restarts.
 
@@ -51,7 +51,7 @@ Foundation fixes. These are stubs, missing implementations, or constraints that 
 - Assign/revoke handling for consumer group rebalancing
 - Update `KafkaMessageMapper` to include partition in `StreamPosition` derivation
 
-### P1.5 — Snapshot frequency / auto-snapshot policy
+### ✅ P1.5 — Snapshot frequency / auto-snapshot policy
 
 `SnapshotCachingRepositoryDecorator` exists but there is no policy for *when* to write snapshots. Callers must manage this manually, which leads to either too-frequent or no snapshot writes.
 
@@ -66,7 +66,7 @@ Foundation fixes. These are stubs, missing implementations, or constraints that 
 
 Things needed before you would trust this library in a real production system.
 
-### P2.1 — Microsoft.Extensions.DependencyInjection integration
+### ✅ P2.1 — Microsoft.Extensions.DependencyInjection integration
 
 No `AddEventSourcing()` extension methods exist. Users wire up all abstractions manually, which is error-prone and verbose in ASP.NET Core apps.
 
@@ -76,7 +76,7 @@ No `AddEventSourcing()` extension methods exist. Users wire up all abstractions 
 - Adapter-specific extension packages: `.UsePostgreSql()`, `.UseSqlServer()`, `.UseKafka()`
 - Lifetime management: event store as singleton, connections as transient/scoped
 
-### P2.2 — OpenTelemetry / distributed tracing
+### ✅ P2.2 — OpenTelemetry / distributed tracing
 
 No `Activity` spans exist anywhere. `EventMetadata` already collects `CorrelationId` and `CausationId` but they are never propagated to OpenTelemetry.
 
@@ -87,7 +87,7 @@ No `Activity` spans exist anywhere. `EventMetadata` already collects `Correlatio
 - Kafka header extraction for distributed trace context propagation
 - New package: `ZeroAlloc.EventSourcing.OpenTelemetry`
 
-### P2.3 — Metrics
+### ✅ P2.3 — Metrics
 
 No metrics instrumentation. Key operational signals are invisible: append throughput, consumer lag, retry rate, dead-letter rate, snapshot hit/miss.
 
@@ -97,7 +97,7 @@ No metrics instrumentation. Key operational signals are invisible: append throug
 - Per-adapter tags (database type, stream id pattern)
 - Expose via existing OpenTelemetry package or standalone
 
-### P2.4 — Health checks
+### ✅ P2.4 — Health checks
 
 No `IHealthCheck` implementations. A production service cannot verify event store connectivity, consumer lag threshold, or checkpoint store reachability.
 
@@ -107,7 +107,7 @@ No `IHealthCheck` implementations. A production service cannot verify event stor
 - `CheckpointStoreHealthCheck` — verifies read/write round-trip
 - Standard `Microsoft.Extensions.Diagnostics.HealthChecks` implementations per adapter
 
-### P2.5 — Event schema evolution / upcasting
+### ✅ P2.5 — Event schema evolution / upcasting
 
 No strategy for when an event payload shape changes between versions. Old events that no longer match the current CLR type will fail deserialization or be silently skipped.
 
@@ -118,14 +118,13 @@ No strategy for when an event payload shape changes between versions. Old events
 - Forward-only (no downcasting); idempotent for current-version events
 - Documentation: event versioning strategy guide
 
-### P2.6 — Built-in serializer implementations
+### ✅ P2.6 — Built-in serializer implementations
 
-`IEventSerializer` is a contract only — no out-of-box implementations ship with the library. Every consumer must write their own.
-
-**Scope:**
-- `ZeroAlloc.EventSourcing.Serialization.Json` — `SystemTextJsonEventSerializer` with `JsonSerializerOptions` passthrough
-- `ZeroAlloc.EventSourcing.Serialization.MessagePack` — `MessagePackEventSerializer` (optional, separate package)
-- Both implement `IEventSerializer` and are zero-dependency on the core package
+`ZeroAllocEventSerializer` ships in the core package and wraps `ISerializerDispatcher`
+(source-generated, AOT-safe). For types not annotated with `[ZeroAllocSerializable]`,
+opt in to a `System.Text.Json` fallback via `services.WithSystemTextJsonFallback()` in
+`ZeroAlloc.Serialisation`. Default behaviour remains strict (`NotSupportedException`) so
+missing annotations are caught loudly.
 
 ---
 
@@ -274,9 +273,9 @@ Reading the `$all` stream requires a full table scan ordered by position. At sca
 
 ## Summary
 
-| Phase | Theme | Items | Complexity |
-|---|---|---|---|
-| 1 | Complete half-done | 5 | Low–Medium |
-| 2 | Production hardening | 6 | Medium–High |
-| 3 | Developer experience | 6 | Low–Medium |
-| 4 | Long-term / advanced | 7 | High |
+| Phase | Theme | Items | Done | Remaining | Complexity |
+|---|---|---|---|---|---|
+| 1 | Complete half-done | 5 | 4 | P1.4 | Low–Medium |
+| 2 | Production hardening | 6 | 6 | — | Medium–High |
+| 3 | Developer experience | 6 | 0 | all | Low–Medium |
+| 4 | Long-term / advanced | 7 | 0 | all | High |
