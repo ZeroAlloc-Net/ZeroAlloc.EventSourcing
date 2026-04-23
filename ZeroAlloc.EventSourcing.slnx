@@ -10,6 +10,9 @@
     <Project Path="src/ZeroAlloc.EventSourcing.Telemetry/ZeroAlloc.EventSourcing.Telemetry.csproj" />
     <Project Path="src/ZeroAlloc.EventSourcing/ZeroAlloc.EventSourcing.csproj" />
   </Folder>
+  <Folder Name="/samples/">
+    <Project Path="samples/ZeroAlloc.EventSourcing.AotSmoke/ZeroAlloc.EventSourcing.AotSmoke.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/ZeroAlloc.EventSourcing.Aggregates.Tests/ZeroAlloc.EventSourcing.Aggregates.Tests.csproj" />
     <Project Path="tests/ZeroAlloc.EventSourcing.InMemory.Tests/ZeroAlloc.EventSourcing.InMemory.Tests.csproj" />

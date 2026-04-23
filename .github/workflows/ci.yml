@@ -58,3 +58,25 @@ jobs:
         with:
           name: test-results
           path: "**/TestResults/*.trx"
+
+  aot-smoke:
+    name: aot-smoke
+    runs-on: ubuntu-latest
+    # Publishes samples/ZeroAlloc.EventSourcing.AotSmoke with PublishAot=true.
+    # Exercises the generator + Aggregate<TId,TState> flow: Raise() + ApplyEvent()
+    # + DequeueUncommitted. Doesn't require a database, keeping the smoke fast.
+    steps:
+      - uses: actions/checkout@v6
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+          dotnet-quality: 'ga'
+      - name: Install AOT native toolchain
+        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+      - name: Restore
+        run: dotnet restore samples/ZeroAlloc.EventSourcing.AotSmoke/ZeroAlloc.EventSourcing.AotSmoke.csproj
+      - name: Publish AOT
+        run: dotnet publish samples/ZeroAlloc.EventSourcing.AotSmoke/ZeroAlloc.EventSourcing.AotSmoke.csproj -r linux-x64 -c Release -o ./aot-out
+      - name: Run AOT binary
+        run: ./aot-out/ZeroAlloc.EventSourcing.AotSmoke
