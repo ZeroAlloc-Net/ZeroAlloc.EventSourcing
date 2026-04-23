@@ -26,10 +26,10 @@ if (order.State.Total != 99.95m)
     return 1;
 }
 
-var uncommitted = ((ZeroAlloc.EventSourcing.Aggregates.IAggregate)order).DequeueUncommitted();
-if (uncommitted.Length != 2)
+// DequeueUncommitted is internal; Version is the public bookkeeping signal.
+if (order.Version.Value != 2)
 {
-    Console.Error.WriteLine($"AOT smoke: FAIL — expected 2 uncommitted events, got {uncommitted.Length}");
+    Console.Error.WriteLine($"AOT smoke: FAIL — Version expected 2 after two Raise() calls, got {order.Version.Value}");
     return 1;
 }
 
