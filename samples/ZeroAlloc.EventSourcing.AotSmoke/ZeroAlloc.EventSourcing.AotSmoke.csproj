@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- Override the multi-TFM list from Directory.Build.props -->
+    <TargetFrameworks></TargetFrameworks>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>ZeroAlloc.EventSourcing.AotSmoke</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <OptimizationPreference>Size</OptimizationPreference>
+
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <WarningsAsErrors>$(WarningsAsErrors);IL2026;IL2067;IL2075;IL2091;IL3050;IL3051</WarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ZeroAlloc.EventSourcing\ZeroAlloc.EventSourcing.csproj"
+                      SetTargetFramework="TargetFramework=net10.0" />
+    <ProjectReference Include="..\..\src\ZeroAlloc.EventSourcing.Aggregates\ZeroAlloc.EventSourcing.Aggregates.csproj"
+                      SetTargetFramework="TargetFramework=net10.0" />
+    <ProjectReference Include="..\..\src\ZeroAlloc.EventSourcing.Generators\ZeroAlloc.EventSourcing.Generators.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false"
+                      UndefineProperties="PublishAot" />
+  </ItemGroup>
+</Project>
