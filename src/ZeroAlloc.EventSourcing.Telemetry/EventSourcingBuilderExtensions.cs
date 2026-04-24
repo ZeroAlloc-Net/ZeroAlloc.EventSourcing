@@ -8,7 +8,7 @@ namespace ZeroAlloc.EventSourcing.Telemetry;
 public static class EventSourcingBuilderExtensions
 {
     /// <summary>
-    /// Replaces the registered <see cref="IEventStore"/> with an <see cref="InstrumentedEventStore"/> decorator
+    /// Replaces the registered <see cref="IEventStore"/> with a source-generated <see cref="EventStoreInstrumented"/> decorator
     /// that records OpenTelemetry Activity spans and metrics for every store operation.
     /// </summary>
     /// <param name="builder">The <see cref="EventSourcingBuilder"/> to configure.</param>
@@ -30,7 +30,7 @@ public static class EventSourcingBuilderExtensions
                 inner = (IEventStore)descriptor.ImplementationFactory(sp);
             else
                 inner = (IEventStore)ActivatorUtilities.CreateInstance(sp, descriptor.ImplementationType!);
-            return new InstrumentedEventStore(inner);
+            return new EventStoreInstrumented(inner);
         });
 
         return builder;

@@ -24,7 +24,7 @@ public class EventSourcingBuilderExtensionsTests
         var services = BaseServices();
         services.AddEventSourcing().UseEventSourcingTelemetry();
         using var provider = services.BuildServiceProvider();
-        provider.GetRequiredService<IEventStore>().Should().BeOfType<InstrumentedEventStore>();
+        provider.GetRequiredService<IEventStore>().Should().BeOfType<EventStoreInstrumented>();
     }
 
     [Fact]
