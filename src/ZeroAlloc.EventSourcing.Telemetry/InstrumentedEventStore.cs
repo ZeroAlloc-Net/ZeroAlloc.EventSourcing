@@ -1,28 +1,35 @@
-using System.Diagnostics;
 using System.Diagnostics.Metrics;
-using System.Runtime.CompilerServices;
 using ZeroAlloc.Results;
 
 namespace ZeroAlloc.EventSourcing.Telemetry;
 
 /// <summary>
 /// Decorates <see cref="IEventStore"/> with OpenTelemetry instrumentation.
-/// Records Activity spans and metrics for append, read, and subscribe operations.
-/// No OpenTelemetry SDK dependency — uses BCL <see cref="ActivitySource"/> and <see cref="Meter"/> directly.
+/// This type is a thin public wrapper around the source-generated <c>EventStoreInstrumented</c> proxy
+/// and is preserved for API compatibility. Prefer using <see cref="EventSourcingBuilderExtensions.UseEventSourcingTelemetry"/>
+/// to wire up instrumentation via the DI builder.
 /// </summary>
+[Obsolete("Use AddEventSourcingTelemetry() or EventStoreInstrumented directly. InstrumentedEventStore adds a redundant wrapper.")]
 public sealed class InstrumentedEventStore : IEventStore
 {
-    // Static fields are intentional: ActivitySource and Meter register globally by name and
-    // share listeners across all instances. Creating one per process avoids duplicate registrations.
-    private static readonly ActivitySource _activitySource = new("ZeroAlloc.EventSourcing");
-    private static readonly Meter _meter = new("ZeroAlloc.EventSourcing");
-    private static readonly Counter<long> _appendsTotal = _meter.CreateCounter<long>("event_store.appends_total");
-    private static readonly Histogram<double> _readDurationMs = _meter.CreateHistogram<double>("event_store.read_duration_ms");
+    // Static field is intentional: Meter registers globally by name and shares listeners across all instances.
+    // The counter is placed here (not on IEventStore via [Count]) because [Count] cannot inspect whether a
+    // Result<T,E> return value is Success or Failure — it always increments on non-exception return.
+    //
+    // Known limitation: this creates a second Meter("ZeroAlloc.EventSourcing") alongside the one held by
+    // the source-generated EventStoreInstrumented._meter. The generated class is emitted as
+    // `internal sealed class` (not partial), so the two Meters cannot be unified without modifying the
+    // ZeroAlloc.Telemetry.Generator. Having two Meter instances with the same name is a .NET diagnostics
+    // anti-pattern, but it is acceptable here because InstrumentedEventStore is [Obsolete] and will be
+    // removed in the next minor version. MeterListener subscriptions match on instrument.Meter.Name, so
+    // all measurements remain visible to any listener subscribing to "ZeroAlloc.EventSourcing".
+    private static readonly Counter<long> _appendsTotal =
+        new Meter("ZeroAlloc.EventSourcing").CreateCounter<long>("event_store.appends_total");
 
-    private readonly IEventStore _inner;
+    private readonly IEventStore _proxy;
 
     /// <summary>Initialises a new instance of <see cref="InstrumentedEventStore"/> wrapping <paramref name="inner"/>.</summary>
-    public InstrumentedEventStore(IEventStore inner) => _inner = inner;
+    public InstrumentedEventStore(IEventStore inner) => _proxy = new EventStoreInstrumented(inner);
 
     /// <inheritdoc />
     public async ValueTask<Result<AppendResult, StoreError>> AppendAsync(
@@ -31,24 +38,10 @@ public sealed class InstrumentedEventStore : IEventStore
         StreamPosition expectedVersion,
         CancellationToken ct = default)
     {
-        using var activity = _activitySource.StartActivity("event_store.append");
-        activity?.SetTag("stream.id", id.Value);
-        var correlationId = Activity.Current?.GetBaggageItem("correlation.id");
-        var causationId = Activity.Current?.GetBaggageItem("causation.id");
-        if (correlationId is not null) activity?.SetTag("correlation.id", correlationId);
-        if (causationId is not null) activity?.SetTag("causation.id", causationId);
-        try
-        {
-            var result = await _inner.AppendAsync(id, events, expectedVersion, ct).ConfigureAwait(false);
-            if (result.IsSuccess)
-                _appendsTotal.Add(1);
-            return result;
-        }
-        catch (Exception ex)
-        {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            throw;
-        }
+        var result = await _proxy.AppendAsync(id, events, expectedVersion, ct).ConfigureAwait(false);
+        if (result.IsSuccess)
+            _appendsTotal.Add(1);
+        return result;
     }
 
     /// <inheritdoc />
@@ -56,79 +49,13 @@ public sealed class InstrumentedEventStore : IEventStore
         StreamId id,
         StreamPosition from = default,
         CancellationToken ct = default) =>
-        ReadInstrumentedAsync(id, from, ct);
-
-    private async IAsyncEnumerable<EventEnvelope> ReadInstrumentedAsync(
-        StreamId id,
-        StreamPosition from,
-        [EnumeratorCancellation] CancellationToken ct)
-    {
-        using var activity = _activitySource.StartActivity("event_store.read");
-        activity?.SetTag("stream.id", id.Value);
-        var sw = Stopwatch.GetTimestamp();
-        Exception? caught = null;
-
-        await foreach (var envelope in ReadWithCatch(_inner.ReadAsync(id, from, ct), e => caught = e).ConfigureAwait(false))
-        {
-            yield return envelope;
-        }
-
-        var elapsed = Stopwatch.GetElapsedTime(sw).TotalMilliseconds;
-        _readDurationMs.Record(elapsed);
-
-        if (caught is not null)
-        {
-            activity?.SetStatus(ActivityStatusCode.Error, caught.Message);
-            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(caught).Throw();
-        }
-    }
-
-    private static async IAsyncEnumerable<EventEnvelope> ReadWithCatch(
-        IAsyncEnumerable<EventEnvelope> source,
-        Action<Exception> onError,
-        [EnumeratorCancellation] CancellationToken ct = default)
-    {
-        var enumerator = source.GetAsyncEnumerator(ct);
-        await using (enumerator.ConfigureAwait(false))
-        {
-            while (true)
-            {
-                bool hasNext;
-                try
-                {
-                    hasNext = await enumerator.MoveNextAsync().ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    onError(ex);
-                    yield break;
-                }
-
-                if (!hasNext)
-                    yield break;
-
-                yield return enumerator.Current;
-            }
-        }
-    }
+        _proxy.ReadAsync(id, from, ct);
 
     /// <inheritdoc />
-    public async ValueTask<IEventSubscription> SubscribeAsync(
+    public ValueTask<IEventSubscription> SubscribeAsync(
         StreamId id,
         StreamPosition from,
         Func<EventEnvelope, CancellationToken, ValueTask> handler,
-        CancellationToken ct = default)
-    {
-        using var activity = _activitySource.StartActivity("event_store.subscribe");
-        activity?.SetTag("stream.id", id.Value);
-        try
-        {
-            return await _inner.SubscribeAsync(id, from, handler, ct).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            throw;
-        }
-    }
+        CancellationToken ct = default) =>
+        _proxy.SubscribeAsync(id, from, handler, ct);
 }

@@ -94,7 +94,7 @@ public class AggregateRepositoryTests
     }
 }
 
-// Test helpers — inline serializer/registry
+// Test helpers — inline serializer (registry is source-generated as OrderEventTypeRegistry)
 internal sealed class JsonAggregateSerializer : IEventSerializer
 {
     public ReadOnlyMemory<byte> Serialize<TEvent>(TEvent @event) where TEvent : notnull
@@ -102,16 +102,4 @@ internal sealed class JsonAggregateSerializer : IEventSerializer
 
     public object Deserialize(ReadOnlyMemory<byte> payload, Type eventType)
         => System.Text.Json.JsonSerializer.Deserialize(payload.Span, eventType)!;
-}
-
-internal sealed class OrderEventTypeRegistry : IEventTypeRegistry
-{
-    private static readonly Dictionary<string, Type> Map = new()
-    {
-        [nameof(OrderPlacedEvent)] = typeof(OrderPlacedEvent),
-        [nameof(OrderShippedEvent)] = typeof(OrderShippedEvent),
-    };
-
-    public bool TryGetType(string eventType, out Type? type) => Map.TryGetValue(eventType, out type);
-    public string GetTypeName(Type type) => type.Name;
 }

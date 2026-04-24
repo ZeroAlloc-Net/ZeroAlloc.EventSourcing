@@ -1,5 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <!-- TODO EventSourcing#68: Apply instrumentation deferred. IAggregate.ApplyHistoric is internal; [Instrument] cannot intercept internal methods. Requires either making the interface public or adding manual tracing inside Aggregate<TId,TState> base class. -->
+
   <PropertyGroup>
     <Description>Core abstractions and primitives for ZeroAlloc.EventSourcing.</Description>
   </PropertyGroup>
@@ -10,6 +12,16 @@
     <PackageReference Include="ZeroAlloc.AsyncEvents" />
     <PackageReference Include="ZeroAlloc.ValueObjects" />
     <PackageReference Include="ZeroAlloc.Serialisation" />
+    <PackageReference Include="ZeroAlloc.Telemetry" Version="1.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>ZeroAlloc.EventSourcing.Telemetry</_Parameter1>
+    </AssemblyAttribute>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>ZeroAlloc.EventSourcing.Telemetry.Tests</_Parameter1>
+    </AssemblyAttribute>
   </ItemGroup>
 
   <ItemGroup Condition="'$(IsRoslynComponent)' != 'true'">

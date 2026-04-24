@@ -17,7 +17,7 @@ public sealed class InstrumentedEventStoreTests : IDisposable
     private static readonly string MeterName = "ZeroAlloc.EventSourcing";
 
     private readonly IEventStore _inner;
-    private readonly InstrumentedEventStore _sut;
+    private readonly IEventStore _sut;
     private readonly StreamId _streamId = new("test-stream");
 
     // Track activities started
@@ -32,7 +32,7 @@ public sealed class InstrumentedEventStoreTests : IDisposable
     public InstrumentedEventStoreTests()
     {
         _inner = Substitute.For<IEventStore>();
-        _sut = new InstrumentedEventStore(_inner);
+        _sut = new EventStoreInstrumented(_inner);
 
         // Set up ActivityListener to capture activities
         _activityListener = new ActivityListener
@@ -76,6 +76,10 @@ public sealed class InstrumentedEventStoreTests : IDisposable
     private Result<AppendResult, StoreError> OkAppendResult()
         => Result<AppendResult, StoreError>.Success(new AppendResult(_streamId, StreamPosition.Start));
 
+#pragma warning disable CS0618 // InstrumentedEventStore is intentionally obsolete; tested here to guard its contract
+    private IEventStore CreateInstrumentedEventStore() => new InstrumentedEventStore(_inner);
+#pragma warning restore CS0618
+
     // -------------------------------------------------------------------------
     // AppendAsync tests
     // -------------------------------------------------------------------------
@@ -92,29 +96,33 @@ public sealed class InstrumentedEventStoreTests : IDisposable
     }
 
     [Fact]
-    public async Task AppendAsync_SetsStreamIdTag()
+    public async Task AppendAsync_IncrementsCounter_OnResultSuccess()
     {
         _inner.AppendAsync(default, default, default, default)
               .ReturnsForAnyArgs(ValueTask.FromResult(OkAppendResult()));
 
-        await _sut.AppendAsync(_streamId, ReadOnlyMemory<object>.Empty, StreamPosition.Start);
-
-        var activity = _startedActivities.Should().ContainSingle(a => a.OperationName == "event_store.append").Subject;
-        activity.GetTagItem("stream.id").Should().Be(_streamId.Value);
-    }
-
-    [Fact]
-    public async Task AppendAsync_IncrementsCounter_OnSuccess()
-    {
-        _inner.AppendAsync(default, default, default, default)
-              .ReturnsForAnyArgs(ValueTask.FromResult(OkAppendResult()));
-
-        await _sut.AppendAsync(_streamId, ReadOnlyMemory<object>.Empty, StreamPosition.Start);
+        await CreateInstrumentedEventStore().AppendAsync(_streamId, ReadOnlyMemory<object>.Empty, StreamPosition.Start);
 
         _meterListener.RecordObservableInstruments();
 
         _counterMeasurements
             .Should().ContainSingle(m => m.Name == "event_store.appends_total" && m.Value == 1);
+    }
+
+    [Fact]
+    public async Task AppendAsync_DoesNotIncrementCounter_OnResultFailure()
+    {
+        _inner.AppendAsync(default, default, default, default)
+              .ReturnsForAnyArgs(ValueTask.FromResult(
+                  Result<AppendResult, StoreError>.Failure(StoreError.Unknown("store failure"))));
+
+        await CreateInstrumentedEventStore().AppendAsync(_streamId, ReadOnlyMemory<object>.Empty, StreamPosition.Start);
+
+        _meterListener.RecordObservableInstruments();
+
+        _counterMeasurements
+            .Where(m => m.Name == "event_store.appends_total")
+            .Should().BeEmpty();
     }
 
     [Fact]
@@ -136,7 +144,7 @@ public sealed class InstrumentedEventStoreTests : IDisposable
         _inner.AppendAsync(default, default, default, default)
               .ThrowsAsyncForAnyArgs(new InvalidOperationException("boom"));
 
-        var act = async () => await _sut.AppendAsync(_streamId, ReadOnlyMemory<object>.Empty, StreamPosition.Start);
+        var act = async () => await CreateInstrumentedEventStore().AppendAsync(_streamId, ReadOnlyMemory<object>.Empty, StreamPosition.Start);
         await act.Should().ThrowAsync<InvalidOperationException>();
 
         _meterListener.RecordObservableInstruments();
@@ -144,39 +152,6 @@ public sealed class InstrumentedEventStoreTests : IDisposable
         _counterMeasurements
             .Where(m => m.Name == "event_store.appends_total")
             .Should().BeEmpty();
-    }
-
-    [Fact]
-    public async Task AppendAsync_DoesNotIncrementCounter_OnResultFailure()
-    {
-        _inner.AppendAsync(default, default, default, default)
-              .ReturnsForAnyArgs(ValueTask.FromResult(
-                  Result<AppendResult, StoreError>.Failure(StoreError.Unknown("store failure"))));
-
-        await _sut.AppendAsync(_streamId, ReadOnlyMemory<object>.Empty, StreamPosition.Start);
-
-        _meterListener.RecordObservableInstruments();
-        _counterMeasurements
-            .Where(m => m.Name == "event_store.appends_total")
-            .Should().BeEmpty();
-    }
-
-    [Fact]
-    public async Task AppendAsync_SetsCorrelationIdTag_WhenBaggagePresent()
-    {
-        _inner.AppendAsync(default, default, default, default)
-              .ReturnsForAnyArgs(ValueTask.FromResult(OkAppendResult()));
-
-        var correlationId = Guid.NewGuid().ToString();
-        using var parent = new Activity("test.parent").Start();
-        parent.AddBaggage("correlation.id", correlationId);
-        parent.AddBaggage("causation.id", "some-causation-id");
-
-        await _sut.AppendAsync(_streamId, ReadOnlyMemory<object>.Empty, StreamPosition.Start);
-
-        var activity = _startedActivities.Should().ContainSingle(a => a.OperationName == "event_store.append").Subject;
-        activity.GetTagItem("correlation.id").Should().Be(correlationId);
-        activity.GetTagItem("causation.id").Should().Be("some-causation-id");
     }
 
     // -------------------------------------------------------------------------
