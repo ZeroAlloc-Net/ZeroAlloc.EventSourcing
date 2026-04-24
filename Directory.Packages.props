@@ -4,7 +4,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageVersion Include="ZeroAlloc.Results"                  Version="0.1.4" />
-    <PackageVersion Include="ZeroAlloc.Collections"              Version="0.1.5" />
+    <PackageVersion Include="ZeroAlloc.Collections"              Version="0.1.6" />
     <PackageVersion Include="ZeroAlloc.AsyncEvents"              Version="1.0.0" />
     <PackageVersion Include="ZeroAlloc.ValueObjects"             Version="1.2.0" />
     <PackageVersion Include="ZeroAlloc.Serialisation"            Version="2.0.0" />
