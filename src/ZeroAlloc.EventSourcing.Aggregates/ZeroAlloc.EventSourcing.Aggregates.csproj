@@ -12,7 +12,7 @@
     <PackageReference Include="ZeroAlloc.Collections" />
     <PackageReference Include="ZeroAlloc.Results" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
-    <PackageReference Include="ZeroAlloc.StateMachine" Version="1.0.0" />
+    <PackageReference Include="ZeroAlloc.StateMachine" Version="1.0.1" />
   </ItemGroup>
 
   <ItemGroup>
