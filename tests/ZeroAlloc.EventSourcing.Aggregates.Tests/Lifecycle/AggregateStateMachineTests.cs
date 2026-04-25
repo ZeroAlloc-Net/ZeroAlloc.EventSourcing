@@ -41,4 +41,16 @@ public class AggregateStateMachineTests
         order.State.Status.Should().Be(OrderStatus.Shipped);
         order.State.TrackingNumber.Should().Be("TRACK-1");
     }
+
+    [Fact]
+    public void Ship_FromDraft_Throws()
+    {
+        var order = new Order();
+
+        var act = () => order.Ship(trackingNumber: "TRACK-1");
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*Draft*");
+        order.State.Status.Should().Be(OrderStatus.Draft); // unchanged
+    }
 }
