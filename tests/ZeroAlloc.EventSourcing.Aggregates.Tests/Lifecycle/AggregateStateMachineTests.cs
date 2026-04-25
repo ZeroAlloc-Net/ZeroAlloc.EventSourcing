@@ -29,4 +29,16 @@ public class AggregateStateMachineTests
             .WithMessage("*Placed*");
         order.State.Total.Should().Be(100m); // unchanged
     }
+
+    [Fact]
+    public void Ship_FromPlaced_Succeeds()
+    {
+        var order = new Order();
+        order.PlaceOrder(total: 100m);
+
+        order.Ship(trackingNumber: "TRACK-1");
+
+        order.State.Status.Should().Be(OrderStatus.Shipped);
+        order.State.TrackingNumber.Should().Be("TRACK-1");
+    }
 }
