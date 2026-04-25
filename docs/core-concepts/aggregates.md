@@ -472,3 +472,54 @@ Aggregates sit at the heart of event sourcing: they translate commands into immu
 - **[Core Concepts: Events](./events.md)** — The events aggregates raise
 - **[Core Concepts: Event Store](./event-store.md)** — How events are persisted
 - **[Quick Start Example](../getting-started/quick-start-example.md)** — Complete working Order aggregate
+
+## State-machine validation
+
+When an aggregate has a clear lifecycle — `Draft → Placed → Shipped` — declaring the legal transitions in a companion `[StateMachine]` partial class lets the compiler emit a `TryFire` switch that rejects illegal commands at the call site. The aggregate's authoritative status lives on the state struct; the FSM is constructed per command so the two representations cannot drift.
+
+### The pattern
+
+Two parts:
+
+1. A status enum on the state struct.
+2. A companion partial class with `[StateMachine]` and `[Transition<TStatus, TTrigger>]` attributes. The constructor seeds the FSM's internal state from the aggregate's current status.
+
+```csharp
+public enum OrderStatus  { Draft, Placed, Shipped, Cancelled }
+public enum OrderTrigger { Place, Ship, Cancel }
+
+[StateMachine(InitialState = nameof(OrderStatus.Draft))]
+[Transition<OrderStatus, OrderTrigger>(From = OrderStatus.Draft,  On = OrderTrigger.Place,  To = OrderStatus.Placed)]
+[Transition<OrderStatus, OrderTrigger>(From = OrderStatus.Placed, On = OrderTrigger.Ship,   To = OrderStatus.Shipped)]
+[Transition<OrderStatus, OrderTrigger>(From = OrderStatus.Draft,  On = OrderTrigger.Cancel, To = OrderStatus.Cancelled)]
+[Transition<OrderStatus, OrderTrigger>(From = OrderStatus.Placed, On = OrderTrigger.Cancel, To = OrderStatus.Cancelled)]
+[Terminal<OrderStatus>(State = OrderStatus.Shipped)]
+[Terminal<OrderStatus>(State = OrderStatus.Cancelled)]
+public sealed partial class OrderFsm
+{
+    public OrderFsm(OrderStatus current) => _state = current;
+}
+```
+
+The aggregate command method validates before raising:
+
+```csharp
+public void Ship(string trackingNumber)
+{
+    var fsm = new OrderFsm(State.Status);
+    if (!fsm.TryFire(OrderTrigger.Ship))
+        throw new InvalidOperationException($"Cannot ship order in status {State.Status}.");
+    Raise(new OrderShipped(trackingNumber));
+}
+```
+
+### Compensation paths
+
+Multiple `[Transition]` lines from different source states to the same target encode compensation. The two `Cancel` transitions above let an order be cancelled from either `Draft` or `Placed`, but not after `Shipped` (no transition declared) or `Cancelled` (`[Terminal]`).
+
+### What this does and does not replace
+
+- **Does** validate that a command is legal in the current status — illegal transitions throw `InvalidOperationException` before the event is raised.
+- **Does not** replace the event-to-state dispatch that `AggregateDispatchGenerator` already emits (`ApplyEvent` continues to route events to `state.Apply(...)` methods).
+
+For the FSM attribute reference and analyzer warnings (e.g., ZSM0003 on self-loops), see the [ZeroAlloc.StateMachine documentation](https://github.com/ZeroAlloc-Net/ZeroAlloc.StateMachine).
