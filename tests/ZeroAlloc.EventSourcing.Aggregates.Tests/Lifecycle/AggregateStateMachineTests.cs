@@ -16,4 +16,17 @@ public class AggregateStateMachineTests
         order.State.Total.Should().Be(100m);
         order.Version.Value.Should().Be(1);
     }
+
+    [Fact]
+    public void Place_FromPlaced_Throws()
+    {
+        var order = new Order();
+        order.PlaceOrder(total: 100m);
+
+        var act = () => order.PlaceOrder(total: 50m);
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*Placed*");
+        order.State.Total.Should().Be(100m); // unchanged
+    }
 }
