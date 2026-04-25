@@ -65,4 +65,18 @@ public class AggregateStateMachineTests
         order.State.Status.Should().Be(OrderStatus.Cancelled);
         order.State.CancelReason.Should().Be("out of stock");
     }
+
+    [Fact]
+    public void Ship_AfterCancel_Throws()
+    {
+        var order = new Order();
+        order.PlaceOrder(total: 100m);
+        order.Cancel(reason: "customer changed mind");
+
+        var act = () => order.Ship(trackingNumber: "TRACK-1");
+
+        act.Should().Throw<InvalidOperationException>()
+            .WithMessage("*Cancelled*");
+        order.State.Status.Should().Be(OrderStatus.Cancelled);
+    }
 }
