@@ -53,4 +53,16 @@ public class AggregateStateMachineTests
             .WithMessage("*Draft*");
         order.State.Status.Should().Be(OrderStatus.Draft); // unchanged
     }
+
+    [Fact]
+    public void Cancel_FromPlaced_Succeeds()
+    {
+        var order = new Order();
+        order.PlaceOrder(total: 100m);
+
+        order.Cancel(reason: "out of stock");
+
+        order.State.Status.Should().Be(OrderStatus.Cancelled);
+        order.State.CancelReason.Should().Be("out of stock");
+    }
 }

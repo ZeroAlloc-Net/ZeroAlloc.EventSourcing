@@ -26,4 +26,13 @@ public sealed partial class Order : Aggregate<OrderId, OrderState>
                 $"Cannot ship order in status {State.Status}.");
         Raise(new OrderShipped(trackingNumber));
     }
+
+    public void Cancel(string reason)
+    {
+        var fsm = new OrderFsm(State.Status);
+        if (!fsm.TryFire(OrderTrigger.Cancel))
+            throw new InvalidOperationException(
+                $"Cannot cancel order in status {State.Status}.");
+        Raise(new OrderCancelled(reason));
+    }
 }
