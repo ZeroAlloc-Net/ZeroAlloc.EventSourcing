@@ -12,7 +12,7 @@
     <PackageReference Include="ZeroAlloc.AsyncEvents" />
     <PackageReference Include="ZeroAlloc.ValueObjects" />
     <PackageReference Include="ZeroAlloc.Serialisation" />
-    <PackageReference Include="ZeroAlloc.Telemetry" Version="1.0.0" />
+    <PackageReference Include="ZeroAlloc.Telemetry" />
   </ItemGroup>
 
   <ItemGroup>
