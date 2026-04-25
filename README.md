@@ -56,6 +56,7 @@ foreach (var evt in envelope.Events)
 | `ZeroAlloc.EventSourcing.PostgreSql` | PostgreSQL adapter with native streams |
 | `ZeroAlloc.EventSourcing.SqlServer` | SQL Server adapter with native streams |
 | `ZeroAlloc.EventSourcing.Kafka` | Kafka stream consumer for external event sources |
+| `ZeroAlloc.EventSourcing.Telemetry` | BCL `ActivitySource` + `Meter` decorator — OpenTelemetry spans and metrics with no OTel SDK dependency |
 
 All packages follow zero-allocation principles and are optimized for high-throughput scenarios.
 
@@ -132,6 +133,29 @@ var options = new SnapshotOptions
 
 var snapshot = await eventStore.GetSnapshotAsync(streamId, options);
 ```
+
+## OpenTelemetry Instrumentation
+
+`ZeroAlloc.EventSourcing.Telemetry` adds a source-generated decorator around `IEventStore` that records Activity spans and metrics for every `AppendAsync`, `ReadAsync`, and `SubscribeAsync` call — without taking a dependency on the OTel SDK.
+
+```bash
+dotnet add package ZeroAlloc.EventSourcing.Telemetry
+```
+
+```csharp
+services
+    .AddEventSourcing()
+    .UseInMemoryEventStore()
+    .UseEventSourcingTelemetry();   // call after the store, before Build()
+```
+
+The decorator emits:
+- **Spans** — one Activity per store operation, tagged with `stream.id`, `event.count`, and `store.error` on failure
+- **Metrics** — `event_store.appends_total` counter (labels: `stream_id`, `success`)
+
+Any OpenTelemetry SDK wired to the process automatically picks up both instruments via the `ZeroAlloc.EventSourcing` meter/activity-source name.
+
+> **Migration note:** `InstrumentedEventStore` (the manual wrapper from earlier versions) is now `[Obsolete]`. Use `.UseEventSourcingTelemetry()` instead; it wires the same source-generated proxy with correct lifecycle management.
 
 ## Documentation
 
