@@ -7,6 +7,8 @@
     <IsPackable>false</IsPackable>
     <!-- Suppress CS1591: test classes don't need XML doc comments -->
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <!-- Tests intentionally exercise the [Obsolete] UseEventSourcingTelemetry shim. -->
+    <NoWarn>$(NoWarn);ZAES001</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -25,6 +27,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\ZeroAlloc.EventSourcing.Telemetry\ZeroAlloc.EventSourcing.Telemetry.csproj" />
+    <ProjectReference Include="..\..\src\ZeroAlloc.EventSourcing.InMemory\ZeroAlloc.EventSourcing.InMemory.csproj" />
   </ItemGroup>
 
 </Project>
