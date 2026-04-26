@@ -56,7 +56,7 @@ foreach (var evt in envelope.Events)
 | `ZeroAlloc.EventSourcing.PostgreSql` | PostgreSQL adapter with native streams |
 | `ZeroAlloc.EventSourcing.SqlServer` | SQL Server adapter with native streams |
 | `ZeroAlloc.EventSourcing.Kafka` | Kafka stream consumer for external event sources |
-| `ZeroAlloc.EventSourcing.Telemetry` | BCL `ActivitySource` + `Meter` decorator — OpenTelemetry spans and metrics with no OTel SDK dependency |
+| `ZeroAlloc.EventSourcing.Telemetry` | BCL `ActivitySource` + `Meter` decorator around `IAggregateRepository<,>` — OpenTelemetry spans and metrics with no OTel SDK dependency |
 
 All packages follow zero-allocation principles and are optimized for high-throughput scenarios.
 
@@ -136,7 +136,7 @@ var snapshot = await eventStore.GetSnapshotAsync(streamId, options);
 
 ## OpenTelemetry Instrumentation
 
-`ZeroAlloc.EventSourcing.Telemetry` adds a source-generated decorator around `IEventStore` that records Activity spans and metrics for every `AppendAsync`, `ReadAsync`, and `SubscribeAsync` call — without taking a dependency on the OTel SDK.
+`ZeroAlloc.EventSourcing.Telemetry` adds a hand-rolled decorator around `IAggregateRepository<TAggregate, TId>` that records Activity spans and metrics for every aggregate `LoadAsync` and `SaveAsync` — without taking a dependency on the OTel SDK.
 
 ```bash
 dotnet add package ZeroAlloc.EventSourcing.Telemetry
@@ -146,16 +146,19 @@ dotnet add package ZeroAlloc.EventSourcing.Telemetry
 services
     .AddEventSourcing()
     .UseInMemoryEventStore()
-    .WithTelemetry();   // call after the store, before Build()
+    .AddAggregate<OrderAggregate, Guid>()
+    .WithTelemetry();   // call after each aggregate registration, before Build()
 ```
 
-The decorator emits:
-- **Spans** — one Activity per store operation, tagged with `stream.id`, `event.count`, and `store.error` on failure
-- **Metrics** — `event_store.appends_total` counter (labels: `stream_id`, `success`)
+The decorator emits, under the `ZeroAlloc.EventSourcing` activity-source/meter name:
 
-Any OpenTelemetry SDK wired to the process automatically picks up both instruments via the `ZeroAlloc.EventSourcing` meter/activity-source name.
+- **Spans** — `aggregate.load` and `aggregate.save`, tagged with `aggregate.type` (= `typeof(TAggregate).Name`); status set to `Error` on exception
+- **Counters** — `aggregate.loads_total` and `aggregate.saves_total`, incremented only when `Result.IsSuccess`
+- **Histograms** — `aggregate.load_duration_ms` and `aggregate.save_duration_ms`, recorded for both success and failure paths
 
-> **Migration note:** `InstrumentedEventStore` (the manual wrapper from earlier versions) is now `[Obsolete]`. Use `.WithTelemetry()` instead; it wires the same source-generated proxy with correct lifecycle management. Renamed from `UseEventSourcingTelemetry()` for consistency with the rest of the ecosystem; old name remains as `[Obsolete]` for one minor version.
+Any OpenTelemetry SDK wired to the process picks up all three instruments automatically.
+
+> **Breaking change in v2.0:** `WithTelemetry()` now decorates `IAggregateRepository<,>` instead of `IEventStore`. The old `event_store.append` / `event_store.read` / `event_store.subscribe` spans no longer exist; the deleted `InstrumentedEventStore` and its `[Instrument]` attribute on `IEventStore` are gone. Existing dashboards must be re-pointed at `aggregate.load` / `aggregate.save`. See [docs/telemetry.md](docs/telemetry.md) for the full migration table. The legacy `UseEventSourcingTelemetry()` extension remains as `[Obsolete]` and now delegates to `WithTelemetry()`.
 
 ## Documentation
 

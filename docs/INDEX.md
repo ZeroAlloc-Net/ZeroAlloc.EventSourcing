@@ -55,7 +55,7 @@ await repo.SaveAsync("order-1", order, CancellationToken.None);
 | `ZeroAlloc.EventSourcing.InMemory` | In-memory event store for tests and development |
 | `ZeroAlloc.EventSourcing.Sql` | SQL Server and PostgreSQL backends |
 | `ZeroAlloc.EventSourcing.Generators` | Roslyn source generators for aggregate boilerplate |
-| `ZeroAlloc.EventSourcing.Telemetry` | BCL `ActivitySource` + `Meter` decorator — spans and metrics; wire with `.WithTelemetry()` |
+| `ZeroAlloc.EventSourcing.Telemetry` | BCL `ActivitySource` + `Meter` decorator around `IAggregateRepository<,>` — spans and metrics; wire with `.WithTelemetry()`. See [OpenTelemetry Instrumentation](telemetry.md). |
 
 ## Documentation
 
@@ -93,7 +93,7 @@ await repo.SaveAsync("order-1", order, CancellationToken.None);
 - **[Contributing Guide](advanced/contributing.md)** - How to contribute to the project
 
 ### Observability
-- **[OpenTelemetry Instrumentation](telemetry.md)** - Activity spans and metrics via `WithTelemetry()`
+- **[OpenTelemetry Instrumentation](telemetry.md)** - Aggregate-level Activity spans and metrics via `WithTelemetry()` (decorates `IAggregateRepository<,>`)
 
 ### Additional Resources
 - **[Adoption Guide](ADOPTION_GUIDE.md)** - Business case and adoption strategy
