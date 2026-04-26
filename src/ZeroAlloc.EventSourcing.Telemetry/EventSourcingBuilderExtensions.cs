@@ -13,12 +13,12 @@ public static class EventSourcingBuilderExtensions
     /// </summary>
     /// <param name="builder">The <see cref="EventSourcingBuilder"/> to configure.</param>
     /// <returns>The same <paramref name="builder"/> instance for chaining.</returns>
-    public static EventSourcingBuilder UseEventSourcingTelemetry(this EventSourcingBuilder builder)
+    public static EventSourcingBuilder WithTelemetry(this EventSourcingBuilder builder)
     {
         var descriptor = builder.Services.FirstOrDefault(d => d.ServiceType == typeof(IEventStore));
         if (descriptor is null)
             throw new InvalidOperationException(
-                "No IEventStore registration found. Register an event store (e.g. UseInMemoryEventStore, UsePostgreSqlEventStore) before calling UseEventSourcingTelemetry.");
+                "No IEventStore registration found. Register an event store (e.g. UseInMemoryEventStore, UsePostgreSqlEventStore) before calling WithTelemetry.");
 
         builder.Services.Remove(descriptor);
         builder.Services.AddSingleton<IEventStore>(sp =>
@@ -35,4 +35,13 @@ public static class EventSourcingBuilderExtensions
 
         return builder;
     }
+
+    /// <summary>
+    /// Legacy alias for <see cref="WithTelemetry"/>. Use <see cref="WithTelemetry"/> instead.
+    /// </summary>
+    /// <param name="builder">The <see cref="EventSourcingBuilder"/> to configure.</param>
+    /// <returns>The same <paramref name="builder"/> instance for chaining.</returns>
+    [Obsolete("Use WithTelemetry() instead. Will be removed in the next major.", DiagnosticId = "ZAES001")]
+    public static EventSourcingBuilder UseEventSourcingTelemetry(this EventSourcingBuilder builder)
+        => builder.WithTelemetry();
 }
