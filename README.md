@@ -146,7 +146,7 @@ dotnet add package ZeroAlloc.EventSourcing.Telemetry
 services
     .AddEventSourcing()
     .UseInMemoryEventStore()
-    .UseEventSourcingTelemetry();   // call after the store, before Build()
+    .WithTelemetry();   // call after the store, before Build()
 ```
 
 The decorator emits:
@@ -155,7 +155,7 @@ The decorator emits:
 
 Any OpenTelemetry SDK wired to the process automatically picks up both instruments via the `ZeroAlloc.EventSourcing` meter/activity-source name.
 
-> **Migration note:** `InstrumentedEventStore` (the manual wrapper from earlier versions) is now `[Obsolete]`. Use `.UseEventSourcingTelemetry()` instead; it wires the same source-generated proxy with correct lifecycle management.
+> **Migration note:** `InstrumentedEventStore` (the manual wrapper from earlier versions) is now `[Obsolete]`. Use `.WithTelemetry()` instead; it wires the same source-generated proxy with correct lifecycle management. Renamed from `UseEventSourcingTelemetry()` for consistency with the rest of the ecosystem; old name remains as `[Obsolete]` for one minor version.
 
 ## Documentation
 

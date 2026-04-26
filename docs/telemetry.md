@@ -16,14 +16,16 @@ dotnet add package ZeroAlloc.EventSourcing.Telemetry
 
 ## Registration
 
-Call `.UseEventSourcingTelemetry()` **after** registering a store backend and **before** building the service provider:
+Call `.WithTelemetry()` **after** registering a store backend and **before** building the service provider:
 
 ```csharp
 services
     .AddEventSourcing()
     .UseInMemoryEventStore()          // or UsePostgreSqlEventStore(), etc.
-    .UseEventSourcingTelemetry();     // wraps the store with the instrumented decorator
+    .WithTelemetry();                 // wraps the store with the instrumented decorator
 ```
+
+> Renamed from `UseEventSourcingTelemetry()` for consistency with the rest of the ecosystem; old name remains as `[Obsolete]` for one minor version.
 
 The extension replaces the existing `IEventStore` registration with a source-generated `EventStoreInstrumented` wrapper. Any code that resolves `IEventStore` gets the decorated version automatically.
 
@@ -60,7 +62,7 @@ services
     .AddEventSourcing()
     .AddAggregates()
     .UseInMemoryEventStore()
-    .UseEventSourcingTelemetry();
+    .WithTelemetry();
 ```
 
 The `InstrumentedAggregateRepository` decorator adds spans for `LoadAsync` and `SaveAsync`.
@@ -78,7 +80,7 @@ services.AddSingleton<IEventStore>(sp =>
 services
     .AddEventSourcing()
     .UseMyEventStore()
-    .UseEventSourcingTelemetry();
+    .WithTelemetry();
 ```
 
-The source-generated `EventStoreInstrumented` used internally by `UseEventSourcingTelemetry()` is equivalent but avoids the double-Meter anti-pattern that `InstrumentedEventStore` exhibited.
+The source-generated `EventStoreInstrumented` used internally by `WithTelemetry()` is equivalent but avoids the double-Meter anti-pattern that `InstrumentedEventStore` exhibited.
