@@ -7,7 +7,9 @@ namespace ZeroAlloc.EventSourcing.Telemetry;
 
 /// <summary>
 /// Decorates <see cref="IAggregateRepository{TAggregate,TId}"/> with OpenTelemetry instrumentation.
-/// Records Activity spans and metrics for load and save operations.
+/// Records Activity spans (<c>aggregate.load</c>, <c>aggregate.save</c>), success counters
+/// (<c>aggregate.loads_total</c>, <c>aggregate.saves_total</c>) and duration histograms
+/// (<c>aggregate.load_duration_ms</c>, <c>aggregate.save_duration_ms</c>).
 /// </summary>
 public sealed class InstrumentedAggregateRepository<TAggregate, TId> : IAggregateRepository<TAggregate, TId>
     where TId : struct
@@ -16,7 +18,10 @@ public sealed class InstrumentedAggregateRepository<TAggregate, TId> : IAggregat
     // share listeners across all instances. Creating one per process avoids duplicate registrations.
     private static readonly ActivitySource _activitySource = new("ZeroAlloc.EventSourcing");
     private static readonly Meter _meter = new("ZeroAlloc.EventSourcing");
+    private static readonly Counter<long> _loadsTotal = _meter.CreateCounter<long>("aggregate.loads_total");
     private static readonly Counter<long> _savesTotal = _meter.CreateCounter<long>("aggregate.saves_total");
+    private static readonly Histogram<double> _loadDurationMs = _meter.CreateHistogram<double>("aggregate.load_duration_ms");
+    private static readonly Histogram<double> _saveDurationMs = _meter.CreateHistogram<double>("aggregate.save_duration_ms");
 
     private readonly IAggregateRepository<TAggregate, TId> _inner;
 
@@ -28,14 +33,23 @@ public sealed class InstrumentedAggregateRepository<TAggregate, TId> : IAggregat
     {
         using var activity = _activitySource.StartActivity("aggregate.load");
         activity?.SetTag("aggregate.type", typeof(TAggregate).Name);
+        var startTimestamp = Stopwatch.GetTimestamp();
         try
         {
-            return await _inner.LoadAsync(id, ct).ConfigureAwait(false);
+            var result = await _inner.LoadAsync(id, ct).ConfigureAwait(false);
+            if (result.IsSuccess)
+                _loadsTotal.Add(1);
+            return result;
         }
         catch (Exception ex)
         {
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             throw;
+        }
+        finally
+        {
+            var elapsedMs = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
+            _loadDurationMs.Record(elapsedMs);
         }
     }
 
@@ -44,6 +58,7 @@ public sealed class InstrumentedAggregateRepository<TAggregate, TId> : IAggregat
     {
         using var activity = _activitySource.StartActivity("aggregate.save");
         activity?.SetTag("aggregate.type", typeof(TAggregate).Name);
+        var startTimestamp = Stopwatch.GetTimestamp();
         try
         {
             var result = await _inner.SaveAsync(aggregate, id, ct).ConfigureAwait(false);
@@ -55,6 +70,11 @@ public sealed class InstrumentedAggregateRepository<TAggregate, TId> : IAggregat
         {
             activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
             throw;
+        }
+        finally
+        {
+            var elapsedMs = Stopwatch.GetElapsedTime(startTimestamp).TotalMilliseconds;
+            _saveDurationMs.Record(elapsedMs);
         }
     }
 }
