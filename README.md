@@ -1,5 +1,8 @@
 # ZeroAlloc.EventSourcing
 
+[![GitHub Sponsors](https://img.shields.io/github/sponsors/MarcelRoozekrans?style=flat&logo=githubsponsors&color=ea4aaa&label=Sponsor)](https://github.com/sponsors/MarcelRoozekrans)
+
+
 A high-performance, zero-allocation event sourcing library for .NET with streaming capabilities and production-grade reliability features.
 
 ## Key Features
