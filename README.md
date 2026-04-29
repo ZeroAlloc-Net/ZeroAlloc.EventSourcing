@@ -1,7 +1,10 @@
 # ZeroAlloc.EventSourcing
 
+[![NuGet](https://img.shields.io/nuget/v/ZeroAlloc.EventSourcing.svg)](https://www.nuget.org/packages/ZeroAlloc.EventSourcing)
+[![Build](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/actions/workflows/ci.yml/badge.svg)](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![AOT](https://img.shields.io/badge/AOT--Compatible-passing-brightgreen)](https://learn.microsoft.com/dotnet/core/deploying/native-aot/)
 [![GitHub Sponsors](https://img.shields.io/github/sponsors/MarcelRoozekrans?style=flat&logo=githubsponsors&color=ea4aaa&label=Sponsor)](https://github.com/sponsors/MarcelRoozekrans)
-
 
 A high-performance, zero-allocation event sourcing library for .NET with streaming capabilities and production-grade reliability features.
 
