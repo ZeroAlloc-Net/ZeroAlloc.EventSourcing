@@ -10,6 +10,7 @@
     { "type": "feat", "section": "Features" },
     { "type": "fix", "section": "Bug Fixes" },
     { "type": "perf", "section": "Performance" },
+    { "type": "deps", "section": "Dependencies" },
     { "type": "breaking", "section": "Breaking Changes" }
   ]
 }
