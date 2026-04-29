@@ -1,11 +1,11 @@
 {
-  "src/ZeroAlloc.EventSourcing": "0.0.0",
-  "src/ZeroAlloc.EventSourcing.Aggregates": "0.0.0",
-  "src/ZeroAlloc.EventSourcing.Generators": "0.0.0",
-  "src/ZeroAlloc.EventSourcing.InMemory": "0.0.0",
-  "src/ZeroAlloc.EventSourcing.Sql": "0.0.0",
-  "src/ZeroAlloc.EventSourcing.SqlServer": "0.0.0",
-  "src/ZeroAlloc.EventSourcing.PostgreSql": "0.0.0",
-  "src/ZeroAlloc.EventSourcing.Kafka": "0.0.0",
-  "src/ZeroAlloc.EventSourcing.Telemetry": "0.0.0"
+  "src/ZeroAlloc.EventSourcing": "1.0.0",
+  "src/ZeroAlloc.EventSourcing.Aggregates": "1.0.0",
+  "src/ZeroAlloc.EventSourcing.Generators": "1.0.0",
+  "src/ZeroAlloc.EventSourcing.InMemory": "1.0.0",
+  "src/ZeroAlloc.EventSourcing.Sql": "1.0.0",
+  "src/ZeroAlloc.EventSourcing.SqlServer": "1.0.0",
+  "src/ZeroAlloc.EventSourcing.PostgreSql": "1.0.0",
+  "src/ZeroAlloc.EventSourcing.Kafka": "1.0.0",
+  "src/ZeroAlloc.EventSourcing.Telemetry": "1.0.0"
 }
