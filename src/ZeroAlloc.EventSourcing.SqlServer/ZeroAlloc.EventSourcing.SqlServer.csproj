@@ -1,7 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <Description>SQL Server event store implementation for ZeroAlloc.EventSourcing.</Description>
+    <PackageId>ZeroAlloc.EventSourcing.SqlServer</PackageId>
+    <Description>SQL Server event store backend for ZeroAlloc.EventSourcing.</Description>
   </PropertyGroup>
 
   <ItemGroup>

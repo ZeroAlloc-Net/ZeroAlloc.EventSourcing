@@ -2,15 +2,70 @@ name: Release
 
 on:
   push:
-    tags:
-      - 'v*'
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
 
 jobs:
-  release:
-    uses: ZeroAlloc-Net/.github/.github/workflows/nuget-release.yml@main
-    with:
-      repo-name: 'ZeroAlloc.EventSourcing'
-      has-benchmarks: true
-      nuget-org: 'ZeroAlloc'
-    secrets:
-      NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      releases_created: ${{ steps.release.outputs.releases_created }}
+      paths_released: ${{ steps.release.outputs.paths_released }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  publish:
+    needs: release-please
+    if: needs.release-please.outputs.releases_created == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+
+      - name: Restore
+        run: dotnet restore ZeroAlloc.EventSourcing.slnx
+
+      - name: Build
+        run: dotnet build ZeroAlloc.EventSourcing.slnx -c Release --no-restore
+
+      - name: Pack each package at its release version
+        env:
+          PATHS_RELEASED: ${{ needs.release-please.outputs.paths_released }}
+        run: |
+          mkdir -p ./nupkg
+          # paths_released is a JSON array of paths that got bumped this run.
+          # For each path, read its version.txt (release-please updated it) and pack at that version.
+          for path in $(echo "$PATHS_RELEASED" | jq -r '.[]'); do
+            version=$(cat "$path/version.txt")
+            csproj=$(ls "$path"/*.csproj | head -1)
+            echo "Packing $csproj at version $version"
+            dotnet pack "$csproj" -c Release --no-build \
+              -p:PackageVersion="$version" -o ./nupkg
+          done
+          ls -la ./nupkg
+
+      - name: Verify generator pack layout (only if Generators was released)
+        if: contains(needs.release-please.outputs.paths_released, 'src/ZeroAlloc.EventSourcing.Generators')
+        run: ./scripts/verify-generator-pack-layout.sh ./nupkg
+
+      - name: Push to NuGet
+        run: |
+          dotnet nuget push ./nupkg/*.nupkg \
+            --api-key ${{ secrets.NUGET_API_KEY }} \
+            --source https://api.nuget.org/v3/index.json \
+            --skip-duplicate

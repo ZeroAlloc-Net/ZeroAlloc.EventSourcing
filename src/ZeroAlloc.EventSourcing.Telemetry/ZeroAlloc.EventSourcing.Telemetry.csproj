@@ -2,7 +2,6 @@
   <PropertyGroup>
     <PackageId>ZeroAlloc.EventSourcing.Telemetry</PackageId>
     <Description>OpenTelemetry instrumentation for ZeroAlloc.EventSourcing — Activity spans and Meter instruments on IEventStore, IAggregateRepository, and IStreamConsumer. No OpenTelemetry SDK dependency required.</Description>
-    <Version>0.0.0-local</Version>
     <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
   </PropertyGroup>
   <ItemGroup>

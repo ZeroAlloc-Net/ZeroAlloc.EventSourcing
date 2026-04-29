@@ -1,7 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <Description>Kafka consumer implementation for ZeroAlloc.EventSourcing.</Description>
+    <PackageId>ZeroAlloc.EventSourcing.Kafka</PackageId>
+    <Description>Kafka publish target for ZeroAlloc.EventSourcing committed events.</Description>
   </PropertyGroup>
 
   <ItemGroup>

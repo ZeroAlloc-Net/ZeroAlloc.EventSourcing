@@ -1,7 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <Description>Aggregate root support for ZeroAlloc.EventSourcing.</Description>
+    <PackageId>ZeroAlloc.EventSourcing.Aggregates</PackageId>
+    <Description>Aggregate base + generator-emitted Apply dispatch for ZeroAlloc.EventSourcing.</Description>
   </PropertyGroup>
 
   <ItemGroup>

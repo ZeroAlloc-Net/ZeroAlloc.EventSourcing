@@ -1,7 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <Description>Shared SQL snapshot store implementations for PostgreSQL and SQL Server.</Description>
+    <PackageId>ZeroAlloc.EventSourcing.Sql</PackageId>
+    <Description>Shared SQL primitives for ZeroAlloc.EventSourcing.SqlServer and .PostgreSql backends.</Description>
   </PropertyGroup>
 
   <ItemGroup>
