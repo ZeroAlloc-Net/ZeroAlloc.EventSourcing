@@ -58,6 +58,28 @@ jobs:
         with:
           name: test-results
           path: "**/TestResults/*.trx"
+      - name: Verify pack (dry-run, all 9 packages)
+        run: |
+          mkdir -p ./nupkg-dryrun
+          for csproj in \
+              src/ZeroAlloc.EventSourcing/ZeroAlloc.EventSourcing.csproj \
+              src/ZeroAlloc.EventSourcing.Aggregates/ZeroAlloc.EventSourcing.Aggregates.csproj \
+              src/ZeroAlloc.EventSourcing.Generators/ZeroAlloc.EventSourcing.Generators.csproj \
+              src/ZeroAlloc.EventSourcing.InMemory/ZeroAlloc.EventSourcing.InMemory.csproj \
+              src/ZeroAlloc.EventSourcing.Sql/ZeroAlloc.EventSourcing.Sql.csproj \
+              src/ZeroAlloc.EventSourcing.SqlServer/ZeroAlloc.EventSourcing.SqlServer.csproj \
+              src/ZeroAlloc.EventSourcing.PostgreSql/ZeroAlloc.EventSourcing.PostgreSql.csproj \
+              src/ZeroAlloc.EventSourcing.Kafka/ZeroAlloc.EventSourcing.Kafka.csproj \
+              src/ZeroAlloc.EventSourcing.Telemetry/ZeroAlloc.EventSourcing.Telemetry.csproj
+          do
+            echo "Packing $csproj..."
+            dotnet pack "$csproj" -c Release --no-build \
+              -p:PackageVersion=0.0.0-dryrun \
+              -o ./nupkg-dryrun
+          done
+          ls -la ./nupkg-dryrun
+      - name: Verify generator pack layout
+        run: ./scripts/verify-generator-pack-layout.sh ./nupkg-dryrun
 
   aot-smoke:
     name: aot-smoke
