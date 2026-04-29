@@ -1,7 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <Description>In-memory event store implementation for ZeroAlloc.EventSourcing.</Description>
+    <PackageId>ZeroAlloc.EventSourcing.InMemory</PackageId>
+    <Description>In-process event store for ZeroAlloc.EventSourcing — for tests and prototypes.</Description>
   </PropertyGroup>
 
   <ItemGroup>

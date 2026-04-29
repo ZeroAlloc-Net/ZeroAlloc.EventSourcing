@@ -3,7 +3,8 @@
   <!-- TODO EventSourcing#68: Apply instrumentation deferred. IAggregate.ApplyHistoric is internal; [Instrument] cannot intercept internal methods. Requires either making the interface public or adding manual tracing inside Aggregate<TId,TState> base class. -->
 
   <PropertyGroup>
-    <Description>Core abstractions and primitives for ZeroAlloc.EventSourcing.</Description>
+    <PackageId>ZeroAlloc.EventSourcing</PackageId>
+    <Description>Source-generated event-sourced aggregates for .NET. Zero-allocation event dispatch, AOT-safe.</Description>
   </PropertyGroup>
 
   <ItemGroup>
