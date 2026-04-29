@@ -1,12 +1,39 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <Description>Roslyn source generators for ZeroAlloc.EventSourcing.</Description>
+    <PackageId>ZeroAlloc.EventSourcing.Generators</PackageId>
+    <Description>Source generators for ZeroAlloc.EventSourcing aggregate dispatch.</Description>
     <!-- Source generators must target a single framework; netstandard2.0 gives maximum Roslyn host compatibility -->
     <TargetFramework>netstandard2.0</TargetFramework>
     <TargetFrameworks></TargetFrameworks>
+    <IsRoslynComponent>true</IsRoslynComponent>
     <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+
+    <!--
+      Source-generator packaging: ship the generator DLL under analyzers/dotnet/cs so
+      Roslyn loads it as an analyzer. Without IncludeBuildOutput=false the build output
+      ends up under lib/ and consumers silently get no source generator.
+    -->
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <DevelopmentDependency>true</DevelopmentDependency>
   </PropertyGroup>
+
+  <!--
+    Pack the generator DLL under analyzers/dotnet/cs. Without this, dotnet pack falls back
+    to the default lib/<tfm>/ layout and consumers do not pick up the generator at all.
+  -->
+  <ItemGroup>
+    <None Include="$(OutputPath)\$(AssemblyName).dll"
+          Pack="true"
+          PackagePath="analyzers/dotnet/cs"
+          Visible="false" />
+    <None Include="$(OutputPath)\$(AssemblyName).pdb"
+          Pack="true"
+          PackagePath="analyzers/dotnet/cs"
+          Visible="false"
+          Condition="Exists('$(OutputPath)\$(AssemblyName).pdb')" />
+  </ItemGroup>
 
   <ItemGroup>
     <!-- VersionOverride pins the generator to Roslyn 5.0.0 so the compiled DLL is loadable by the SDK
