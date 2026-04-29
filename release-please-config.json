@@ -8,47 +8,47 @@
     "src/ZeroAlloc.EventSourcing": {
       "package-name": "ZeroAlloc.EventSourcing",
       "release-type": "simple",
-      "changelog-path": "../../CHANGELOG.md"
+      "changelog-path": "CHANGELOG.md"
     },
     "src/ZeroAlloc.EventSourcing.Aggregates": {
       "package-name": "ZeroAlloc.EventSourcing.Aggregates",
       "release-type": "simple",
-      "changelog-path": "../../CHANGELOG.Aggregates.md"
+      "changelog-path": "CHANGELOG.md"
     },
     "src/ZeroAlloc.EventSourcing.Generators": {
       "package-name": "ZeroAlloc.EventSourcing.Generators",
       "release-type": "simple",
-      "changelog-path": "../../CHANGELOG.Generators.md"
+      "changelog-path": "CHANGELOG.md"
     },
     "src/ZeroAlloc.EventSourcing.InMemory": {
       "package-name": "ZeroAlloc.EventSourcing.InMemory",
       "release-type": "simple",
-      "changelog-path": "../../CHANGELOG.InMemory.md"
+      "changelog-path": "CHANGELOG.md"
     },
     "src/ZeroAlloc.EventSourcing.Sql": {
       "package-name": "ZeroAlloc.EventSourcing.Sql",
       "release-type": "simple",
-      "changelog-path": "../../CHANGELOG.Sql.md"
+      "changelog-path": "CHANGELOG.md"
     },
     "src/ZeroAlloc.EventSourcing.SqlServer": {
       "package-name": "ZeroAlloc.EventSourcing.SqlServer",
       "release-type": "simple",
-      "changelog-path": "../../CHANGELOG.SqlServer.md"
+      "changelog-path": "CHANGELOG.md"
     },
     "src/ZeroAlloc.EventSourcing.PostgreSql": {
       "package-name": "ZeroAlloc.EventSourcing.PostgreSql",
       "release-type": "simple",
-      "changelog-path": "../../CHANGELOG.PostgreSql.md"
+      "changelog-path": "CHANGELOG.md"
     },
     "src/ZeroAlloc.EventSourcing.Kafka": {
       "package-name": "ZeroAlloc.EventSourcing.Kafka",
       "release-type": "simple",
-      "changelog-path": "../../CHANGELOG.Kafka.md"
+      "changelog-path": "CHANGELOG.md"
     },
     "src/ZeroAlloc.EventSourcing.Telemetry": {
       "package-name": "ZeroAlloc.EventSourcing.Telemetry",
       "release-type": "simple",
-      "changelog-path": "../../CHANGELOG.Telemetry.md"
+      "changelog-path": "CHANGELOG.md"
     }
   },
   "changelog-sections": [
