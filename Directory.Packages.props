@@ -5,7 +5,7 @@
   <ItemGroup>
     <PackageVersion Include="ZeroAlloc.Results"                  Version="1.0.1" />
     <PackageVersion Include="ZeroAlloc.Collections"              Version="1.0.0" />
-    <PackageVersion Include="ZeroAlloc.AsyncEvents"              Version="1.0.1" />
+    <PackageVersion Include="ZeroAlloc.AsyncEvents"              Version="1.0.2" />
     <PackageVersion Include="ZeroAlloc.ValueObjects"             Version="1.3.1" />
     <PackageVersion Include="ZeroAlloc.Serialisation"            Version="2.0.1" />
     <PackageVersion Include="ZeroAlloc.Pipeline"                 Version="1.0.1" />
