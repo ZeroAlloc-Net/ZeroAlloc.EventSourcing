@@ -5,6 +5,12 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>preview</LangVersion>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <!--
+      Lock the public API surface: RS0016 (undeclared public symbol) and
+      RS0017 (declared symbol no longer present) must always fail the build,
+      even if a sibling repo flips TreatWarningsAsErrors off globally.
+    -->
+    <WarningsAsErrors>$(WarningsAsErrors);RS0016;RS0017</WarningsAsErrors>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
 
     <Authors>Marcel Roozekrans</Authors>
