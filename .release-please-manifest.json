@@ -1,5 +1,5 @@
 {
-  "src/ZeroAlloc.EventSourcing": "1.0.0",
+  "src/ZeroAlloc.EventSourcing": "1.1.0",
   "src/ZeroAlloc.EventSourcing.Aggregates": "1.0.0",
   "src/ZeroAlloc.EventSourcing.Generators": "1.0.0",
   "src/ZeroAlloc.EventSourcing.InMemory": "1.0.0",

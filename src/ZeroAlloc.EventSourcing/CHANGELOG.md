@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/compare/ZeroAlloc.EventSourcing-v1.0.0...ZeroAlloc.EventSourcing-v1.1.0) (2026-05-01)
+
+
+### Features
+
+* lock public API surface (PublicApiAnalyzers + api-compat gate) ([#113](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/issues/113)) ([9be0a0e](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/commit/9be0a0e3bdb6dd761a32dc7db7f677680a5480f4))
+
 ## 1.0.0 (2026-04-29)
 
 
