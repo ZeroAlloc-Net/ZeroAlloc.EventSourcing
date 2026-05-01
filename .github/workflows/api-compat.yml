@@ -1,0 +1,13 @@
+name: API Compatibility
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  api-compat:
+    uses: ZeroAlloc-Net/.github/.github/workflows/api-compat.yml@main
+    with:
+      package-id: ZeroAlloc.EventSourcing
+      csproj-path: src/ZeroAlloc.EventSourcing/ZeroAlloc.EventSourcing.csproj

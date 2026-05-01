@@ -1,0 +1,305 @@
+#nullable enable
+ZeroAlloc.EventSourcing.AppendResult
+ZeroAlloc.EventSourcing.AppendResult.AppendResult() -> void
+ZeroAlloc.EventSourcing.AppendResult.AppendResult(ZeroAlloc.EventSourcing.StreamId StreamId, ZeroAlloc.EventSourcing.StreamPosition NextExpectedVersion) -> void
+ZeroAlloc.EventSourcing.AppendResult.Deconstruct(out ZeroAlloc.EventSourcing.StreamId StreamId, out ZeroAlloc.EventSourcing.StreamPosition NextExpectedVersion) -> void
+ZeroAlloc.EventSourcing.AppendResult.Equals(ZeroAlloc.EventSourcing.AppendResult other) -> bool
+ZeroAlloc.EventSourcing.AppendResult.NextExpectedVersion.get -> ZeroAlloc.EventSourcing.StreamPosition
+ZeroAlloc.EventSourcing.AppendResult.NextExpectedVersion.init -> void
+ZeroAlloc.EventSourcing.AppendResult.StreamId.get -> ZeroAlloc.EventSourcing.StreamId
+ZeroAlloc.EventSourcing.AppendResult.StreamId.init -> void
+ZeroAlloc.EventSourcing.BatchedProjection<TReadModel>
+ZeroAlloc.EventSourcing.BatchedProjection<TReadModel>.BatchedProjection(int batchSize) -> void
+ZeroAlloc.EventSourcing.BatchedProjection<TReadModel>.FlushAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+ZeroAlloc.EventSourcing.CommitStrategy
+ZeroAlloc.EventSourcing.CommitStrategy.AfterBatch = 1 -> ZeroAlloc.EventSourcing.CommitStrategy
+ZeroAlloc.EventSourcing.CommitStrategy.AfterEvent = 0 -> ZeroAlloc.EventSourcing.CommitStrategy
+ZeroAlloc.EventSourcing.CommitStrategy.Manual = 2 -> ZeroAlloc.EventSourcing.CommitStrategy
+ZeroAlloc.EventSourcing.DeadLetterEntry
+ZeroAlloc.EventSourcing.DeadLetterEntry.<Clone>$() -> ZeroAlloc.EventSourcing.DeadLetterEntry!
+ZeroAlloc.EventSourcing.DeadLetterEntry.ConsumerId.get -> string!
+ZeroAlloc.EventSourcing.DeadLetterEntry.ConsumerId.init -> void
+ZeroAlloc.EventSourcing.DeadLetterEntry.DeadLetterEntry(ZeroAlloc.EventSourcing.EventEnvelope Envelope, string! ConsumerId, string! ExceptionType, string! ExceptionMessage, System.DateTimeOffset FailedAt) -> void
+ZeroAlloc.EventSourcing.DeadLetterEntry.Deconstruct(out ZeroAlloc.EventSourcing.EventEnvelope Envelope, out string! ConsumerId, out string! ExceptionType, out string! ExceptionMessage, out System.DateTimeOffset FailedAt) -> void
+ZeroAlloc.EventSourcing.DeadLetterEntry.Envelope.get -> ZeroAlloc.EventSourcing.EventEnvelope
+ZeroAlloc.EventSourcing.DeadLetterEntry.Envelope.init -> void
+ZeroAlloc.EventSourcing.DeadLetterEntry.Equals(ZeroAlloc.EventSourcing.DeadLetterEntry? other) -> bool
+ZeroAlloc.EventSourcing.DeadLetterEntry.ExceptionMessage.get -> string!
+ZeroAlloc.EventSourcing.DeadLetterEntry.ExceptionMessage.init -> void
+ZeroAlloc.EventSourcing.DeadLetterEntry.ExceptionType.get -> string!
+ZeroAlloc.EventSourcing.DeadLetterEntry.ExceptionType.init -> void
+ZeroAlloc.EventSourcing.DeadLetterEntry.FailedAt.get -> System.DateTimeOffset
+ZeroAlloc.EventSourcing.DeadLetterEntry.FailedAt.init -> void
+ZeroAlloc.EventSourcing.ErrorHandlingStrategy
+ZeroAlloc.EventSourcing.ErrorHandlingStrategy.DeadLetter = 2 -> ZeroAlloc.EventSourcing.ErrorHandlingStrategy
+ZeroAlloc.EventSourcing.ErrorHandlingStrategy.FailFast = 0 -> ZeroAlloc.EventSourcing.ErrorHandlingStrategy
+ZeroAlloc.EventSourcing.ErrorHandlingStrategy.Skip = 1 -> ZeroAlloc.EventSourcing.ErrorHandlingStrategy
+ZeroAlloc.EventSourcing.EventEnvelope
+ZeroAlloc.EventSourcing.EventEnvelope.Deconstruct(out ZeroAlloc.EventSourcing.StreamId StreamId, out ZeroAlloc.EventSourcing.StreamPosition Position, out object! Event, out ZeroAlloc.EventSourcing.EventMetadata Metadata) -> void
+ZeroAlloc.EventSourcing.EventEnvelope.Equals(ZeroAlloc.EventSourcing.EventEnvelope other) -> bool
+ZeroAlloc.EventSourcing.EventEnvelope.Event.get -> object!
+ZeroAlloc.EventSourcing.EventEnvelope.Event.init -> void
+ZeroAlloc.EventSourcing.EventEnvelope.EventEnvelope() -> void
+ZeroAlloc.EventSourcing.EventEnvelope.EventEnvelope(ZeroAlloc.EventSourcing.StreamId StreamId, ZeroAlloc.EventSourcing.StreamPosition Position, object! Event, ZeroAlloc.EventSourcing.EventMetadata Metadata) -> void
+ZeroAlloc.EventSourcing.EventEnvelope.Metadata.get -> ZeroAlloc.EventSourcing.EventMetadata
+ZeroAlloc.EventSourcing.EventEnvelope.Metadata.init -> void
+ZeroAlloc.EventSourcing.EventEnvelope.Position.get -> ZeroAlloc.EventSourcing.StreamPosition
+ZeroAlloc.EventSourcing.EventEnvelope.Position.init -> void
+ZeroAlloc.EventSourcing.EventEnvelope.StreamId.get -> ZeroAlloc.EventSourcing.StreamId
+ZeroAlloc.EventSourcing.EventEnvelope.StreamId.init -> void
+ZeroAlloc.EventSourcing.EventEnvelope<TEvent>
+ZeroAlloc.EventSourcing.EventEnvelope<TEvent>.Deconstruct(out ZeroAlloc.EventSourcing.StreamId StreamId, out ZeroAlloc.EventSourcing.StreamPosition Position, out TEvent Event, out ZeroAlloc.EventSourcing.EventMetadata Metadata) -> void
+ZeroAlloc.EventSourcing.EventEnvelope<TEvent>.Equals(ZeroAlloc.EventSourcing.EventEnvelope<TEvent> other) -> bool
+ZeroAlloc.EventSourcing.EventEnvelope<TEvent>.Event.get -> TEvent
+ZeroAlloc.EventSourcing.EventEnvelope<TEvent>.Event.init -> void
+ZeroAlloc.EventSourcing.EventEnvelope<TEvent>.EventEnvelope() -> void
+ZeroAlloc.EventSourcing.EventEnvelope<TEvent>.EventEnvelope(ZeroAlloc.EventSourcing.StreamId StreamId, ZeroAlloc.EventSourcing.StreamPosition Position, TEvent Event, ZeroAlloc.EventSourcing.EventMetadata Metadata) -> void
+ZeroAlloc.EventSourcing.EventEnvelope<TEvent>.Metadata.get -> ZeroAlloc.EventSourcing.EventMetadata
+ZeroAlloc.EventSourcing.EventEnvelope<TEvent>.Metadata.init -> void
+ZeroAlloc.EventSourcing.EventEnvelope<TEvent>.Position.get -> ZeroAlloc.EventSourcing.StreamPosition
+ZeroAlloc.EventSourcing.EventEnvelope<TEvent>.Position.init -> void
+ZeroAlloc.EventSourcing.EventEnvelope<TEvent>.StreamId.get -> ZeroAlloc.EventSourcing.StreamId
+ZeroAlloc.EventSourcing.EventEnvelope<TEvent>.StreamId.init -> void
+ZeroAlloc.EventSourcing.EventMetadata
+ZeroAlloc.EventSourcing.EventMetadata.CausationId.get -> System.Guid?
+ZeroAlloc.EventSourcing.EventMetadata.CausationId.init -> void
+ZeroAlloc.EventSourcing.EventMetadata.CorrelationId.get -> System.Guid?
+ZeroAlloc.EventSourcing.EventMetadata.CorrelationId.init -> void
+ZeroAlloc.EventSourcing.EventMetadata.Deconstruct(out System.Guid EventId, out string! EventType, out System.DateTimeOffset OccurredAt, out System.Guid? CorrelationId, out System.Guid? CausationId) -> void
+ZeroAlloc.EventSourcing.EventMetadata.Equals(ZeroAlloc.EventSourcing.EventMetadata other) -> bool
+ZeroAlloc.EventSourcing.EventMetadata.EventId.get -> System.Guid
+ZeroAlloc.EventSourcing.EventMetadata.EventId.init -> void
+ZeroAlloc.EventSourcing.EventMetadata.EventMetadata() -> void
+ZeroAlloc.EventSourcing.EventMetadata.EventMetadata(System.Guid EventId, string! EventType, System.DateTimeOffset OccurredAt, System.Guid? CorrelationId, System.Guid? CausationId) -> void
+ZeroAlloc.EventSourcing.EventMetadata.EventType.get -> string!
+ZeroAlloc.EventSourcing.EventMetadata.EventType.init -> void
+ZeroAlloc.EventSourcing.EventMetadata.OccurredAt.get -> System.DateTimeOffset
+ZeroAlloc.EventSourcing.EventMetadata.OccurredAt.init -> void
+ZeroAlloc.EventSourcing.EventSourcingBuilder
+ZeroAlloc.EventSourcing.EventSourcingBuilder.Services.get -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+ZeroAlloc.EventSourcing.EventSourcingBuilderUpcasterExtensions
+ZeroAlloc.EventSourcing.EventStore
+ZeroAlloc.EventSourcing.EventStore.AppendAsync(ZeroAlloc.EventSourcing.StreamId id, System.ReadOnlyMemory<object!> events, ZeroAlloc.EventSourcing.StreamPosition expectedVersion, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeroAlloc.Results.Result<ZeroAlloc.EventSourcing.AppendResult, ZeroAlloc.EventSourcing.StoreError!>>
+ZeroAlloc.EventSourcing.EventStore.EventStore(ZeroAlloc.EventSourcing.IEventStoreAdapter! adapter, ZeroAlloc.EventSourcing.IEventSerializer! serializer, ZeroAlloc.EventSourcing.IEventTypeRegistry! registry, ZeroAlloc.EventSourcing.IUpcasterPipeline? upcasterPipeline = null) -> void
+ZeroAlloc.EventSourcing.EventStore.ReadAsync(ZeroAlloc.EventSourcing.StreamId id, ZeroAlloc.EventSourcing.StreamPosition from = default(ZeroAlloc.EventSourcing.StreamPosition), System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<ZeroAlloc.EventSourcing.EventEnvelope>!
+ZeroAlloc.EventSourcing.EventStore.SubscribeAsync(ZeroAlloc.EventSourcing.StreamId id, ZeroAlloc.EventSourcing.StreamPosition from, System.Func<ZeroAlloc.EventSourcing.EventEnvelope, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask>! handler, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeroAlloc.EventSourcing.IEventSubscription!>
+ZeroAlloc.EventSourcing.ExponentialBackoffRetryPolicy
+ZeroAlloc.EventSourcing.ExponentialBackoffRetryPolicy.ExponentialBackoffRetryPolicy(int initialDelayMs = 100, int maxDelayMs = 30000) -> void
+ZeroAlloc.EventSourcing.ExponentialBackoffRetryPolicy.GetDelay(int attemptNumber) -> System.TimeSpan
+ZeroAlloc.EventSourcing.FilteredProjection<TReadModel>
+ZeroAlloc.EventSourcing.FilteredProjection<TReadModel>.FilteredProjection() -> void
+ZeroAlloc.EventSourcing.ICheckpointStore
+ZeroAlloc.EventSourcing.ICheckpointStore.DeleteAsync(string! consumerId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+ZeroAlloc.EventSourcing.ICheckpointStore.ReadAsync(string! consumerId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeroAlloc.EventSourcing.StreamPosition?>!
+ZeroAlloc.EventSourcing.ICheckpointStore.WriteAsync(string! consumerId, ZeroAlloc.EventSourcing.StreamPosition position, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+ZeroAlloc.EventSourcing.IDeadLetterStore
+ZeroAlloc.EventSourcing.IDeadLetterStore.ReadAllAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<ZeroAlloc.EventSourcing.DeadLetterEntry!>!
+ZeroAlloc.EventSourcing.IDeadLetterStore.WriteAsync(string! consumerId, ZeroAlloc.EventSourcing.EventEnvelope envelope, System.Exception! exception, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+ZeroAlloc.EventSourcing.IEventSerializer
+ZeroAlloc.EventSourcing.IEventSerializer.Deserialize(System.ReadOnlyMemory<byte> payload, System.Type! eventType) -> object!
+ZeroAlloc.EventSourcing.IEventSerializer.Serialize<TEvent>(TEvent event) -> System.ReadOnlyMemory<byte>
+ZeroAlloc.EventSourcing.IEventStore
+ZeroAlloc.EventSourcing.IEventStore.AppendAsync(ZeroAlloc.EventSourcing.StreamId id, System.ReadOnlyMemory<object!> events, ZeroAlloc.EventSourcing.StreamPosition expectedVersion, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeroAlloc.Results.Result<ZeroAlloc.EventSourcing.AppendResult, ZeroAlloc.EventSourcing.StoreError!>>
+ZeroAlloc.EventSourcing.IEventStore.ReadAsync(ZeroAlloc.EventSourcing.StreamId id, ZeroAlloc.EventSourcing.StreamPosition from = default(ZeroAlloc.EventSourcing.StreamPosition), System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<ZeroAlloc.EventSourcing.EventEnvelope>!
+ZeroAlloc.EventSourcing.IEventStore.SubscribeAsync(ZeroAlloc.EventSourcing.StreamId id, ZeroAlloc.EventSourcing.StreamPosition from, System.Func<ZeroAlloc.EventSourcing.EventEnvelope, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask>! handler, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeroAlloc.EventSourcing.IEventSubscription!>
+ZeroAlloc.EventSourcing.IEventStoreAdapter
+ZeroAlloc.EventSourcing.IEventStoreAdapter.AppendAsync(ZeroAlloc.EventSourcing.StreamId id, System.ReadOnlyMemory<ZeroAlloc.EventSourcing.RawEvent> events, ZeroAlloc.EventSourcing.StreamPosition expectedVersion, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeroAlloc.Results.Result<ZeroAlloc.EventSourcing.AppendResult, ZeroAlloc.EventSourcing.StoreError!>>
+ZeroAlloc.EventSourcing.IEventStoreAdapter.ReadAsync(ZeroAlloc.EventSourcing.StreamId id, ZeroAlloc.EventSourcing.StreamPosition from, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<ZeroAlloc.EventSourcing.RawEvent>!
+ZeroAlloc.EventSourcing.IEventStoreAdapter.SubscribeAsync(ZeroAlloc.EventSourcing.StreamId id, ZeroAlloc.EventSourcing.StreamPosition from, System.Func<ZeroAlloc.EventSourcing.RawEvent, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask>! handler, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeroAlloc.EventSourcing.IEventSubscription!>
+ZeroAlloc.EventSourcing.IEventSubscription
+ZeroAlloc.EventSourcing.IEventSubscription.IsRunning.get -> bool
+ZeroAlloc.EventSourcing.IEventSubscription.StartAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+ZeroAlloc.EventSourcing.IEventTypeRegistry
+ZeroAlloc.EventSourcing.IEventTypeRegistry.GetTypeName(System.Type! type) -> string!
+ZeroAlloc.EventSourcing.IEventTypeRegistry.TryGetType(string! eventType, out System.Type? type) -> bool
+ZeroAlloc.EventSourcing.IEventUpcaster<TOld, TNew>
+ZeroAlloc.EventSourcing.IEventUpcaster<TOld, TNew>.Upcast(TOld oldEvent) -> TNew
+ZeroAlloc.EventSourcing.IProjectionStore
+ZeroAlloc.EventSourcing.IProjectionStore.ClearAsync(string! key, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+ZeroAlloc.EventSourcing.IProjectionStore.LoadAsync(string! key, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<string?>
+ZeroAlloc.EventSourcing.IProjectionStore.SaveAsync(string! key, string! state, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+ZeroAlloc.EventSourcing.IRetryPolicy
+ZeroAlloc.EventSourcing.IRetryPolicy.GetDelay(int attemptNumber) -> System.TimeSpan
+ZeroAlloc.EventSourcing.ISnapshotPolicy
+ZeroAlloc.EventSourcing.ISnapshotPolicy.ShouldSnapshot(ZeroAlloc.EventSourcing.StreamPosition currentPosition, ZeroAlloc.EventSourcing.StreamPosition? lastSnapshotPosition) -> bool
+ZeroAlloc.EventSourcing.ISnapshotStore<TState>
+ZeroAlloc.EventSourcing.ISnapshotStore<TState>.ReadAsync(ZeroAlloc.EventSourcing.StreamId streamId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<(ZeroAlloc.EventSourcing.StreamPosition Position, TState State)?>
+ZeroAlloc.EventSourcing.ISnapshotStore<TState>.WriteAsync(ZeroAlloc.EventSourcing.StreamId streamId, ZeroAlloc.EventSourcing.StreamPosition position, TState state, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+ZeroAlloc.EventSourcing.IStreamConsumer
+ZeroAlloc.EventSourcing.IStreamConsumer.CommitAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+ZeroAlloc.EventSourcing.IStreamConsumer.ConsumeAsync(System.Func<ZeroAlloc.EventSourcing.EventEnvelope, System.Threading.CancellationToken, System.Threading.Tasks.Task!>! handler, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+ZeroAlloc.EventSourcing.IStreamConsumer.ConsumerId.get -> string!
+ZeroAlloc.EventSourcing.IStreamConsumer.GetPositionAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeroAlloc.EventSourcing.StreamPosition?>!
+ZeroAlloc.EventSourcing.IStreamConsumer.ResetPositionAsync(ZeroAlloc.EventSourcing.StreamPosition position, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+ZeroAlloc.EventSourcing.IUpcasterPipeline
+ZeroAlloc.EventSourcing.IUpcasterPipeline.TryUpcast(object! oldEvent, out object! upgraded) -> bool
+ZeroAlloc.EventSourcing.InMemoryCheckpointStore
+ZeroAlloc.EventSourcing.InMemoryCheckpointStore.DeleteAsync(string! consumerId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+ZeroAlloc.EventSourcing.InMemoryCheckpointStore.InMemoryCheckpointStore() -> void
+ZeroAlloc.EventSourcing.InMemoryCheckpointStore.ReadAsync(string! consumerId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeroAlloc.EventSourcing.StreamPosition?>!
+ZeroAlloc.EventSourcing.InMemoryCheckpointStore.WriteAsync(string! consumerId, ZeroAlloc.EventSourcing.StreamPosition position, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+ZeroAlloc.EventSourcing.PollingEventSubscription
+ZeroAlloc.EventSourcing.PollingEventSubscription.DisposeAsync() -> System.Threading.Tasks.ValueTask
+ZeroAlloc.EventSourcing.PollingEventSubscription.IsRunning.get -> bool
+ZeroAlloc.EventSourcing.PollingEventSubscription.PollingEventSubscription(ZeroAlloc.EventSourcing.IEventStoreAdapter! adapter, ZeroAlloc.EventSourcing.StreamId id, ZeroAlloc.EventSourcing.StreamPosition from, System.Func<ZeroAlloc.EventSourcing.RawEvent, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask>! handler, System.TimeSpan pollInterval) -> void
+ZeroAlloc.EventSourcing.PollingEventSubscription.StartAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+ZeroAlloc.EventSourcing.Projection<TReadModel>
+ZeroAlloc.EventSourcing.Projection<TReadModel>.Current.get -> TReadModel
+ZeroAlloc.EventSourcing.Projection<TReadModel>.Current.set -> void
+ZeroAlloc.EventSourcing.Projection<TReadModel>.Projection() -> void
+ZeroAlloc.EventSourcing.ProjectionConsistencyChecker<TReadModel>
+ZeroAlloc.EventSourcing.ProjectionConsistencyChecker<TReadModel>.ProjectionConsistencyChecker() -> void
+ZeroAlloc.EventSourcing.ProjectionConsistencyChecker<TReadModel>.VerifyAsync(ZeroAlloc.EventSourcing.IEventStore! eventStore, ZeroAlloc.EventSourcing.StreamId streamId, ZeroAlloc.EventSourcing.StreamPosition? projectionCheckpoint, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeroAlloc.EventSourcing.ProjectionConsistencyReport?>
+ZeroAlloc.EventSourcing.ProjectionConsistencyReport
+ZeroAlloc.EventSourcing.ProjectionConsistencyReport.Deconstruct(out bool IsConsistent, out ZeroAlloc.EventSourcing.StreamPosition? ProjectionCheckpoint, out ZeroAlloc.EventSourcing.StreamPosition EventStoreLatestPosition, out string? DiscrepancyReason) -> void
+ZeroAlloc.EventSourcing.ProjectionConsistencyReport.DiscrepancyReason.get -> string?
+ZeroAlloc.EventSourcing.ProjectionConsistencyReport.DiscrepancyReason.init -> void
+ZeroAlloc.EventSourcing.ProjectionConsistencyReport.EventStoreLatestPosition.get -> ZeroAlloc.EventSourcing.StreamPosition
+ZeroAlloc.EventSourcing.ProjectionConsistencyReport.EventStoreLatestPosition.init -> void
+ZeroAlloc.EventSourcing.ProjectionConsistencyReport.IsConsistent.get -> bool
+ZeroAlloc.EventSourcing.ProjectionConsistencyReport.IsConsistent.init -> void
+ZeroAlloc.EventSourcing.ProjectionConsistencyReport.ProjectionCheckpoint.get -> ZeroAlloc.EventSourcing.StreamPosition?
+ZeroAlloc.EventSourcing.ProjectionConsistencyReport.ProjectionCheckpoint.init -> void
+ZeroAlloc.EventSourcing.ProjectionConsistencyReport.ProjectionConsistencyReport(ZeroAlloc.EventSourcing.ProjectionConsistencyReport! original) -> void
+ZeroAlloc.EventSourcing.ProjectionConsistencyReport.ProjectionConsistencyReport(bool IsConsistent, ZeroAlloc.EventSourcing.StreamPosition? ProjectionCheckpoint, ZeroAlloc.EventSourcing.StreamPosition EventStoreLatestPosition, string? DiscrepancyReason) -> void
+ZeroAlloc.EventSourcing.RawEvent
+ZeroAlloc.EventSourcing.RawEvent.Deconstruct(out ZeroAlloc.EventSourcing.StreamPosition Position, out string! EventType, out System.ReadOnlyMemory<byte> Payload, out ZeroAlloc.EventSourcing.EventMetadata Metadata) -> void
+ZeroAlloc.EventSourcing.RawEvent.Equals(ZeroAlloc.EventSourcing.RawEvent other) -> bool
+ZeroAlloc.EventSourcing.RawEvent.EventType.get -> string!
+ZeroAlloc.EventSourcing.RawEvent.EventType.init -> void
+ZeroAlloc.EventSourcing.RawEvent.Metadata.get -> ZeroAlloc.EventSourcing.EventMetadata
+ZeroAlloc.EventSourcing.RawEvent.Metadata.init -> void
+ZeroAlloc.EventSourcing.RawEvent.Payload.get -> System.ReadOnlyMemory<byte>
+ZeroAlloc.EventSourcing.RawEvent.Payload.init -> void
+ZeroAlloc.EventSourcing.RawEvent.Position.get -> ZeroAlloc.EventSourcing.StreamPosition
+ZeroAlloc.EventSourcing.RawEvent.Position.init -> void
+ZeroAlloc.EventSourcing.RawEvent.RawEvent() -> void
+ZeroAlloc.EventSourcing.RawEvent.RawEvent(ZeroAlloc.EventSourcing.StreamPosition Position, string! EventType, System.ReadOnlyMemory<byte> Payload, ZeroAlloc.EventSourcing.EventMetadata Metadata) -> void
+ZeroAlloc.EventSourcing.ReplayableProjection<TReadModel>
+ZeroAlloc.EventSourcing.ReplayableProjection<TReadModel>.RebuildAsync(ZeroAlloc.EventSourcing.IProjectionStore! store, ZeroAlloc.EventSourcing.StreamId streamId, ZeroAlloc.EventSourcing.IEventStore! eventStore, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+ZeroAlloc.EventSourcing.ReplayableProjection<TReadModel>.ReplayableProjection() -> void
+ZeroAlloc.EventSourcing.ServiceCollectionExtensions
+ZeroAlloc.EventSourcing.SnapshotLoadingStrategy
+ZeroAlloc.EventSourcing.SnapshotLoadingStrategy.IgnoreSnapshot = 2 -> ZeroAlloc.EventSourcing.SnapshotLoadingStrategy
+ZeroAlloc.EventSourcing.SnapshotLoadingStrategy.TrustSnapshot = 0 -> ZeroAlloc.EventSourcing.SnapshotLoadingStrategy
+ZeroAlloc.EventSourcing.SnapshotLoadingStrategy.ValidateAndReplay = 1 -> ZeroAlloc.EventSourcing.SnapshotLoadingStrategy
+ZeroAlloc.EventSourcing.SnapshotPolicy
+ZeroAlloc.EventSourcing.StoreError
+ZeroAlloc.EventSourcing.StoreError.Code.get -> string!
+ZeroAlloc.EventSourcing.StoreError.Message.get -> string!
+ZeroAlloc.EventSourcing.StreamConsumer
+ZeroAlloc.EventSourcing.StreamConsumer.CommitAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+ZeroAlloc.EventSourcing.StreamConsumer.ConsumeAsync(System.Func<ZeroAlloc.EventSourcing.EventEnvelope, System.Threading.CancellationToken, System.Threading.Tasks.Task!>! handler, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+ZeroAlloc.EventSourcing.StreamConsumer.ConsumerId.get -> string!
+ZeroAlloc.EventSourcing.StreamConsumer.GetPositionAsync(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeroAlloc.EventSourcing.StreamPosition?>!
+ZeroAlloc.EventSourcing.StreamConsumer.ResetPositionAsync(ZeroAlloc.EventSourcing.StreamPosition position, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+ZeroAlloc.EventSourcing.StreamConsumer.StreamConsumer(ZeroAlloc.EventSourcing.IEventStore! eventStore, ZeroAlloc.EventSourcing.ICheckpointStore! checkpointStore, string! consumerId, ZeroAlloc.EventSourcing.StreamConsumerOptions? options = null, ZeroAlloc.EventSourcing.StreamId? streamId = null, ZeroAlloc.EventSourcing.IDeadLetterStore? deadLetterStore = null) -> void
+ZeroAlloc.EventSourcing.StreamConsumerOptions
+ZeroAlloc.EventSourcing.StreamConsumerOptions.BatchSize.get -> int
+ZeroAlloc.EventSourcing.StreamConsumerOptions.BatchSize.set -> void
+ZeroAlloc.EventSourcing.StreamConsumerOptions.CommitStrategy.get -> ZeroAlloc.EventSourcing.CommitStrategy
+ZeroAlloc.EventSourcing.StreamConsumerOptions.CommitStrategy.set -> void
+ZeroAlloc.EventSourcing.StreamConsumerOptions.ErrorStrategy.get -> ZeroAlloc.EventSourcing.ErrorHandlingStrategy
+ZeroAlloc.EventSourcing.StreamConsumerOptions.ErrorStrategy.set -> void
+ZeroAlloc.EventSourcing.StreamConsumerOptions.MaxRetries.get -> int
+ZeroAlloc.EventSourcing.StreamConsumerOptions.MaxRetries.set -> void
+ZeroAlloc.EventSourcing.StreamConsumerOptions.RetryPolicy.get -> ZeroAlloc.EventSourcing.IRetryPolicy!
+ZeroAlloc.EventSourcing.StreamConsumerOptions.RetryPolicy.set -> void
+ZeroAlloc.EventSourcing.StreamConsumerOptions.StreamConsumerOptions() -> void
+ZeroAlloc.EventSourcing.StreamId
+ZeroAlloc.EventSourcing.StreamId.Equals(ZeroAlloc.EventSourcing.StreamId other) -> bool
+ZeroAlloc.EventSourcing.StreamId.StreamId() -> void
+ZeroAlloc.EventSourcing.StreamId.StreamId(string! value) -> void
+ZeroAlloc.EventSourcing.StreamId.Value.get -> string!
+ZeroAlloc.EventSourcing.StreamId.Value.init -> void
+ZeroAlloc.EventSourcing.StreamPosition
+ZeroAlloc.EventSourcing.StreamPosition.Deconstruct(out long Value) -> void
+ZeroAlloc.EventSourcing.StreamPosition.Equals(ZeroAlloc.EventSourcing.StreamPosition other) -> bool
+ZeroAlloc.EventSourcing.StreamPosition.Next() -> ZeroAlloc.EventSourcing.StreamPosition
+ZeroAlloc.EventSourcing.StreamPosition.StreamPosition() -> void
+ZeroAlloc.EventSourcing.StreamPosition.StreamPosition(long Value) -> void
+ZeroAlloc.EventSourcing.StreamPosition.Value.get -> long
+ZeroAlloc.EventSourcing.StreamPosition.Value.init -> void
+ZeroAlloc.EventSourcing.UpcasterPipeline
+ZeroAlloc.EventSourcing.UpcasterPipeline.TryUpcast(object! oldEvent, out object! upgraded) -> bool
+ZeroAlloc.EventSourcing.UpcasterPipeline.UpcasterPipeline(System.Collections.Generic.IEnumerable<ZeroAlloc.EventSourcing.UpcasterRegistration!>! registrations) -> void
+ZeroAlloc.EventSourcing.UpcasterRegistration
+ZeroAlloc.EventSourcing.UpcasterRegistration.Apply.get -> System.Func<object!, object!>!
+ZeroAlloc.EventSourcing.UpcasterRegistration.FromType.get -> System.Type!
+ZeroAlloc.EventSourcing.UpcasterRegistration.ToType.get -> System.Type!
+ZeroAlloc.EventSourcing.UpcasterRegistration.UpcasterRegistration(System.Type! fromType, System.Type! toType, System.Func<object!, object!>! apply) -> void
+ZeroAlloc.EventSourcing.ZeroAllocEventSerializer
+ZeroAlloc.EventSourcing.ZeroAllocEventSerializer.Deserialize(System.ReadOnlyMemory<byte> payload, System.Type! eventType) -> object!
+ZeroAlloc.EventSourcing.ZeroAllocEventSerializer.Serialize<TEvent>(TEvent event) -> System.ReadOnlyMemory<byte>
+ZeroAlloc.EventSourcing.ZeroAllocEventSerializer.ZeroAllocEventSerializer(ZeroAlloc.Serialisation.ISerializerDispatcher! dispatcher) -> void
+abstract ZeroAlloc.EventSourcing.BatchedProjection<TReadModel>.FlushBatchAsync(System.Collections.Generic.IReadOnlyList<ZeroAlloc.EventSourcing.EventEnvelope>! batch, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+abstract ZeroAlloc.EventSourcing.FilteredProjection<TReadModel>.IncludeEvent(ZeroAlloc.EventSourcing.EventEnvelope event) -> bool
+abstract ZeroAlloc.EventSourcing.Projection<TReadModel>.Apply(TReadModel current, ZeroAlloc.EventSourcing.EventEnvelope event) -> TReadModel
+abstract ZeroAlloc.EventSourcing.ReplayableProjection<TReadModel>.GetProjectionKey() -> string!
+override ZeroAlloc.EventSourcing.AppendResult.GetHashCode() -> int
+override ZeroAlloc.EventSourcing.BatchedProjection<TReadModel>.HandleAsync(ZeroAlloc.EventSourcing.EventEnvelope event, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+override ZeroAlloc.EventSourcing.DeadLetterEntry.Equals(object? obj) -> bool
+override ZeroAlloc.EventSourcing.DeadLetterEntry.GetHashCode() -> int
+override ZeroAlloc.EventSourcing.DeadLetterEntry.ToString() -> string!
+override ZeroAlloc.EventSourcing.EventEnvelope.GetHashCode() -> int
+override ZeroAlloc.EventSourcing.EventEnvelope<TEvent>.GetHashCode() -> int
+override ZeroAlloc.EventSourcing.EventMetadata.GetHashCode() -> int
+override ZeroAlloc.EventSourcing.FilteredProjection<TReadModel>.HandleAsync(ZeroAlloc.EventSourcing.EventEnvelope event, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+override ZeroAlloc.EventSourcing.ProjectionConsistencyReport.Equals(object? obj) -> bool
+override ZeroAlloc.EventSourcing.ProjectionConsistencyReport.GetHashCode() -> int
+override ZeroAlloc.EventSourcing.ProjectionConsistencyReport.ToString() -> string!
+override ZeroAlloc.EventSourcing.RawEvent.GetHashCode() -> int
+override ZeroAlloc.EventSourcing.StoreError.ToString() -> string!
+override ZeroAlloc.EventSourcing.StreamId.GetHashCode() -> int
+override ZeroAlloc.EventSourcing.StreamId.ToString() -> string!
+override ZeroAlloc.EventSourcing.StreamPosition.GetHashCode() -> int
+static ZeroAlloc.EventSourcing.AppendResult.operator !=(ZeroAlloc.EventSourcing.AppendResult left, ZeroAlloc.EventSourcing.AppendResult right) -> bool
+static ZeroAlloc.EventSourcing.AppendResult.operator ==(ZeroAlloc.EventSourcing.AppendResult left, ZeroAlloc.EventSourcing.AppendResult right) -> bool
+static ZeroAlloc.EventSourcing.DeadLetterEntry.operator !=(ZeroAlloc.EventSourcing.DeadLetterEntry? left, ZeroAlloc.EventSourcing.DeadLetterEntry? right) -> bool
+static ZeroAlloc.EventSourcing.DeadLetterEntry.operator ==(ZeroAlloc.EventSourcing.DeadLetterEntry? left, ZeroAlloc.EventSourcing.DeadLetterEntry? right) -> bool
+static ZeroAlloc.EventSourcing.EventEnvelope.operator !=(ZeroAlloc.EventSourcing.EventEnvelope left, ZeroAlloc.EventSourcing.EventEnvelope right) -> bool
+static ZeroAlloc.EventSourcing.EventEnvelope.operator ==(ZeroAlloc.EventSourcing.EventEnvelope left, ZeroAlloc.EventSourcing.EventEnvelope right) -> bool
+static ZeroAlloc.EventSourcing.EventEnvelope<TEvent>.operator !=(ZeroAlloc.EventSourcing.EventEnvelope<TEvent> left, ZeroAlloc.EventSourcing.EventEnvelope<TEvent> right) -> bool
+static ZeroAlloc.EventSourcing.EventEnvelope<TEvent>.operator ==(ZeroAlloc.EventSourcing.EventEnvelope<TEvent> left, ZeroAlloc.EventSourcing.EventEnvelope<TEvent> right) -> bool
+static ZeroAlloc.EventSourcing.EventMetadata.New(string! eventType, System.Guid? correlationId = null, System.Guid? causationId = null) -> ZeroAlloc.EventSourcing.EventMetadata
+static ZeroAlloc.EventSourcing.EventMetadata.operator !=(ZeroAlloc.EventSourcing.EventMetadata left, ZeroAlloc.EventSourcing.EventMetadata right) -> bool
+static ZeroAlloc.EventSourcing.EventMetadata.operator ==(ZeroAlloc.EventSourcing.EventMetadata left, ZeroAlloc.EventSourcing.EventMetadata right) -> bool
+static ZeroAlloc.EventSourcing.EventSourcingBuilderUpcasterExtensions.AddUpcaster<TOld, TNew, TUpcaster>(this ZeroAlloc.EventSourcing.EventSourcingBuilder! builder) -> ZeroAlloc.EventSourcing.EventSourcingBuilder!
+static ZeroAlloc.EventSourcing.EventSourcingBuilderUpcasterExtensions.AddUpcaster<TOld, TNew>(this ZeroAlloc.EventSourcing.EventSourcingBuilder! builder, System.Func<TOld, TNew>! upcast) -> ZeroAlloc.EventSourcing.EventSourcingBuilder!
+static ZeroAlloc.EventSourcing.ProjectionConsistencyReport.operator !=(ZeroAlloc.EventSourcing.ProjectionConsistencyReport? left, ZeroAlloc.EventSourcing.ProjectionConsistencyReport? right) -> bool
+static ZeroAlloc.EventSourcing.ProjectionConsistencyReport.operator ==(ZeroAlloc.EventSourcing.ProjectionConsistencyReport? left, ZeroAlloc.EventSourcing.ProjectionConsistencyReport? right) -> bool
+static ZeroAlloc.EventSourcing.RawEvent.operator !=(ZeroAlloc.EventSourcing.RawEvent left, ZeroAlloc.EventSourcing.RawEvent right) -> bool
+static ZeroAlloc.EventSourcing.RawEvent.operator ==(ZeroAlloc.EventSourcing.RawEvent left, ZeroAlloc.EventSourcing.RawEvent right) -> bool
+static ZeroAlloc.EventSourcing.ServiceCollectionExtensions.AddEventSourcing(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> ZeroAlloc.EventSourcing.EventSourcingBuilder!
+static ZeroAlloc.EventSourcing.ServiceCollectionExtensions.UseInMemoryCheckpointStore(this ZeroAlloc.EventSourcing.EventSourcingBuilder! builder) -> ZeroAlloc.EventSourcing.EventSourcingBuilder!
+static ZeroAlloc.EventSourcing.SnapshotPolicy.Always.get -> ZeroAlloc.EventSourcing.ISnapshotPolicy!
+static ZeroAlloc.EventSourcing.SnapshotPolicy.EveryNEvents(int n) -> ZeroAlloc.EventSourcing.ISnapshotPolicy!
+static ZeroAlloc.EventSourcing.SnapshotPolicy.Never.get -> ZeroAlloc.EventSourcing.ISnapshotPolicy!
+static ZeroAlloc.EventSourcing.StoreError.Conflict(ZeroAlloc.EventSourcing.StreamId id, ZeroAlloc.EventSourcing.StreamPosition expected, ZeroAlloc.EventSourcing.StreamPosition actual) -> ZeroAlloc.EventSourcing.StoreError!
+static ZeroAlloc.EventSourcing.StoreError.StreamNotFound(ZeroAlloc.EventSourcing.StreamId id) -> ZeroAlloc.EventSourcing.StoreError!
+static ZeroAlloc.EventSourcing.StoreError.Unknown(string! message) -> ZeroAlloc.EventSourcing.StoreError!
+static ZeroAlloc.EventSourcing.StreamId.operator !=(ZeroAlloc.EventSourcing.StreamId left, ZeroAlloc.EventSourcing.StreamId right) -> bool
+static ZeroAlloc.EventSourcing.StreamId.operator ==(ZeroAlloc.EventSourcing.StreamId left, ZeroAlloc.EventSourcing.StreamId right) -> bool
+static ZeroAlloc.EventSourcing.StreamPosition.operator !=(ZeroAlloc.EventSourcing.StreamPosition left, ZeroAlloc.EventSourcing.StreamPosition right) -> bool
+static ZeroAlloc.EventSourcing.StreamPosition.operator ==(ZeroAlloc.EventSourcing.StreamPosition left, ZeroAlloc.EventSourcing.StreamPosition right) -> bool
+static readonly ZeroAlloc.EventSourcing.PollingEventSubscription.DefaultPollInterval -> System.TimeSpan
+static readonly ZeroAlloc.EventSourcing.StreamPosition.End -> ZeroAlloc.EventSourcing.StreamPosition
+static readonly ZeroAlloc.EventSourcing.StreamPosition.Start -> ZeroAlloc.EventSourcing.StreamPosition
+virtual ZeroAlloc.EventSourcing.Projection<TReadModel>.HandleAsync(ZeroAlloc.EventSourcing.EventEnvelope event, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+virtual ZeroAlloc.EventSourcing.ProjectionConsistencyReport.<Clone>$() -> ZeroAlloc.EventSourcing.ProjectionConsistencyReport!
+virtual ZeroAlloc.EventSourcing.ProjectionConsistencyReport.EqualityContract.get -> System.Type!
+virtual ZeroAlloc.EventSourcing.ProjectionConsistencyReport.Equals(ZeroAlloc.EventSourcing.ProjectionConsistencyReport? other) -> bool
+virtual ZeroAlloc.EventSourcing.ProjectionConsistencyReport.PrintMembers(System.Text.StringBuilder! builder) -> bool
+~override ZeroAlloc.EventSourcing.AppendResult.Equals(object obj) -> bool
+~override ZeroAlloc.EventSourcing.AppendResult.ToString() -> string
+~override ZeroAlloc.EventSourcing.EventEnvelope.Equals(object obj) -> bool
+~override ZeroAlloc.EventSourcing.EventEnvelope.ToString() -> string
+~override ZeroAlloc.EventSourcing.EventEnvelope<TEvent>.Equals(object obj) -> bool
+~override ZeroAlloc.EventSourcing.EventEnvelope<TEvent>.ToString() -> string
+~override ZeroAlloc.EventSourcing.EventMetadata.Equals(object obj) -> bool
+~override ZeroAlloc.EventSourcing.EventMetadata.ToString() -> string
+~override ZeroAlloc.EventSourcing.RawEvent.Equals(object obj) -> bool
+~override ZeroAlloc.EventSourcing.RawEvent.ToString() -> string
+~override ZeroAlloc.EventSourcing.StreamId.Equals(object obj) -> bool
+~override ZeroAlloc.EventSourcing.StreamPosition.Equals(object obj) -> bool
+~override ZeroAlloc.EventSourcing.StreamPosition.ToString() -> string
