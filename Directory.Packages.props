@@ -3,7 +3,7 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
   <ItemGroup>
-    <PackageVersion Include="ZeroAlloc.Results"                  Version="1.1.0" />
+    <PackageVersion Include="ZeroAlloc.Results"                  Version="1.1.1" />
     <PackageVersion Include="ZeroAlloc.Collections"              Version="1.1.0" />
     <PackageVersion Include="ZeroAlloc.AsyncEvents"              Version="1.1.0" />
     <PackageVersion Include="ZeroAlloc.ValueObjects"             Version="1.4.0" />
