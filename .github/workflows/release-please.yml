@@ -17,7 +17,7 @@ jobs:
       paths_released: ${{ steps.release.outputs.paths_released }}
     steps:
       - name: Release Please
-        uses: googleapis/release-please-action@v4
+        uses: googleapis/release-please-action@v5
         id: release
         with:
           # Manifest mode: read release-please-config.json + .release-please-manifest.json
