@@ -1,0 +1,132 @@
+name: Release Please
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      releases_created: ${{ steps.release.outputs.releases_created }}
+      paths_released: ${{ steps.release.outputs.paths_released }}
+    steps:
+      - name: Release Please
+        uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          # Manifest mode: read release-please-config.json + .release-please-manifest.json
+          # from the repo root. 9-package fan-out with include-component-in-tag means
+          # tags look like ZeroAlloc.EventSourcing-v1.1.0,
+          # ZeroAlloc.EventSourcing.EfCore-v1.0.0, etc. paths_released drives the
+          # publish job so we only pack/push the packages that actually got bumped.
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+  publish:
+    needs: release-please
+    if: needs.release-please.outputs.releases_created == 'true'
+    runs-on: ubuntu-latest
+    services:
+      sql-server:
+        image: mcr.microsoft.com/mssql/server:2025-latest
+        env:
+          ACCEPT_EULA: Y
+          MSSQL_SA_PASSWORD: YourPassword123!
+          MSSQL_PID: Developer
+        ports:
+          - 1433:1433
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: |
+            8.0.x
+            10.0.x
+          dotnet-quality: 'ga'
+
+      - name: Wait for databases to start
+        run: sleep 15
+
+      - name: Create test databases
+        run: |
+          docker exec $(docker ps -f name=postgres -q) psql -U postgres -c "CREATE DATABASE test;" || true
+          docker exec $(docker ps -f name=mssql -q) /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P YourPassword123! -N -C -Q "CREATE DATABASE test;" || true
+
+      - name: Restore
+        run: dotnet restore ZeroAlloc.EventSourcing.slnx
+
+      - name: Build
+        run: dotnet build ZeroAlloc.EventSourcing.slnx -c Release --no-restore
+
+      - name: Test
+        run: dotnet test ZeroAlloc.EventSourcing.slnx -c Release --no-build --filter "FullyQualifiedName!~SqlServer&FullyQualifiedName!~PostgreSql"
+
+      - name: Pack each released package at its release version
+        env:
+          PATHS_RELEASED: ${{ needs.release-please.outputs.paths_released }}
+        run: |
+          mkdir -p ./nupkg
+          # paths_released is a JSON array of paths whose packages got bumped this run.
+          # Each package's manifest version is mirrored into <path>/version.txt by
+          # release-please's "simple" release type, so we read it and pack at that version.
+          for path in $(echo "$PATHS_RELEASED" | jq -r '.[]'); do
+            version=$(cat "$path/version.txt")
+            csproj=$(ls "$path"/*.csproj | head -1)
+            echo "Packing $csproj at version $version"
+            dotnet pack "$csproj" -c Release --no-build \
+              -p:PackageVersion="$version" -o ./nupkg
+          done
+          ls -la ./nupkg
+
+      - name: Verify generator pack layout (only if Generators was released)
+        if: contains(needs.release-please.outputs.paths_released, 'src/ZeroAlloc.EventSourcing.Generators')
+        run: ./scripts/verify-generator-pack-layout.sh ./nupkg
+
+      - name: Push to NuGet
+        run: |
+          dotnet nuget push ./nupkg/*.nupkg \
+            --api-key ${{ secrets.NUGET_API_KEY }} \
+            --source https://api.nuget.org/v3/index.json \
+            --skip-duplicate
+
+      - name: Upload to GitHub Releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PATHS_RELEASED: ${{ needs.release-please.outputs.paths_released }}
+        run: |
+          # Each released package gets its own tag like ZeroAlloc.EventSourcing-v1.1.0.
+          # Upload that package's .nupkg to its own GitHub Release.
+          for path in $(echo "$PATHS_RELEASED" | jq -r '.[]'); do
+            version=$(cat "$path/version.txt")
+            package_name=$(basename "$path")
+            tag="${package_name}-v${version}"
+            nupkg=$(ls ./nupkg/${package_name}.${version}.nupkg 2>/dev/null || true)
+            if [ -n "$nupkg" ]; then
+              echo "Uploading $nupkg to release $tag"
+              gh release upload "$tag" "$nupkg" --clobber
+            else
+              echo "No .nupkg found for $package_name at version $version (skipping upload)"
+            fi
+          done
