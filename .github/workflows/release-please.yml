@@ -27,7 +27,7 @@ jobs:
           # publish job so we only pack/push the packages that actually got bumped.
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
 
   publish:
     needs: release-please
