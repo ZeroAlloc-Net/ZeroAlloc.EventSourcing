@@ -89,7 +89,7 @@ await consumer.ConsumeAsync(async (envelope, ct) => {
 });
 ```
 
-See [Stream Consumers Documentation](docs/core-concepts/consumers.md) for complete guide.
+See [Stream Consumers Documentation](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/blob/main/docs/core-concepts/consumers.md) for complete guide.
 
 ## Kafka Integration
 
@@ -110,7 +110,7 @@ await consumer.ConsumeAsync(async (envelope, ct) => {
 });
 ```
 
-See [Kafka Consumer Documentation](docs/core-concepts/kafka-consumer.md) for complete guide.
+See [Kafka Consumer Documentation](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/blob/main/docs/core-concepts/kafka-consumer.md) for complete guide.
 
 ## Projections
 
@@ -164,18 +164,18 @@ The decorator emits, under the `ZeroAlloc.EventSourcing` activity-source/meter n
 
 Any OpenTelemetry SDK wired to the process picks up all three instruments automatically.
 
-> **Breaking change in v2.0:** `WithTelemetry()` now decorates `IAggregateRepository<,>` instead of `IEventStore`. The old `event_store.append` / `event_store.read` / `event_store.subscribe` spans no longer exist; the deleted `InstrumentedEventStore` and its `[Instrument]` attribute on `IEventStore` are gone. Existing dashboards must be re-pointed at `aggregate.load` / `aggregate.save`. See [docs/telemetry.md](docs/telemetry.md) for the full migration table. The legacy `UseEventSourcingTelemetry()` extension remains as `[Obsolete]` and now delegates to `WithTelemetry()`.
+> **Breaking change in v2.0:** `WithTelemetry()` now decorates `IAggregateRepository<,>` instead of `IEventStore`. The old `event_store.append` / `event_store.read` / `event_store.subscribe` spans no longer exist; the deleted `InstrumentedEventStore` and its `[Instrument]` attribute on `IEventStore` are gone. Existing dashboards must be re-pointed at `aggregate.load` / `aggregate.save`. See [docs/telemetry.md](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/blob/main/docs/telemetry.md) for the full migration table. The legacy `UseEventSourcingTelemetry()` extension remains as `[Obsolete]` and now delegates to `WithTelemetry()`.
 
 ## Documentation
 
-Complete documentation available at [/docs](docs/):
+Complete documentation available at [/docs](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/tree/main/docs/):
 
-- [Getting Started](docs/getting-started/)
-- [Core Concepts](docs/core-concepts/)
-- [Usage Guides](docs/usage-guides/)
-- [Testing Strategies](docs/testing/)
-- [Performance & Benchmarks](docs/performance/)
-- [Advanced Topics](docs/advanced/)
+- [Getting Started](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/tree/main/docs/getting-started/)
+- [Core Concepts](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/tree/main/docs/core-concepts/)
+- [Usage Guides](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/tree/main/docs/usage-guides/)
+- [Testing Strategies](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/tree/main/docs/testing/)
+- [Performance & Benchmarks](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/tree/main/docs/performance/)
+- [Advanced Topics](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/tree/main/docs/advanced/)
 
 ## Development
 
@@ -203,4 +203,4 @@ See LICENSE file for details.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+See [CONTRIBUTING.md](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/blob/main/CONTRIBUTING.md) for guidelines.
