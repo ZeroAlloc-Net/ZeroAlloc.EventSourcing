@@ -44,7 +44,8 @@ public abstract class CheckpointStoreContractTests
         await store.WriteAsync(consumerId, new StreamPosition(20));
         var result = await store.ReadAsync(consumerId);
 
-        result.Value.Value.Should().Be(20);
+        result.Should().NotBeNull();
+        result!.Value.Value.Should().Be(20);
     }
 
     [Fact]
@@ -79,7 +80,9 @@ public abstract class CheckpointStoreContractTests
         var posA = await store.ReadAsync("consumer-a");
         var posB = await store.ReadAsync("consumer-b");
 
-        posA.Value.Value.Should().Be(10);
-        posB.Value.Value.Should().Be(20);
+        posA.Should().NotBeNull();
+        posB.Should().NotBeNull();
+        posA!.Value.Value.Should().Be(10);
+        posB!.Value.Value.Should().Be(20);
     }
 }
