@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <PackageReference Include="BenchmarkDotNet" />
+    <PackageReference Include="Microsoft.Data.Sqlite" />
     <PackageReference Include="NSubstitute" />
     <PackageReference Include="ZeroAlloc.Serialisation" />
   </ItemGroup>
