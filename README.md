@@ -66,6 +66,19 @@ foreach (var evt in envelope.Events)
 
 All packages follow zero-allocation principles and are optimized for high-throughput scenarios.
 
+## Performance
+
+Correctness-matched overhead vs a hand-rolled SQLite event store (same connection, both transactional, both check stream version inside the transaction). .NET 8.0.26, i9-12900HK, BenchmarkDotNet v0.15.8.
+
+| Operation | Hand-rolled | ZA.EventSourcing | Overhead |
+|---|---:|---:|---:|
+| Append 1 event (transactional, OCC check) | 80.7 µs / 3.80 KB | **106.3 µs / 4.79 KB** | +33% time, +26% alloc |
+| Read 100-event stream (ordered) | 66.0 µs / 11.95 KB | **140.9 µs / 25.23 KB** | +114% time, +111% alloc |
+
+The delta is the cost of the `IEventStore` + `IEventStoreAdapter` + `IEventSerializer` + `IEventTypeRegistry` layer — what you get for it is typed events, pluggable serialization, optimistic concurrency through `StreamPosition`, and composability with `Aggregate<T>`, projections, snapshots, upcasters, and dead-letter handling. At real-database latency the abstraction tax becomes negligible vs the SQL round-trip.
+
+Full methodology: [docs/performance.md](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/blob/main/docs/performance.md).
+
 ## Stream Consumers
 
 ZeroAlloc.EventSourcing includes production-grade stream consumers for reliable event consumption with automatic position tracking, retry logic, and configurable error handling.
