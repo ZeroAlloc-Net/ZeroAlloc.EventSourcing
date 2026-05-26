@@ -4,6 +4,13 @@
     <PackageId>ZeroAlloc.EventSourcing.Mediator</PackageId>
     <Description>Bridge package republishing LIVE committed ZeroAlloc.EventSourcing events through ZeroAlloc.Mediator notification dispatch. History replays are filtered out positionally by subscribing from StreamPosition.End.</Description>
     <PackageTags>$(PackageTags);mediator;bridge;notifications</PackageTags>
+    <!--
+      ZESM001 (no INotification-implementing types found) is intentionally suppressed in
+      this runtime build: the bundled generator runs against the bridge's own compilation
+      (which contains zero INotifications by design). The diagnostic still fires for
+      end-consumer projects via the analyzers/dotnet/cs bundle.
+    -->
+    <NoWarn>$(NoWarn);ZESM001</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
