@@ -39,5 +39,8 @@
     <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.8" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.8" />
     <PackageVersion Include="ZeroAlloc.Mediator"                Version="4.1.4" />
+    <PackageVersion Include="ZeroAlloc.Mediator.Generator"      Version="4.1.4" />
+    <PackageVersion Include="Verify.Xunit"                       Version="28.16.0" />
+    <PackageVersion Include="Verify.SourceGenerators"            Version="2.5.0" />
   </ItemGroup>
 </Project>

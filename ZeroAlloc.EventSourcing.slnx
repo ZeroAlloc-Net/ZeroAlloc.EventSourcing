@@ -19,6 +19,7 @@
     <Project Path="tests/ZeroAlloc.EventSourcing.Aggregates.Tests/ZeroAlloc.EventSourcing.Aggregates.Tests.csproj" />
     <Project Path="tests/ZeroAlloc.EventSourcing.InMemory.Tests/ZeroAlloc.EventSourcing.InMemory.Tests.csproj" />
     <Project Path="tests/ZeroAlloc.EventSourcing.Kafka.Tests/ZeroAlloc.EventSourcing.Kafka.Tests.csproj" />
+    <Project Path="tests/ZeroAlloc.EventSourcing.Mediator.Generator.Tests/ZeroAlloc.EventSourcing.Mediator.Generator.Tests.csproj" />
     <Project Path="tests/ZeroAlloc.EventSourcing.PostgreSql.Tests/ZeroAlloc.EventSourcing.PostgreSql.Tests.csproj" />
     <Project Path="tests/ZeroAlloc.EventSourcing.Sql.Tests/ZeroAlloc.EventSourcing.Sql.Tests.csproj" />
     <Project Path="tests/ZeroAlloc.EventSourcing.SqlServer.Tests/ZeroAlloc.EventSourcing.SqlServer.Tests.csproj" />
