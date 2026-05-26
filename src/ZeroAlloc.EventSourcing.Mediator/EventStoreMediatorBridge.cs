@@ -13,7 +13,12 @@ namespace ZeroAlloc.EventSourcing.Mediator;
 /// <see cref="INotificationDispatcher"/>. History replays are filtered out positionally by
 /// subscribing from <see cref="StreamPosition.End"/>.
 /// </summary>
-internal sealed class EventStoreMediatorBridge : IHostedService, IAsyncDisposable
+/// <remarks>
+/// Public so the generator-emitted <c>EventSourcingBuilderMediatorExtensions.PublishViaMediator</c>
+/// can construct it. End users normally call <c>.PublishViaMediator(streamId)</c> — direct
+/// construction is allowed but uncommon.
+/// </remarks>
+public sealed class EventStoreMediatorBridge : IHostedService, IAsyncDisposable
 {
     private readonly IEventStore _store;
     private readonly INotificationDispatcher _dispatch;
@@ -21,6 +26,14 @@ internal sealed class EventStoreMediatorBridge : IHostedService, IAsyncDisposabl
     private readonly StreamId _streamId;
     private IEventSubscription? _subscription;
 
+    /// <summary>
+    /// Initializes a new bridge for a single stream. Normally constructed by the
+    /// generator-emitted <c>PublishViaMediator</c> extension; direct construction is allowed.
+    /// </summary>
+    /// <param name="store">The underlying event store providing LIVE subscriptions.</param>
+    /// <param name="dispatch">The generator-emitted dispatcher routing events to Mediator.</param>
+    /// <param name="logger">Logger for skip and handler-failure diagnostics.</param>
+    /// <param name="streamId">The single stream this bridge subscribes to.</param>
     public EventStoreMediatorBridge(
         IEventStore store,
         INotificationDispatcher dispatch,
@@ -33,6 +46,11 @@ internal sealed class EventStoreMediatorBridge : IHostedService, IAsyncDisposabl
         _streamId = streamId;
     }
 
+    /// <summary>
+    /// Subscribes to LIVE events on the configured stream starting at
+    /// <see cref="StreamPosition.End"/>, so prior history is never replayed through Mediator.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token from the host lifecycle.</param>
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         _subscription = await _store
@@ -41,6 +59,10 @@ internal sealed class EventStoreMediatorBridge : IHostedService, IAsyncDisposabl
         await _subscription.StartAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Stops the bridge by disposing the active subscription. Safe to call repeatedly.
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token from the host lifecycle.</param>
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         if (_subscription is not null)
@@ -50,6 +72,9 @@ internal sealed class EventStoreMediatorBridge : IHostedService, IAsyncDisposabl
         }
     }
 
+    /// <summary>
+    /// Disposes the underlying subscription. Equivalent to <see cref="StopAsync"/>.
+    /// </summary>
     public async ValueTask DisposeAsync()
     {
         if (_subscription is not null)
