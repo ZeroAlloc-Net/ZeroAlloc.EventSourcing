@@ -1,0 +1,17 @@
+﻿{
+  Diagnostics: [
+    {
+      Message: No INotification-implementing types found in the consuming compilation — the bridge will silently skip every event at runtime,
+      Severity: Warning,
+      WarningLevel: 1,
+      Descriptor: {
+        Id: ZESM001,
+        Title: Bridge generator found zero INotification-implementing types,
+        MessageFormat: No INotification-implementing types found in the consuming compilation — the bridge will silently skip every event at runtime,
+        Category: ZeroAlloc.EventSourcing.Mediator,
+        DefaultSeverity: Warning,
+        IsEnabledByDefault: true
+      }
+    }
+  ]
+}

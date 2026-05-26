@@ -1,0 +1,8 @@
+#nullable enable
+ZeroAlloc.EventSourcing.Mediator.EventStoreMediatorBridge
+ZeroAlloc.EventSourcing.Mediator.EventStoreMediatorBridge.DisposeAsync() -> System.Threading.Tasks.ValueTask
+ZeroAlloc.EventSourcing.Mediator.EventStoreMediatorBridge.EventStoreMediatorBridge(ZeroAlloc.EventSourcing.IEventStore! store, ZeroAlloc.EventSourcing.Mediator.INotificationDispatcher! dispatch, Microsoft.Extensions.Logging.ILogger<ZeroAlloc.EventSourcing.Mediator.EventStoreMediatorBridge!>! logger, ZeroAlloc.EventSourcing.StreamId streamId) -> void
+ZeroAlloc.EventSourcing.Mediator.EventStoreMediatorBridge.StartAsync(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
+ZeroAlloc.EventSourcing.Mediator.EventStoreMediatorBridge.StopAsync(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
+ZeroAlloc.EventSourcing.Mediator.INotificationDispatcher
+ZeroAlloc.EventSourcing.Mediator.INotificationDispatcher.DispatchAsync(object! event, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask

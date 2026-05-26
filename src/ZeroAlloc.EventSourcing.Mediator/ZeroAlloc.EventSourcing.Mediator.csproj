@@ -1,0 +1,64 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <PackageId>ZeroAlloc.EventSourcing.Mediator</PackageId>
+    <Description>Bridge package republishing LIVE committed ZeroAlloc.EventSourcing events through ZeroAlloc.Mediator notification dispatch. History replays are filtered out positionally by subscribing from StreamPosition.End.</Description>
+    <PackageTags>$(PackageTags);mediator;bridge;notifications</PackageTags>
+    <!--
+      ZESM001 (no INotification-implementing types found) is intentionally suppressed in
+      this runtime build: the bundled generator runs against the bridge's own compilation
+      (which contains zero INotifications by design). The diagnostic still fires for
+      end-consumer projects via the analyzers/dotnet/cs bundle.
+    -->
+    <NoWarn>$(NoWarn);ZESM001</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ZeroAlloc.EventSourcing\ZeroAlloc.EventSourcing.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ZeroAlloc.Mediator" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Build-order dependency: ensure the generator is built before this project so the
+      <None Include=...Pack="true"/> below can bundle its DLL. Crucially this is NOT
+      OutputItemType="Analyzer" — the bridge generator emits code that references
+      ZeroAlloc.Mediator.IMediator, which is itself emitted by the ZeroAlloc.Mediator
+      source generator INTO consumer compilations. This runtime project does not consume
+      Mediator's generator, so running the bridge generator here would produce uncompilable
+      code (CS0246 on IMediator).
+    -->
+    <ProjectReference Include="..\ZeroAlloc.EventSourcing.Mediator.Generator\ZeroAlloc.EventSourcing.Mediator.Generator.csproj"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\ZeroAlloc.EventSourcing.Mediator.Generator\bin\$(Configuration)\netstandard2.0\ZeroAlloc.EventSourcing.Mediator.Generator.dll"
+          Pack="true"
+          PackagePath="analyzers/dotnet/cs"
+          Visible="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
+      <_Parameter1>ZeroAlloc.EventSourcing.Mediator.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(IsRoslynComponent)' != 'true'">
+    <PackageReference Include="Meziantou.Analyzer" PrivateAssets="all" />
+    <PackageReference Include="Roslynator.Analyzers" PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>

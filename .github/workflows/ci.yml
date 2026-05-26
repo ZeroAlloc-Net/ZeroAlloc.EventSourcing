@@ -58,7 +58,7 @@ jobs:
         with:
           name: test-results
           path: "**/TestResults/*.trx"
-      - name: Verify pack (dry-run, all 9 packages)
+      - name: Verify pack (dry-run, all 10 packages)
         run: |
           mkdir -p ./nupkg-dryrun
           for csproj in \
@@ -70,6 +70,7 @@ jobs:
               src/ZeroAlloc.EventSourcing.SqlServer/ZeroAlloc.EventSourcing.SqlServer.csproj \
               src/ZeroAlloc.EventSourcing.PostgreSql/ZeroAlloc.EventSourcing.PostgreSql.csproj \
               src/ZeroAlloc.EventSourcing.Kafka/ZeroAlloc.EventSourcing.Kafka.csproj \
+              src/ZeroAlloc.EventSourcing.Mediator/ZeroAlloc.EventSourcing.Mediator.csproj \
               src/ZeroAlloc.EventSourcing.Telemetry/ZeroAlloc.EventSourcing.Telemetry.csproj
           do
             echo "Packing $csproj..."

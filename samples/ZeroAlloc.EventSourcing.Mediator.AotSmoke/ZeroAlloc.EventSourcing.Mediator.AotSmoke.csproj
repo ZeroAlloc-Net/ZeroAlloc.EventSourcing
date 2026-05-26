@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- Override Directory.Build.props multi-TFM list. -->
+    <TargetFrameworks></TargetFrameworks>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>ZeroAlloc.EventSourcing.Mediator.AotSmoke</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <OptimizationPreference>Size</OptimizationPreference>
+
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <WarningsAsErrors>$(WarningsAsErrors);IL2026;IL2067;IL2075;IL2091;IL3050;IL3051</WarningsAsErrors>
+    <!-- Generated Mediator.g.cs lacks XML doc; the sample itself doesn't need docs. -->
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      Project references to the runtime + the bridge generator. The generator must run as
+      an Analyzer on THIS compilation so .PublishViaMediator(streamId) and the
+      GeneratedNotificationDispatcher are emitted in-place. UndefineProperties=PublishAot
+      stops PublishAot=true flowing into the netstandard2.0 generator project (NETSDK1207).
+    -->
+    <ProjectReference Include="..\..\src\ZeroAlloc.EventSourcing.Mediator\ZeroAlloc.EventSourcing.Mediator.csproj"
+                      SetTargetFramework="TargetFramework=net10.0"
+                      UndefineProperties="PublishAot" />
+    <ProjectReference Include="..\..\src\ZeroAlloc.EventSourcing.InMemory\ZeroAlloc.EventSourcing.InMemory.csproj"
+                      SetTargetFramework="TargetFramework=net10.0" />
+    <ProjectReference Include="..\..\src\ZeroAlloc.EventSourcing.Mediator.Generator\ZeroAlloc.EventSourcing.Mediator.Generator.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false"
+                      UndefineProperties="PublishAot" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Direct PackageReference to ZeroAlloc.Mediator + its generator. ZeroAlloc.Mediator
+      ships INotification/INotificationHandler in lib/ and IMediator via a separate
+      analyzer package that the consuming compilation must reference explicitly.
+    -->
+    <PackageReference Include="ZeroAlloc.Mediator" />
+    <PackageReference Include="ZeroAlloc.Mediator.Generator">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+  </ItemGroup>
+</Project>
