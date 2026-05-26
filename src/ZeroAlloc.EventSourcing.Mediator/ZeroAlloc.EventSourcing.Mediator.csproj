@@ -30,8 +30,16 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!--
+      Build-order dependency: ensure the generator is built before this project so the
+      <None Include=...Pack="true"/> below can bundle its DLL. Crucially this is NOT
+      OutputItemType="Analyzer" — the bridge generator emits code that references
+      ZeroAlloc.Mediator.IMediator, which is itself emitted by the ZeroAlloc.Mediator
+      source generator INTO consumer compilations. This runtime project does not consume
+      Mediator's generator, so running the bridge generator here would produce uncompilable
+      code (CS0246 on IMediator).
+    -->
     <ProjectReference Include="..\ZeroAlloc.EventSourcing.Mediator.Generator\ZeroAlloc.EventSourcing.Mediator.Generator.csproj"
-                      OutputItemType="Analyzer"
                       ReferenceOutputAssembly="false" />
   </ItemGroup>
 
