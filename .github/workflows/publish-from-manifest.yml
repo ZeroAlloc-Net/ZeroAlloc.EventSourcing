@@ -35,12 +35,12 @@ jobs:
       - name: Build
         run: dotnet build --configuration Release --no-restore
 
-      - name: Test
-        # Excludes pre-existing flaky SQL DeadLetterStore EventId assertions in
-        # Sql.Tests (WriteAsync_SingleEntry_CanBeRead failures under publish-time
-        # parallel test execution). PR-time CI already validates the full suite
-        # against the same build artifacts.
-        run: dotnet test --configuration Release --no-build --filter "FullyQualifiedName!~SqlServerDeadLetterStoreTests.WriteAsync_SingleEntry_CanBeRead&FullyQualifiedName!~PostgreSqlDeadLetterStoreTests.WriteAsync_SingleEntry_CanBeRead"
+      # NOTE: No Test step. publish-from-manifest is a rescue workflow — its sole
+      # job is to pack + push artifacts. PR-time CI (ci.yml) already validated
+      # the full test suite against the same build artifacts before merge.
+      # Re-running tests here adds 8-10 min and introduces flakiness (SQL
+      # testcontainer subscription/dead-letter races) that doesn't affect
+      # package correctness.
 
       - name: Pack each released package at its manifest version
         run: |
