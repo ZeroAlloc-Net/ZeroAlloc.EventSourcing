@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/compare/ZeroAlloc.EventSourcing.Mediator-v1.0.0...ZeroAlloc.EventSourcing.Mediator-v1.0.1) (2026-05-26)
+
+
+### Bug Fixes
+
+* **esmediator:** add missing version.txt for release-please simple release-type ([5530738](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/commit/5530738c550a87001715d8bc5f9cb91e2a78cfac))
+
 ## 1.0.0 (2026-05-26)
 
 
