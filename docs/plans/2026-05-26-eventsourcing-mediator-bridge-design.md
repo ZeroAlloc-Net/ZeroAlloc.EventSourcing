@@ -22,7 +22,44 @@ Ship the smallest bridge that satisfies:
 - Lives as an `IHostedService` registered by the extension; auto-starts during host boot.
 - Compiles under `PublishAot=true` with zero `IL2026`/`IL3050` warnings.
 
+## Revision (2026-05-26) — generator-based dispatch
+
+**Initial assumption falsified during implementation:** the published `ZeroAlloc.Mediator` nupkg ships ONLY marker interfaces (`INotification`, `INotificationHandler`, etc.) — no `IMediator` type. `IMediator` and its `Publish` overloads are emitted by Mediator's source generator INTO the consuming compilation, with **per-concrete-type signatures only**. A bridge package compiled against `ZeroAlloc.Mediator` therefore cannot statically reference `IMediator.Publish(INotification, ct)` or even `IMediator` itself.
+
+**Implication:** v1.0 cannot be a runtime-only ~50 LOC package. To preserve the family's AOT promise (`<IsAotCompatible>true</IsAotCompatible>` enforced + zero `IL2026`/`IL3050`), the bridge ships **two assemblies in one nupkg**, mirroring how `ZeroAlloc.Flux` and `ZeroAlloc.Mediator` bundle their generators:
+
+- **Runtime** (`src/ZeroAlloc.EventSourcing.Mediator/`) — `EventStoreMediatorBridge` + `INotificationDispatcher` interface + `EventSourcingBuilderMediatorExtensions` (`partial` class with a `partial void EnsureDispatcherRegistered(...)` extension point).
+- **Generator** (`src/ZeroAlloc.EventSourcing.Mediator.Generator/`, `netstandard2.0`, `IsRoslynComponent`) bundled into the runtime nupkg's `analyzers/dotnet/cs/` folder. Discovers every type implementing `INotification` in the consuming compilation; emits a `GeneratedNotificationDispatcher : INotificationDispatcher` with a typed switch dispatching to `_mediator.Publish<TConcrete>(concrete, ct)` per type; emits the partial method body that registers `GeneratedNotificationDispatcher` into the `IServiceCollection` when `.PublishViaMediator(...)` is called.
+
+The bridge runtime ships a single nupkg. Users install one `<PackageReference>`; the generator runs automatically in their compilation; AOT publish produces 0 trim warnings because every `Publish<T>` call site is generated as a concrete-typed expression.
+
+This pushes the package from "50 LOC runtime bridge" to "~50 LOC runtime + ~150 LOC generator with snapshot tests" — comparable in scale to `ZeroAlloc.Flux` v1.0.0 (which we shipped today), but smaller because the dispatch surface is one method, not five.
+
+---
+
 ## Decisions
+
+### D-0 (added): generator + runtime split in one nupkg
+
+The package is **one nupkg containing two assemblies** — runtime + analyzer-bundled generator. The user installs one `PackageReference`; the generator runs in their compilation automatically. AOT-clean.
+
+The generator's responsibility:
+1. Discover every type in the consuming compilation that implements `ZeroAlloc.Mediator.INotification`.
+2. Emit `internal sealed class GeneratedNotificationDispatcher : INotificationDispatcher` with a switch over the discovered set, each arm calling `_mediator.Publish<TConcrete>(concrete, ct)`.
+3. Emit the `partial void EnsureDispatcherRegistered(IServiceCollection services)` body that registers `GeneratedNotificationDispatcher` as a singleton implementation of `INotificationDispatcher`.
+
+The runtime's responsibility:
+- Declare `public interface INotificationDispatcher { ValueTask DispatchAsync(object evt, CancellationToken ct); }`.
+- Implement `EventStoreMediatorBridge : IHostedService` consuming `INotificationDispatcher` (NOT `IMediator` — the bridge doesn't see Mediator's generated types).
+- Implement `EventSourcingBuilderMediatorExtensions` as a `static partial class` with `partial void EnsureDispatcherRegistered(IServiceCollection)` extension point that the generator fills in.
+
+**If the generator doesn't run** (e.g., user's `INotification` types are in a separate referenced assembly and the generator's syntax-based discovery misses them), `EnsureDispatcherRegistered` is a no-op → `INotificationDispatcher` resolution at runtime throws a clear "missing dispatcher" exception → user knows to declare events in the same compilation as the bridge consumer. Documented as a known constraint.
+
+**Considered and rejected:**
+
+- **Reflection at runtime** (`AppDomain.CurrentDomain.GetAssemblies()` + `MethodInfo.Invoke`). Breaks AOT (`[RequiresUnreferencedCode]` required). Undercuts the family's identity. Rejected.
+- **`EventCommittedNotification<TEvent>` wrapper.** Still requires `_mediator.Publish<EventCommittedNotification<TEvent>>(wrapper, ct)` — same `IMediator` reference problem. Rejected.
+- **Require user to manually register `INotificationDispatcher`.** The user would have to write a switch by hand listing every event type. Boilerplate; defeats the purpose of the bridge. Rejected.
 
 ### D-1: bridging shape — events implement `INotification`
 
@@ -168,25 +205,47 @@ public static class EventSourcingBuilderMediatorExtensions
 }
 ```
 
+`src/ZeroAlloc.EventSourcing.Mediator/INotificationDispatcher.cs`:
+
+```csharp
+namespace ZeroAlloc.EventSourcing.Mediator;
+
+/// <summary>
+/// Dispatches an ES event payload to Mediator's typed <c>Publish&lt;T&gt;</c>. The bridge package
+/// declares this interface; the bundled source generator emits the concrete implementation
+/// that switches over every <see cref="INotification"/> type discovered in the consuming
+/// compilation. Users never implement this interface themselves.
+/// </summary>
+public interface INotificationDispatcher
+{
+    /// <summary>
+    /// Dispatches <paramref name="event"/> via <c>IMediator.Publish&lt;TConcrete&gt;</c>.
+    /// Returns <see cref="ValueTask.CompletedTask"/> for events that aren't a discovered
+    /// <see cref="INotification"/> type (silent skip).
+    /// </summary>
+    ValueTask DispatchAsync(object @event, CancellationToken ct);
+}
+```
+
 `src/ZeroAlloc.EventSourcing.Mediator/EventStoreMediatorBridge.cs`:
 
 ```csharp
 internal sealed class EventStoreMediatorBridge : IHostedService
 {
     private readonly IEventStore _store;
-    private readonly IMediator _mediator;
-    private readonly ILogger _log;
+    private readonly INotificationDispatcher _dispatch;
+    private readonly ILogger<EventStoreMediatorBridge> _log;
     private readonly StreamId _streamId;
     private IEventSubscription? _subscription;
 
     public EventStoreMediatorBridge(
         IEventStore store,
-        IMediator mediator,
+        INotificationDispatcher dispatch,
         ILogger<EventStoreMediatorBridge> log,
         StreamId streamId)
     {
         _store = store;
-        _mediator = mediator;
+        _dispatch = dispatch;
         _log = log;
         _streamId = streamId;
     }
@@ -207,7 +266,7 @@ internal sealed class EventStoreMediatorBridge : IHostedService
 
     private async ValueTask OnEventAsync(EventEnvelope envelope, CancellationToken ct)
     {
-        if (envelope.Event is not INotification notification)
+        if (envelope.Event is not INotification)
         {
             _log.LogDebug(
                 "Bridge skipping non-INotification event {EventType} on {StreamId}",
@@ -218,7 +277,7 @@ internal sealed class EventStoreMediatorBridge : IHostedService
 
         try
         {
-            await _mediator.Publish(notification, ct).ConfigureAwait(false);
+            await _dispatch.DispatchAsync(envelope.Event, ct).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -232,11 +291,91 @@ internal sealed class EventStoreMediatorBridge : IHostedService
 }
 ```
 
-### Note on `IMediator.Publish`
+`src/ZeroAlloc.EventSourcing.Mediator/EventSourcingBuilderMediatorExtensions.cs`:
 
-Mediator's `Publish` is generic — `mediator.Publish<TNotification>(TNotification, CancellationToken)`. The bridge calls `mediator.Publish(notification, ct)` where `notification` is typed as `INotification`. Mediator's source generator emits `Publish<TConcrete>` overloads for every discovered notification type in the consuming compilation; runtime dispatch via the interface is supported by Mediator's runtime layer. (Verify the exact API shape during Task 1 of the implementation plan; if Mediator requires `Publish<T>` and rejects `Publish(INotification)`, the bridge will need to do a runtime dispatch via `MakeGenericMethod` once — a known AOT compromise that we'd flag and revisit.)
+```csharp
+public static partial class EventSourcingBuilderMediatorExtensions
+{
+    public static EventSourcingBuilder PublishViaMediator(this EventSourcingBuilder builder, StreamId streamId)
+    {
+        builder.Services.AddSingleton<IHostedService>(sp =>
+            new EventStoreMediatorBridge(
+                sp.GetRequiredService<IEventStore>(),
+                sp.GetRequiredService<INotificationDispatcher>(),
+                sp.GetRequiredService<ILogger<EventStoreMediatorBridge>>(),
+                streamId));
+        EnsureDispatcherRegistered(builder.Services);
+        return builder;
+    }
 
-If Mediator requires `Publish<TConcrete>(TConcrete)` only, the most AOT-safe fallback is to dispatch via `mediator.Publish<INotification>(notification, ct)` — the generated `Publish<INotification>` overload covers the interface dispatch. This should be confirmed against the actual Mediator runtime in Task 1.
+    static partial void EnsureDispatcherRegistered(IServiceCollection services);
+}
+```
+
+### Generator emit shape
+
+In the consuming compilation the generator emits (under `// <auto-generated/>`):
+
+```csharp
+namespace ZeroAlloc.EventSourcing.Mediator.Generated
+{
+    internal sealed class GeneratedNotificationDispatcher : INotificationDispatcher
+    {
+        private readonly IMediator _mediator;
+        public GeneratedNotificationDispatcher(IMediator mediator) => _mediator = mediator;
+
+        public ValueTask DispatchAsync(object @event, CancellationToken ct) => @event switch
+        {
+            // One arm per INotification-implementing type discovered in the compilation:
+            global::MyApp.UserCreated uc  => _mediator.Publish(uc, ct),
+            global::MyApp.OrderPlaced op  => _mediator.Publish(op, ct),
+            // ... etc ...
+            _ => ValueTask.CompletedTask
+        };
+    }
+}
+
+namespace ZeroAlloc.EventSourcing.Mediator
+{
+    public static partial class EventSourcingBuilderMediatorExtensions
+    {
+        static partial void EnsureDispatcherRegistered(IServiceCollection services)
+        {
+            services.TryAddSingleton<INotificationDispatcher, Generated.GeneratedNotificationDispatcher>();
+        }
+    }
+}
+```
+
+The `switch` over `@event` is JIT-optimized into a type-check chain; for each match the typed `_mediator.Publish<TConcrete>(concrete, ct)` is the same overload Mediator's own generator emits for the consumer. No reflection, no boxing beyond what the `object` parameter already requires (the JIT will pattern-match without allocating).
+
+### Generator discovery
+
+The generator uses `IIncrementalGenerator` + `SyntaxProvider.CreateSyntaxProvider`:
+
+```csharp
+context.SyntaxProvider.CreateSyntaxProvider(
+    predicate: static (n, _) => n is TypeDeclarationSyntax,
+    transform: static (ctx, ct) => {
+        var symbol = ctx.SemanticModel.GetDeclaredSymbol(ctx.Node, ct) as INamedTypeSymbol;
+        if (symbol is null) return null;
+        if (symbol.AllInterfaces.Any(i => i.ToDisplayString() == "ZeroAlloc.Mediator.INotification"))
+            return symbol;
+        return null;
+    })
+    .Where(static s => s is not null)
+    .Collect();
+```
+
+Types implementing `INotification` transitively (e.g., a base class implements it) are included via `AllInterfaces`. No attribute decoration is required on event types — implementing `INotification` is the discovery signal.
+
+### Diagnostics (`ZESM###` prefix)
+
+The generator declares one diagnostic descriptor:
+
+- **`ZESM001` (Warning)** — Bridge generator found zero `INotification`-implementing types in the consuming compilation. Either no events are bridged (likely a misconfiguration), or the user hasn't yet declared event types. The generated dispatcher emits an empty switch (default-case-only); the bridge will throw a clear "no events registered" exception at runtime when the user appends an event to a bridged stream.
+
+No `Error`-severity diagnostics. A misconfigured bridge is a runtime-discoverable problem, not a build-blocker — users may legitimately scaffold the bridge before declaring events.
 
 ### Tests
 
@@ -257,17 +396,31 @@ All run against `AddInMemoryPersistence()` — fast, no IO.
 ### Files
 
 ```
-src/ZeroAlloc.EventSourcing.Mediator/
-├── ZeroAlloc.EventSourcing.Mediator.csproj
+src/ZeroAlloc.EventSourcing.Mediator/                # runtime (TFM net8/9/10)
+├── ZeroAlloc.EventSourcing.Mediator.csproj          # bundles generator DLL into analyzers/dotnet/cs/
 ├── PublicAPI.Shipped.txt                            # empty
-├── PublicAPI.Unshipped.txt                          # PublishViaMediator + EventStoreMediatorBridge surface
-├── EventSourcingBuilderMediatorExtensions.cs        # public fluent extension
+├── PublicAPI.Unshipped.txt                          # PublishViaMediator + INotificationDispatcher surface
+├── INotificationDispatcher.cs                       # public interface — generator implements it
+├── EventSourcingBuilderMediatorExtensions.cs        # static partial class
 └── EventStoreMediatorBridge.cs                      # internal IHostedService
+
+src/ZeroAlloc.EventSourcing.Mediator.Generator/      # generator (TFM netstandard2.0)
+├── ZeroAlloc.EventSourcing.Mediator.Generator.csproj  # IsRoslynComponent + IsPackable=false
+├── Diagnostics.cs                                   # ZESM001 descriptor
+├── NotificationDiscovery.cs                         # SyntaxProvider walker
+├── DispatcherEmitter.cs                             # emits GeneratedNotificationDispatcher
+└── EventSourcingMediatorGenerator.cs                # IIncrementalGenerator entry point
 
 tests/ZeroAlloc.EventSourcing.Mediator.Tests/
 ├── ZeroAlloc.EventSourcing.Mediator.Tests.csproj
-├── BridgeTests.cs                                   # 5 tests above
+├── BridgeTests.cs                                   # 5 runtime tests
 └── TestFixtures.cs                                  # notification types + handler stubs
+
+tests/ZeroAlloc.EventSourcing.Mediator.Generator.Tests/
+├── ZeroAlloc.EventSourcing.Mediator.Generator.Tests.csproj
+├── TestHarness.cs                                   # VerifyXunit + CSharpCompilation helpers
+├── DispatcherEmitterTests.cs                        # snapshot tests for emit
+└── Snapshots/*.verified.txt                         # committed approved snapshots
 
 samples/ZeroAlloc.EventSourcing.Mediator.AotSmoke/
 ├── ZeroAlloc.EventSourcing.Mediator.AotSmoke.csproj
@@ -275,11 +428,11 @@ samples/ZeroAlloc.EventSourcing.Mediator.AotSmoke/
 ```
 
 Plus updates to:
-- `ZeroAlloc.EventSourcing.slnx` — add 3 new project paths
-- `release-please-config.json` — add `src/ZeroAlloc.EventSourcing.Mediator` package mapping
-- `.release-please-manifest.json` — add the sub-package at `0.0.0`
-- `.github/workflows/release-please.yml` (and/or `ci.yml`) — add the new csproj to the pack step
-- `docs/BACKLOG.md` (org-wide) — mark this item shipped post-release
+- `ZeroAlloc.EventSourcing.slnx` — add 5 new project paths (runtime + generator + 2 test projects + sample).
+- `release-please-config.json` — `src/ZeroAlloc.EventSourcing.Mediator` package mapping. The generator csproj is `IsPackable=false`, so no separate release-please entry; its DLL ships inside the runtime nupkg via analyzer bundling.
+- `.release-please-manifest.json` — runtime sub-package at `0.0.0`.
+- `.github/workflows/ci.yml` — runtime csproj added to the pack-list (generator csproj NOT added — it's `IsPackable=false`).
+- `docs/BACKLOG.md` (org-wide, post-release) — mark this item shipped.
 
 ## Out of scope (v1.1+)
 
