@@ -22,7 +22,27 @@ Ship the smallest bridge that satisfies:
 - Lives as an `IHostedService` registered by the extension; auto-starts during host boot.
 - Compiles under `PublishAot=true` with zero `IL2026`/`IL3050` warnings.
 
-## Revision (2026-05-26) — generator-based dispatch
+## Second revision (2026-05-26) — generator owns the entire extension surface
+
+**First revision's partial-method approach was structurally broken.** C# `partial` declarations don't span compilation units. The plan declared `static partial class EventSourcingBuilderMediatorExtensions` in the runtime project (already compiled into the runtime DLL) with a `static partial void EnsureDispatcherRegistered(IServiceCollection)` extension point that the generator filled in from the consumer's compilation. This produces a `CS0759` (or silently no-ops in the runtime's baked-in body) — consumers would need to add a `PartialDeclarationShim.cs` file to their own project to make it work, defeating the bridge's purpose.
+
+**Final architecture:** the runtime DLL ships ONLY the abstraction layer; the user-facing fluent extension lives entirely in generator-emitted code in the consumer's compilation.
+
+- **Runtime DLL ships:**
+  - `INotificationDispatcher` (public interface)
+  - `EventStoreMediatorBridge` (**public** sealed class — was internal in the first revision; promoted so generator-emitted code can `new` it)
+  - Bundled Roslyn generator (TFM netstandard2.0, IsRoslynComponent, IsPackable=false, packaged into `analyzers/dotnet/cs/` of the runtime nupkg)
+- **Generator unconditionally emits into the consumer's compilation:**
+  - `internal static class EventSourcingBuilderMediatorExtensions` — full `PublishViaMediator(EventSourcingBuilder, StreamId)` extension with body. `internal` so multiple consuming assemblies (e.g., a library + an executable both referencing the bridge) each generate their own copy without ambiguous-reference collisions.
+  - `internal sealed class GeneratedNotificationDispatcher : INotificationDispatcher` in `ZeroAlloc.EventSourcing.Mediator.Generated` namespace — switch over discovered `INotification` types (empty switch with only the `_ => ValueTask.CompletedTask` default arm when no types are found).
+
+The user calls `services.AddEventSourcing().PublishViaMediator(streamId)` — both the extension and the dispatcher come from the consumer's own compilation. No cross-assembly partial nonsense. No shim files. AOT-clean.
+
+The empty-discovery case still emits a working `PublishViaMediator` extension — the dispatcher's switch has only the default arm, so dispatched events are silently skipped. `ZESM001` (Warning) fires to surface the misconfiguration.
+
+---
+
+## First revision (superseded) — generator-based dispatch via partial-method extension point
 
 **Initial assumption falsified during implementation:** the published `ZeroAlloc.Mediator` nupkg ships ONLY marker interfaces (`INotification`, `INotificationHandler`, etc.) — no `IMediator` type. `IMediator` and its `Publish` overloads are emitted by Mediator's source generator INTO the consuming compilation, with **per-concrete-type signatures only**. A bridge package compiled against `ZeroAlloc.Mediator` therefore cannot statically reference `IMediator.Publish(INotification, ct)` or even `IMediator` itself.
 
