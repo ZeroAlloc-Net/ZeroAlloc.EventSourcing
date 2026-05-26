@@ -14,6 +14,7 @@
   </Folder>
   <Folder Name="/samples/">
     <Project Path="samples/ZeroAlloc.EventSourcing.AotSmoke/ZeroAlloc.EventSourcing.AotSmoke.csproj" />
+    <Project Path="samples/ZeroAlloc.EventSourcing.Mediator.AotSmoke/ZeroAlloc.EventSourcing.Mediator.AotSmoke.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/ZeroAlloc.EventSourcing.Aggregates.Tests/ZeroAlloc.EventSourcing.Aggregates.Tests.csproj" />
