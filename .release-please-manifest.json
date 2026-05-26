@@ -7,5 +7,6 @@
   "src/ZeroAlloc.EventSourcing.SqlServer": "1.0.0",
   "src/ZeroAlloc.EventSourcing.PostgreSql": "1.0.0",
   "src/ZeroAlloc.EventSourcing.Kafka": "1.0.0",
+  "src/ZeroAlloc.EventSourcing.Mediator": "0.0.0",
   "src/ZeroAlloc.EventSourcing.Telemetry": "1.0.0"
 }

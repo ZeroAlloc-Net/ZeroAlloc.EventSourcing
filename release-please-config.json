@@ -43,6 +43,11 @@
       "release-type": "simple",
       "changelog-path": "CHANGELOG.md"
     },
+    "src/ZeroAlloc.EventSourcing.Mediator": {
+      "package-name": "ZeroAlloc.EventSourcing.Mediator",
+      "release-type": "simple",
+      "changelog-path": "CHANGELOG.md"
+    },
     "src/ZeroAlloc.EventSourcing.Telemetry": {
       "package-name": "ZeroAlloc.EventSourcing.Telemetry",
       "release-type": "simple",
