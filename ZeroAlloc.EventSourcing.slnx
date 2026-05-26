@@ -5,6 +5,7 @@
     <Project Path="src/ZeroAlloc.EventSourcing.InMemory/ZeroAlloc.EventSourcing.InMemory.csproj" />
     <Project Path="src/ZeroAlloc.EventSourcing.Kafka/ZeroAlloc.EventSourcing.Kafka.csproj" />
     <Project Path="src/ZeroAlloc.EventSourcing.Mediator/ZeroAlloc.EventSourcing.Mediator.csproj" />
+    <Project Path="src/ZeroAlloc.EventSourcing.Mediator.Generator/ZeroAlloc.EventSourcing.Mediator.Generator.csproj" />
     <Project Path="src/ZeroAlloc.EventSourcing.PostgreSql/ZeroAlloc.EventSourcing.PostgreSql.csproj" />
     <Project Path="src/ZeroAlloc.EventSourcing.Sql/ZeroAlloc.EventSourcing.Sql.csproj" />
     <Project Path="src/ZeroAlloc.EventSourcing.SqlServer/ZeroAlloc.EventSourcing.SqlServer.csproj" />
