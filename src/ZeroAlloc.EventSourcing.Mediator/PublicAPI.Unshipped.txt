@@ -1,1 +1,3 @@
 #nullable enable
+ZeroAlloc.EventSourcing.Mediator.INotificationDispatcher
+ZeroAlloc.EventSourcing.Mediator.INotificationDispatcher.DispatchAsync(object! event, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask
