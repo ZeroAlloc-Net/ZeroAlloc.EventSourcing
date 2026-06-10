@@ -47,6 +47,65 @@ public class OutboxOptionsTests
         opts.ExcludedTypes.Should().BeEquivalentTo([typeof(NotifA), typeof(NotifB)]);
     }
 
+    [Fact]
+    public void BatchSize_setter_rejects_zero_or_negative()
+    {
+        var opts = new OutboxOptions();
+        var setZero = () => opts.BatchSize = 0;
+        var setNeg = () => opts.BatchSize = -1;
+
+        setZero.Should().Throw<ArgumentOutOfRangeException>();
+        setNeg.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void MaxRetries_setter_rejects_negative()
+    {
+        var opts = new OutboxOptions();
+        var setNeg = () => opts.MaxRetries = -1;
+
+        setNeg.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void MaxRetries_setter_accepts_zero()
+    {
+        var opts = new OutboxOptions();
+        opts.MaxRetries = 0;   // 0 means "do not retry"; valid
+        opts.MaxRetries.Should().Be(0);
+    }
+
+    [Fact]
+    public void PollInterval_setter_rejects_negative()
+    {
+        var opts = new OutboxOptions();
+        var setNeg = () => opts.PollInterval = TimeSpan.FromSeconds(-1);
+
+        setNeg.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void ConsumerId_setter_rejects_null_or_whitespace()
+    {
+        var opts = new OutboxOptions();
+        var setNull = () => opts.ConsumerId = null!;
+        var setEmpty = () => opts.ConsumerId = "";
+        var setWhitespace = () => opts.ConsumerId = "   ";
+
+        setNull.Should().Throw<ArgumentException>();
+        setEmpty.Should().Throw<ArgumentException>();
+        setWhitespace.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void RetryPolicy_setter_rejects_null()
+    {
+        var opts = new OutboxOptions();
+        var setNull = () => opts.RetryPolicy = null!;
+
+        setNull.Should().Throw<ArgumentNullException>();
+    }
+
     private sealed class NotifA { }
     private sealed class NotifB { }
 }
