@@ -4,7 +4,18 @@
     <PackageId>ZeroAlloc.EventSourcing.Outbox</PackageId>
     <Description>At-least-once cross-aggregate event dispatch from the ZeroAlloc event store. Thin orchestration over StreamConsumer + INotificationDispatcher with type-level exclusion. Polling-based, in-process Mediator dispatch.</Description>
     <PackageTags>$(PackageTags);outbox;mediator;dispatch</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
+
+  <!--
+    Directory.Build.props ships the repo-root README.md as the default
+    PackageReadmeFile for every package. This package has its own dedicated
+    README, so remove the inherited entry and pack the local one instead.
+  -->
+  <ItemGroup>
+    <None Remove="$(MSBuildThisFileDirectory)..\..\README.md" />
+    <None Include="README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\ZeroAlloc.EventSourcing\ZeroAlloc.EventSourcing.csproj" />
