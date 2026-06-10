@@ -47,6 +47,11 @@ public sealed class OutboxDispatcher : IHostedService, IAsyncDisposable
         _logger = logger;
     }
 
+    // TODO(v0.2): lifecycle hardening — guard against double-start (overwriting an undisposed
+    // _loopCts), guard against double-stop (cancelling a disposed CTS), and support
+    // IHostedService-style StartAsync→StopAsync→StartAsync restart. v0.1 assumes single-shot
+    // lifecycle managed by the generic host.
+
     /// <summary>Starts the polling loop on a background <see cref="Task"/>. Returns immediately.</summary>
     public Task StartAsync(CancellationToken cancellationToken)
     {
@@ -75,8 +80,22 @@ public sealed class OutboxDispatcher : IHostedService, IAsyncDisposable
         _loopCts?.Dispose();
     }
 
+    /// <summary>
+    /// Background polling loop. On any unhandled exception from the consumer or delay,
+    /// the error is logged and re-thrown to fault the hosted-service task. This is a
+    /// deliberate fail-fast choice for v0.1: silent retry on a corrupt checkpoint or a
+    /// persistent store I/O failure would violate the at-least-once contract without
+    /// any operator signal. Re-throwing lets the host's
+    /// <see cref="Microsoft.Extensions.Hosting.IHostApplicationLifetime"/> observe the
+    /// failure. Continuing with backoff is also defensible but masks the failure mode;
+    /// we lean fail-fast for v0.1 visibility.
+    /// </summary>
     private async Task RunAsync(CancellationToken ct)
     {
+        _logger.LogInformation(
+            "OutboxDispatcher starting (ConsumerId={ConsumerId}, BatchSize={BatchSize}, PollInterval={PollInterval}).",
+            _options.ConsumerId, _options.BatchSize, _options.PollInterval);
+
         var consumerOptions = new StreamConsumerOptions
         {
             BatchSize = _options.BatchSize,
@@ -98,15 +117,19 @@ public sealed class OutboxDispatcher : IHostedService, IAsyncDisposable
             try
             {
                 await consumer.ConsumeAsync(DispatchAsync, ct).ConfigureAwait(false);
+                // ConsumeAsync returns when the current batch is empty. Poll-sleep, then resume.
+                await Task.Delay(_options.PollInterval, ct).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
             {
+                _logger.LogInformation("OutboxDispatcher stopped cleanly.");
                 return;
             }
-
-            // ConsumeAsync returns when the current batch is empty. Poll-sleep, then resume.
-            try { await Task.Delay(_options.PollInterval, ct).ConfigureAwait(false); }
-            catch (OperationCanceledException) { return; }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "OutboxDispatcher background loop crashed; halting.");
+                throw;
+            }
         }
     }
 

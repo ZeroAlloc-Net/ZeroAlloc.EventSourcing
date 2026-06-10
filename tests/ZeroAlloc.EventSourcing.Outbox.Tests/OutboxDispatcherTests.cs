@@ -81,7 +81,10 @@ public class OutboxDispatcherTests
             new OutboxOptions { ConsumerId = "test-2", PollInterval = TimeSpan.FromMilliseconds(50) },
             NullLogger<OutboxDispatcher>.Instance);
         await sut.StartAsync(default);
-        await Task.Delay(200);   // give it a chance to poll
+        // Positive signal: wait until the consumer has observed the event and advanced its
+        // checkpoint past position 0. This proves the dispatcher polled — without it, an
+        // empty Dispatched list could be a race (test running before the first poll cycle).
+        await WaitUntil(async () => await checkpoints.ReadAsync("test-2") is { } pos && pos.Value > 0, TimeSpan.FromSeconds(2));
         await sut.StopAsync(default);
 
         recorder.Dispatched.Should().BeEmpty();
@@ -178,14 +181,25 @@ public class OutboxDispatcherTests
         await WaitUntil(() => recorder.Dispatched.Count == 3, TimeSpan.FromSeconds(2));
         await sut1.StopAsync(default);
 
+        // Capture the checkpoint position the first dispatcher landed on. The second run
+        // should leave it untouched, since there are no new events past that position.
+        var checkpointAfterFirstRun = await checkpoints.ReadAsync("test-6");
+        checkpointAfterFirstRun.Should().NotBeNull();
+
         // Second run on the SAME stores — should deliver 0 new events
         var sut2 = new OutboxDispatcher(store, checkpoints, recorder, null,
             new OutboxOptions { ConsumerId = "test-6", PollInterval = TimeSpan.FromMilliseconds(50) },
             NullLogger<OutboxDispatcher>.Instance);
         await sut2.StartAsync(default);
-        await Task.Delay(200);
+        // Wait several poll intervals so the dispatcher has demonstrably tried and found
+        // nothing. The negative assertion is intrinsically time-based; 500ms over a 50ms
+        // poll interval gives ~10 cycles to surface any spurious dispatch.
+        await Task.Delay(500);
         await sut2.StopAsync(default);
 
         recorder.Dispatched.Count.Should().Be(3);   // unchanged
+        // Stricter invariant: the checkpoint must not have advanced either.
+        var checkpointAfterSecondRun = await checkpoints.ReadAsync("test-6");
+        checkpointAfterSecondRun.Should().Be(checkpointAfterFirstRun);
     }
 }
