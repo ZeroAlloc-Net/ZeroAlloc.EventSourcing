@@ -33,6 +33,10 @@ using ZeroAlloc.EventSourcing.Outbox;
 using ZeroAlloc.EventSourcing.Outbox.AotSmoke;
 using ZeroAlloc.Mediator;
 
+// HostBuilder() instead of Host.CreateDefaultBuilder() — AOT-leaner: avoids
+// the JSON configuration providers and provider-discovery reflection that
+// CreateDefaultBuilder wires in by default. This smoke only needs DI + the
+// outbox hosted service, so the bare HostBuilder keeps the IL trimmer happy.
 var host = new HostBuilder()
     .ConfigureServices(services =>
     {
@@ -48,10 +52,17 @@ var host = new HostBuilder()
                 .AddOutbox(opts =>
                 {
                     opts.ConsumerId = "aot-smoke";
+                    // 50ms (vs the 1s default) so the 2-second smoke window below
+                    // catches at least one — and deterministically only one — poll
+                    // cycle. Keeps the test fast without racing the dispatcher.
                     opts.PollInterval = TimeSpan.FromMilliseconds(50);
                 });
     })
     .Build();
+// Cast to IAsyncDisposable so the host + DI container + console logger sink
+// are flushed and disposed on scope exit (IHost itself only surfaces
+// IDisposable; the concrete Host implements IAsyncDisposable).
+await using var _hostScope = (IAsyncDisposable)host;
 
 var store = host.Services.GetRequiredService<IEventStore>();
 var appendResult = await store.AppendAsync(
@@ -61,13 +72,22 @@ var appendResult = await store.AppendAsync(
 
 if (!appendResult.IsSuccess)
 {
-    Console.Error.WriteLine("AOT smoke FAIL: append returned error.");
+    Console.Error.WriteLine($"AOT smoke FAIL: append returned error: {appendResult.Error}");
     return 1;
 }
 
-await host.StartAsync();
-await Task.Delay(TimeSpan.FromSeconds(2));   // give the dispatcher a moment to poll
-await host.StopAsync();
+try
+{
+    await host.StartAsync();
+    // 2s ≫ PollInterval (50ms); single append cannot fire handler twice (checkpoint advances).
+    await Task.Delay(TimeSpan.FromSeconds(2));
+    await host.StopAsync();
+}
+catch (Exception ex)
+{
+    Console.Error.WriteLine($"AOT smoke FAIL: {ex.Message}");
+    return 1;
+}
 
 var handler = host.Services.GetRequiredService<SmokeHandler>();
 if (handler.Calls != 1)
