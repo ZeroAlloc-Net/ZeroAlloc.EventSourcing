@@ -22,7 +22,7 @@ The Outbox package wires these together with a hosted-service lifecycle, an opt-
 
 ## Decision
 
-Ship a separate `ZeroAlloc.EventSourcing.Outbox` package depending on `ZeroAlloc.EventSourcing` + `ZeroAlloc.Mediator`. **Not** a hard dep on `ZeroAlloc.EventSourcing.Mediator` — the 5-line dispatch shape `if (envelope.Event is INotification && !excluded) dispatcher.DispatchAsync(...)` is copy-paste-clean from the bridge; extracting a shared helper for 5 lines is premature abstraction.
+Ship a separate `ZeroAlloc.EventSourcing.Outbox` package depending on `ZeroAlloc.EventSourcing` + `ZeroAlloc.EventSourcing.Mediator`. The dependency on `.Mediator` is load-bearing because `INotificationDispatcher` lives in that package (not in core `ZA.Mediator`), so the Outbox must reference it to call `DispatchAsync(object @event, ct)`. The "thin layer" framing still holds — the Outbox is small orchestration over existing primitives — but it sits ON TOP of the bridge package, not parallel to it.
 
 **Rejected alternatives:**
 
