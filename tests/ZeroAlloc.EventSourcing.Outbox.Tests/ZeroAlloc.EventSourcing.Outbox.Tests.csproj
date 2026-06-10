@@ -6,12 +6,6 @@
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
-    <!--
-      ZESM001 (no INotification-implementing types) fires during Task 1 scaffolding because
-      this project has no source files yet. Task 2 lands the first INotification fixtures
-      and this suppression can be revisited then.
-    -->
-    <NoWarn>$(NoWarn);ZESM001</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>

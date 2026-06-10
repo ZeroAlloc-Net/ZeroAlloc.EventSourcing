@@ -1,4 +1,9 @@
 #nullable enable
+ZeroAlloc.EventSourcing.Outbox.OutboxDispatcher
+ZeroAlloc.EventSourcing.Outbox.OutboxDispatcher.DisposeAsync() -> System.Threading.Tasks.ValueTask
+ZeroAlloc.EventSourcing.Outbox.OutboxDispatcher.OutboxDispatcher(ZeroAlloc.EventSourcing.IEventStore! store, ZeroAlloc.EventSourcing.ICheckpointStore! checkpoints, ZeroAlloc.EventSourcing.Mediator.INotificationDispatcher! dispatcher, ZeroAlloc.EventSourcing.IDeadLetterStore? deadLetters, ZeroAlloc.EventSourcing.Outbox.OutboxOptions! options, Microsoft.Extensions.Logging.ILogger<ZeroAlloc.EventSourcing.Outbox.OutboxDispatcher!>! logger) -> void
+ZeroAlloc.EventSourcing.Outbox.OutboxDispatcher.StartAsync(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
+ZeroAlloc.EventSourcing.Outbox.OutboxDispatcher.StopAsync(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
 ZeroAlloc.EventSourcing.Outbox.OutboxOptions
 ZeroAlloc.EventSourcing.Outbox.OutboxOptions.BatchSize.get -> int
 ZeroAlloc.EventSourcing.Outbox.OutboxOptions.BatchSize.set -> void
