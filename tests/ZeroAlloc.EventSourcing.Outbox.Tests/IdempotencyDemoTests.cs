@@ -17,8 +17,8 @@ public class IdempotencyDemoTests
     [Fact]
     public async Task Aggregate_version_check_makes_redelivery_a_no_op()
     {
-        // Reuse the same NewHarness-style wiring (the EventStore needs serializer+registry).
-        var (store, _, _) = OutboxDispatcherTests.NewHarness();
+        // Reuse the shared TestHarness wiring (the EventStore needs serializer+registry).
+        var (store, _, _) = TestHarness.New();
 
         // First call: handler appends TestEventA at expectedVersion = Start.
         var append1 = await store.AppendAsync(
@@ -36,6 +36,11 @@ public class IdempotencyDemoTests
             new object[] { new TestEventA(10) }.AsMemory(),
             StreamPosition.Start);
         append2.IsSuccess.Should().BeFalse();
+        // The "CONFLICT" literal here mirrors the code emitted by StoreError.Conflict(...).
+        // Stringly-typed for v0.1 because StoreError has no public ConflictCode constant.
+        // TODO(v0.2): expose StoreError.ConflictCode as a public const and replace this
+        // magic string. See https://github.com/zeroalloc-net/zeroalloc.eventsourcing/issues
+        // (issue TBD — file when the v0.1 ships).
         append2.Error.Code.Should().Be("CONFLICT");
     }
 }

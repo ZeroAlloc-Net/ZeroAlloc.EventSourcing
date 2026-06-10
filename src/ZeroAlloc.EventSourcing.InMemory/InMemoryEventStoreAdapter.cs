@@ -42,6 +42,11 @@ public sealed class InMemoryEventStoreAdapter : IEventStoreAdapter
         // Special handling for "$all" pseudo-stream: reads from all streams in order
         if (string.Equals(id.Value, "$all", StringComparison.Ordinal) || string.Equals(id.Value, "*", StringComparison.Ordinal))
         {
+            // TODO(v0.2): the "*" pseudo-stream conflates per-stream version with the consumer's
+            // global checkpoint cursor. A fresh stream's first event at per-stream position 1 will
+            // be silently skipped once the consumer checkpoint has advanced past 1 from an unrelated
+            // upstream. See tests/ZeroAlloc.EventSourcing.Outbox.Tests/CrossAggregateIntegrationTests.cs
+            // for the symptom + workaround.
             var allEvents = new List<RawEvent>();
             foreach (var stream in _streams.Values)
             {

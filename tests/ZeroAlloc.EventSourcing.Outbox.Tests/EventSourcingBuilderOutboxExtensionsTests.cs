@@ -15,8 +15,8 @@ public class EventSourcingBuilderOutboxExtensionsTests
         var services = new ServiceCollection();
         services.AddLogging();
         services.AddSingleton<INotificationDispatcher, RecordingDispatcher>();
-        services.AddSingleton<IEventTypeRegistry, OutboxDispatcherTests.OutboxTestTypeRegistry>();
-        services.AddSingleton<IEventSerializer, OutboxDispatcherTests.OutboxJsonSerializer>();
+        services.AddSingleton<IEventTypeRegistry, TestHarness.OutboxTestTypeRegistry>();
+        services.AddSingleton<IEventSerializer, TestHarness.OutboxJsonSerializer>();
         return services;
     }
 

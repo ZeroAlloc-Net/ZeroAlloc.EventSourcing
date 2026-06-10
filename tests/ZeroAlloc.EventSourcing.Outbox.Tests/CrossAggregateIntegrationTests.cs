@@ -13,9 +13,8 @@ public class CrossAggregateIntegrationTests
     [Fact]
     public async Task Handler_triggered_by_outbox_saves_new_event_that_outbox_picks_up_on_next_poll()
     {
-        // Reuse the canonical NewHarness pattern from OutboxDispatcherTests (the helper is
-        // marked internal static specifically for cross-class reuse).
-        var (store, checkpoints, recorder) = OutboxDispatcherTests.NewHarness();
+        // Reuse the canonical harness wiring from TestHarness (shared across the suite).
+        var (store, checkpoints, recorder) = TestHarness.New();
 
         // Pre-seed the credit-1 stream so its per-stream position counter is in lock-step
         // with order-1's. The InMemoryEventStoreAdapter's "*" pseudo-stream reads each
@@ -57,21 +56,12 @@ public class CrossAggregateIntegrationTests
             NullLogger<OutboxDispatcher>.Instance);
 
         await sut.StartAsync(default);
-        await WaitUntil(
+        await TestHarness.WaitUntil(
             () => recorder.Dispatched.OfType<TestEventB>().Any(),
             TimeSpan.FromSeconds(3));
         await sut.StopAsync(default);
 
         recorder.Dispatched.Should().Contain(e => e is TestEventA);
         recorder.Dispatched.Should().Contain(e => e is TestEventB);
-    }
-
-    private static async Task WaitUntil(Func<bool> predicate, TimeSpan timeout)
-    {
-        var deadline = DateTime.UtcNow + timeout;
-        while (!predicate() && DateTime.UtcNow < deadline)
-            await Task.Delay(25).ConfigureAwait(false);
-        if (!predicate())
-            throw new TimeoutException($"Predicate did not become true within {timeout}");
     }
 }

@@ -1,6 +1,4 @@
 using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using FluentAssertions;
@@ -13,57 +11,16 @@ namespace ZeroAlloc.EventSourcing.Outbox.Tests;
 
 public class OutboxDispatcherTests
 {
-    internal sealed class OutboxJsonSerializer : IEventSerializer
-    {
-        public ReadOnlyMemory<byte> Serialize<TEvent>(TEvent @event) where TEvent : notnull
-            => System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(@event);
-
-        public object Deserialize(ReadOnlyMemory<byte> payload, Type eventType)
-            => System.Text.Json.JsonSerializer.Deserialize(payload.Span, eventType)!;
-    }
-
-    internal sealed class OutboxTestTypeRegistry : IEventTypeRegistry
-    {
-        private readonly Dictionary<string, Type> _map = new()
-        {
-            [nameof(TestEventA)] = typeof(TestEventA),
-            [nameof(TestEventB)] = typeof(TestEventB),
-            [nameof(TestEventNotNotification)] = typeof(TestEventNotNotification),
-        };
-
-        public bool TryGetType(string eventType, out Type? type) => _map.TryGetValue(eventType, out type);
-
-        public string GetTypeName(Type type) => type.Name;
-    }
-
-    internal static (IEventStore store, ICheckpointStore checkpoints, RecordingDispatcher dispatcher) NewHarness()
-    {
-        var adapter = new InMemoryEventStoreAdapter();
-        var store = new EventStore(adapter, new OutboxJsonSerializer(), new OutboxTestTypeRegistry());
-        var checkpoints = new InMemoryCheckpointStore();
-        var dispatcher = new RecordingDispatcher();
-        return (store, checkpoints, dispatcher);
-    }
-
-    internal static async Task WaitUntil(Func<bool> predicate, TimeSpan timeout)
-    {
-        var deadline = DateTime.UtcNow + timeout;
-        while (!predicate() && DateTime.UtcNow < deadline)
-            await Task.Delay(25).ConfigureAwait(false);
-        if (!predicate())
-            throw new TimeoutException($"Predicate did not become true within {timeout}");
-    }
-
     [Fact]
     public async Task Dispatcher_invokes_handler_for_INotification_event_then_advances_checkpoint()
     {
-        var (store, checkpoints, recorder) = NewHarness();
+        var (store, checkpoints, recorder) = TestHarness.New();
         var opts = new OutboxOptions { ConsumerId = "test-1", PollInterval = TimeSpan.FromMilliseconds(50) };
         await store.AppendAsync(new StreamId("order-1"), new object[] { new TestEventA(42) }.AsMemory(), StreamPosition.Start);
 
         var sut = new OutboxDispatcher(store, checkpoints, recorder, deadLetters: null, opts, NullLogger<OutboxDispatcher>.Instance);
         await sut.StartAsync(default);
-        await WaitUntil(() => recorder.Dispatched.Count == 1, TimeSpan.FromSeconds(2));
+        await TestHarness.WaitUntil(() => recorder.Dispatched.Count == 1, TimeSpan.FromSeconds(2));
         await sut.StopAsync(default);
 
         recorder.Dispatched.Should().ContainSingle().Which.Should().BeEquivalentTo(new TestEventA(42));
@@ -74,7 +31,7 @@ public class OutboxDispatcherTests
     [Fact]
     public async Task Dispatcher_skips_non_INotification_event()
     {
-        var (store, checkpoints, recorder) = NewHarness();
+        var (store, checkpoints, recorder) = TestHarness.New();
         await store.AppendAsync(new StreamId("order-1"), new object[] { new TestEventNotNotification(7) }.AsMemory(), StreamPosition.Start);
 
         var sut = new OutboxDispatcher(store, checkpoints, recorder, null,
@@ -84,7 +41,7 @@ public class OutboxDispatcherTests
         // Positive signal: wait until the consumer has observed the event and advanced its
         // checkpoint past position 0. This proves the dispatcher polled — without it, an
         // empty Dispatched list could be a race (test running before the first poll cycle).
-        await WaitUntil(async () => await checkpoints.ReadAsync("test-2") is { } pos && pos.Value > 0, TimeSpan.FromSeconds(2));
+        await TestHarness.WaitUntil(async () => await checkpoints.ReadAsync("test-2") is { } pos && pos.Value > 0, TimeSpan.FromSeconds(2));
         await sut.StopAsync(default);
 
         recorder.Dispatched.Should().BeEmpty();
@@ -93,14 +50,14 @@ public class OutboxDispatcherTests
     [Fact]
     public async Task Dispatcher_skips_excluded_INotification_type()
     {
-        var (store, checkpoints, recorder) = NewHarness();
+        var (store, checkpoints, recorder) = TestHarness.New();
         var opts = new OutboxOptions { ConsumerId = "test-3", PollInterval = TimeSpan.FromMilliseconds(50) }
             .Exclude<TestEventA>();
         await store.AppendAsync(new StreamId("order-1"), new object[] { new TestEventA(1), new TestEventB("ok") }.AsMemory(), StreamPosition.Start);
 
         var sut = new OutboxDispatcher(store, checkpoints, recorder, null, opts, NullLogger<OutboxDispatcher>.Instance);
         await sut.StartAsync(default);
-        await WaitUntil(() => recorder.Dispatched.Count == 1, TimeSpan.FromSeconds(2));
+        await TestHarness.WaitUntil(() => recorder.Dispatched.Count == 1, TimeSpan.FromSeconds(2));
         await sut.StopAsync(default);
 
         recorder.Dispatched.Should().ContainSingle().Which.Should().BeOfType<TestEventB>();
@@ -109,7 +66,7 @@ public class OutboxDispatcherTests
     [Fact]
     public async Task Dispatcher_retries_on_transient_failure_then_succeeds()
     {
-        var (store, checkpoints, recorder) = NewHarness();
+        var (store, checkpoints, recorder) = TestHarness.New();
         var attemptCount = 0;
         recorder.ThrowFor = ev =>
         {
@@ -122,7 +79,7 @@ public class OutboxDispatcherTests
             new OutboxOptions { ConsumerId = "test-4", PollInterval = TimeSpan.FromMilliseconds(50), MaxRetries = 3 },
             NullLogger<OutboxDispatcher>.Instance);
         await sut.StartAsync(default);
-        await WaitUntil(() => recorder.Dispatched.Count == 1, TimeSpan.FromSeconds(2));
+        await TestHarness.WaitUntil(() => recorder.Dispatched.Count == 1, TimeSpan.FromSeconds(2));
         await sut.StopAsync(default);
 
         recorder.Dispatched.Should().ContainSingle();
@@ -132,7 +89,7 @@ public class OutboxDispatcherTests
     [Fact]
     public async Task Dispatcher_writes_to_DLQ_after_retry_exhaustion()
     {
-        var (store, checkpoints, recorder) = NewHarness();
+        var (store, checkpoints, recorder) = TestHarness.New();
         var dlq = new InMemoryDeadLetterStore();
         recorder.ThrowFor = _ => new InvalidOperationException("poison");
         await store.AppendAsync(new StreamId("order-1"), new object[] { new TestEventA(666) }.AsMemory(), StreamPosition.Start);
@@ -141,7 +98,7 @@ public class OutboxDispatcherTests
             new OutboxOptions { ConsumerId = "test-5", PollInterval = TimeSpan.FromMilliseconds(50), MaxRetries = 2 },
             NullLogger<OutboxDispatcher>.Instance);
         await sut.StartAsync(default);
-        await WaitUntil(async () => await CountDlq(dlq) > 0, TimeSpan.FromSeconds(5));
+        await TestHarness.WaitUntil(async () => await CountDlq(dlq) > 0, TimeSpan.FromSeconds(5));
         await sut.StopAsync(default);
 
         recorder.Dispatched.Should().BeEmpty();
@@ -156,19 +113,10 @@ public class OutboxDispatcherTests
         return count;
     }
 
-    private static async Task WaitUntil(Func<Task<bool>> predicate, TimeSpan timeout)
-    {
-        var deadline = DateTime.UtcNow + timeout;
-        while (!await predicate().ConfigureAwait(false) && DateTime.UtcNow < deadline)
-            await Task.Delay(25).ConfigureAwait(false);
-        if (!await predicate().ConfigureAwait(false))
-            throw new TimeoutException($"Predicate did not become true within {timeout}");
-    }
-
     [Fact]
     public async Task Dispatcher_resumes_from_checkpoint_after_restart()
     {
-        var (store, checkpoints, recorder) = NewHarness();
+        var (store, checkpoints, recorder) = TestHarness.New();
         await store.AppendAsync(new StreamId("order-1"),
             new object[] { new TestEventA(1), new TestEventA(2), new TestEventA(3) }.AsMemory(),
             StreamPosition.Start);
@@ -178,7 +126,7 @@ public class OutboxDispatcherTests
             new OutboxOptions { ConsumerId = "test-6", PollInterval = TimeSpan.FromMilliseconds(50) },
             NullLogger<OutboxDispatcher>.Instance);
         await sut1.StartAsync(default);
-        await WaitUntil(() => recorder.Dispatched.Count == 3, TimeSpan.FromSeconds(2));
+        await TestHarness.WaitUntil(() => recorder.Dispatched.Count == 3, TimeSpan.FromSeconds(2));
         await sut1.StopAsync(default);
 
         // Capture the checkpoint position the first dispatcher landed on. The second run
