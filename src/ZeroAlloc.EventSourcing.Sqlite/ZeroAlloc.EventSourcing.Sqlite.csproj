@@ -4,6 +4,7 @@
     <PackageId>ZeroAlloc.EventSourcing.Sqlite</PackageId>
     <Description>SQLite IEventStoreAdapter for ZeroAlloc.EventSourcing. AOT-clean via Microsoft.Data.Sqlite. Supports the * global stream via global_position column.</Description>
     <PackageTags>$(PackageTags);sqlite;adapter</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
 
   <ItemGroup>
@@ -12,8 +13,8 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Data.Sqlite" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
-    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" />
     <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
   </ItemGroup>
 
@@ -26,6 +27,15 @@
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
       <_Parameter1>ZeroAlloc.EventSourcing.Sqlite.Tests</_Parameter1>
     </AssemblyAttribute>
+  </ItemGroup>
+
+  <!--
+    Override the root README from Directory.Build.props with this package's own README.
+    Remove the root include first to avoid duplicate-PackagePath collisions.
+  -->
+  <ItemGroup>
+    <None Remove="$(MSBuildThisFileDirectory)..\..\README.md" />
+    <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(IsRoslynComponent)' != 'true'">
