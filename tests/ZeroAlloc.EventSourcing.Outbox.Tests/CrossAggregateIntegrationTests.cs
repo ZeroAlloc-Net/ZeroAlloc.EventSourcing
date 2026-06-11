@@ -16,23 +16,10 @@ public class CrossAggregateIntegrationTests
         // Reuse the canonical harness wiring from TestHarness (shared across the suite).
         var (store, checkpoints, recorder) = TestHarness.New();
 
-        // Pre-seed the credit-1 stream so its per-stream position counter is in lock-step
-        // with order-1's. The InMemoryEventStoreAdapter's "*" pseudo-stream reads each
-        // underlying stream from `Skip(checkpoint)`, treating per-stream version as if it
-        // were a global cursor — so a fresh stream whose only event lands at position 1
-        // would be silently skipped once the checkpoint has advanced past 1. Seeding a
-        // non-INotification placeholder at position 1 represents prior aggregate history
-        // and aligns the position counters across both streams. The placeholder itself is
-        // filtered out by the INotification check in OutboxDispatcher.DispatchAsync.
-        await store.AppendAsync(
-            new StreamId("credit-1"),
-            new object[] { new TestEventNotNotification(0) }.AsMemory(),
-            StreamPosition.Start);
-
         // The handler-as-OnDispatch: when the dispatcher delivers a TestEventA, append a
-        // TestEventB to a SEPARATE stream (credit-1). With the pre-seed above the new
-        // TestEventB lands at position 2, which the consumer surfaces on its next poll
-        // once the checkpoint has advanced past 1 (driven by the order-1 TestEventA).
+        // TestEventB to a SEPARATE stream (credit-1). The InMemory adapter's fixed "*"
+        // cursor surfaces the new TestEventB on the next poll once the global checkpoint
+        // has advanced past the TestEventA (driven by the order-1 stream).
         recorder.OnDispatch = async ev =>
         {
             if (ev is TestEventA a)
@@ -40,7 +27,7 @@ public class CrossAggregateIntegrationTests
                 await store.AppendAsync(
                     new StreamId("credit-1"),
                     new object[] { new TestEventB($"credited-{a.Value}") }.AsMemory(),
-                    new StreamPosition(1)).ConfigureAwait(false);
+                    StreamPosition.Start).ConfigureAwait(false);
             }
         };
 

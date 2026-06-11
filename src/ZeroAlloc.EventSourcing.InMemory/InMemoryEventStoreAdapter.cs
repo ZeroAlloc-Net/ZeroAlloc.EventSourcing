@@ -13,6 +13,10 @@ namespace ZeroAlloc.EventSourcing.InMemory;
 public sealed class InMemoryEventStoreAdapter : IEventStoreAdapter
 {
     private readonly ConcurrentDictionary<string, InMemoryStream> _streams = new(StringComparer.Ordinal);
+    // Monotonic, adapter-wide counter incremented once per appended event under the per-stream
+    // write lock. Backs reads from <see cref="StreamId.Global"/> — each stored entry carries the
+    // global position assigned at append time. Interlocked.Increment is AOT-safe.
+    private long _globalCounter;
 
     /// <inheritdoc/>
     public ValueTask<Result<AppendResult, StoreError>> AppendAsync(
@@ -23,7 +27,17 @@ public sealed class InMemoryEventStoreAdapter : IEventStoreAdapter
     {
         var stream = _streams.GetOrAdd(id.Value, _ => new InMemoryStream());
 
-        if (!stream.TryAppend(events, expectedVersion.Value, out var newVersion))
+        // The assignment callback runs once, under the stream's write lock, and reserves a
+        // contiguous range of global positions. Using Interlocked.Add keeps the reservation
+        // atomic across concurrent appends to different streams.
+        long AssignGlobalPositions(int count)
+        {
+            // Reserve [next, next+count). Returns the first reserved position (1-based).
+            var last = Interlocked.Add(ref _globalCounter, count);
+            return last - count + 1;
+        }
+
+        if (!stream.TryAppend(events, expectedVersion.Value, AssignGlobalPositions, out var newVersion))
         {
             var error = StoreError.Conflict(id, expectedVersion, new StreamPosition(newVersion));
             return ValueTask.FromResult(Result<AppendResult, StoreError>.Failure(error));
@@ -39,27 +53,33 @@ public sealed class InMemoryEventStoreAdapter : IEventStoreAdapter
         StreamPosition from,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
-        // Special handling for "$all" pseudo-stream: reads from all streams in order
-        if (string.Equals(id.Value, "$all", StringComparison.Ordinal) || string.Equals(id.Value, "*", StringComparison.Ordinal))
+        // Global stream: yield events from all streams ordered by the global position assigned
+        // at append time. <paramref name="from"/> is interpreted as an EXCLUSIVE lower bound
+        // on the global position — entries with GlobalPosition > from.Value are returned.
+        // This matches the per-stream EXCLUSIVE convention (Skip-based) and is required by
+        // StreamConsumer, which checkpoints to the position of the last delivered event and
+        // would otherwise re-deliver the same event indefinitely.
+        // The legacy "$all" alias is intentionally NOT recognised here; "*" / StreamId.Global
+        // is the canonical identity per Task 1's design.
+        if (id.IsGlobal)
         {
-            // TODO(v0.2): the "*" pseudo-stream conflates per-stream version with the consumer's
-            // global checkpoint cursor. A fresh stream's first event at per-stream position 1 will
-            // be silently skipped once the consumer checkpoint has advanced past 1 from an unrelated
-            // upstream. See tests/ZeroAlloc.EventSourcing.Outbox.Tests/CrossAggregateIntegrationTests.cs
-            // for the symptom + workaround.
-            var allEvents = new List<RawEvent>();
+            // Collect a point-in-time snapshot across all streams, then sort by global position.
+            // The per-stream snapshots are each taken under their own lock; the merged view is a
+            // consistent union of the per-stream prefixes observed during this call.
+            var merged = new List<InMemoryStream.StoredEntry>();
             foreach (var stream in _streams.Values)
             {
-                allEvents.AddRange(stream.ReadFrom(from.Value));
+                merged.AddRange(stream.SnapshotEntries());
             }
 
-            // Sort by position to maintain ordering across streams
-            allEvents.Sort((a, b) => a.Position.Value.CompareTo(b.Position.Value));
+            merged.Sort(static (a, b) => a.GlobalPosition.CompareTo(b.GlobalPosition));
 
-            foreach (var e in allEvents)
+            foreach (var entry in merged)
             {
+                if (entry.GlobalPosition <= from.Value) continue;
                 ct.ThrowIfCancellationRequested();
-                yield return e;
+                // Yield with Position = global position — the semantic overload from the design.
+                yield return entry.RawEvent with { Position = new StreamPosition(entry.GlobalPosition) };
             }
 
             yield break;

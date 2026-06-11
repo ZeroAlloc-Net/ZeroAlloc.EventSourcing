@@ -73,6 +73,7 @@ public class InMemoryEventStoreAdapterTests
         await adapter.AppendAsync(id, events, StreamPosition.Start);
 
         var read = new List<RawEvent>();
+        // EXCLUSIVE semantics: from=1 returns events with position > 1 — OrderShipped (pos=2) and OrderDelivered (pos=3).
         await foreach (var e in adapter.ReadAsync(id, new StreamPosition(1)))
             read.Add(e);
 

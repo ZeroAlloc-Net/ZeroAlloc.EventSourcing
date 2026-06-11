@@ -22,6 +22,16 @@ internal static class TestHarness
         return (store, checkpoints, dispatcher);
     }
 
+    /// <summary>
+    /// Wires the canonical serializer + event-type registry around an arbitrary
+    /// <see cref="IEventStoreAdapter"/>. Lets tests target SQLite, SQL Server, Postgres,
+    /// etc. while reusing the shared test wiring. Distinct from <see cref="New"/>
+    /// because the InMemory case bundles checkpoint store + dispatcher into the tuple;
+    /// other adapters typically need explicit control over those for setup/teardown.
+    /// </summary>
+    internal static IEventStore NewEventStoreWithAdapter(IEventStoreAdapter adapter)
+        => new EventStore(adapter, new OutboxJsonSerializer(), new OutboxTestTypeRegistry());
+
     internal static async Task WaitUntil(Func<bool> predicate, TimeSpan timeout)
     {
         var deadline = DateTime.UtcNow + timeout;

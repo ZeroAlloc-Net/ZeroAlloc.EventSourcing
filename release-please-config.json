@@ -38,6 +38,11 @@
       "release-type": "simple",
       "changelog-path": "CHANGELOG.md"
     },
+    "src/ZeroAlloc.EventSourcing.Sqlite": {
+      "package-name": "ZeroAlloc.EventSourcing.Sqlite",
+      "release-type": "simple",
+      "changelog-path": "CHANGELOG.md"
+    },
     "src/ZeroAlloc.EventSourcing.PostgreSql": {
       "package-name": "ZeroAlloc.EventSourcing.PostgreSql",
       "release-type": "simple",
