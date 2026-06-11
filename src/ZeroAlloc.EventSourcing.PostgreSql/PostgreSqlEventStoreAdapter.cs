@@ -9,6 +9,8 @@ namespace ZeroAlloc.EventSourcing.PostgreSql;
 /// <summary>
 /// PostgreSQL <see cref="IEventStoreAdapter"/> backed by a single <c>event_store</c> table.
 /// Uses advisory transaction locks for optimistic concurrency — no separate streams table required.
+/// Supports per-stream reads (cursor = per-stream <c>position</c>) and global reads via
+/// <see cref="StreamId.Global"/> (cursor = <c>global_position</c>, a <c>BIGSERIAL</c> column).
 /// </summary>
 public sealed class PostgreSqlEventStoreAdapter : IEventStoreAdapter
 {
@@ -22,31 +24,110 @@ public sealed class PostgreSqlEventStoreAdapter : IEventStoreAdapter
     }
 
     /// <summary>
-    /// Creates the <c>event_store</c> table if it does not already exist.
-    /// Call once during application startup or test setup.
+    /// Creates the <c>event_store</c> table if it does not already exist, and upgrades legacy
+    /// deployments that pre-date the <c>global_position</c> column.
     /// </summary>
+    /// <remarks>
+    /// Fresh installs get <c>global_position BIGSERIAL NOT NULL</c> from day one. Existing
+    /// deployments are detected via <c>information_schema</c>; missing-column upgrade adds the
+    /// column, backfills it via <c>ROW_NUMBER() OVER (occurred_at, stream_id, position)</c>,
+    /// wires a <c>SEQUENCE</c> + <c>DEFAULT nextval(...)</c> so subsequent INSERTs auto-assign,
+    /// and creates the supporting index. The migration runs inside a transaction with an
+    /// <c>EXCLUSIVE</c> table lock so concurrent app starts cannot corrupt each other.
+    /// Re-running on an already-upgraded table is a no-op.
+    /// </remarks>
     public async ValueTask EnsureSchemaAsync(CancellationToken ct = default)
     {
         var conn = await _dataSource.OpenConnectionAsync(ct).ConfigureAwait(false);
 #pragma warning disable MA0004
         await using var _ = conn;
 #pragma warning restore MA0004
-        using var cmd = conn.CreateCommand();
-        cmd.CommandText = """
+
+        await CreateFreshSchemaAsync(conn, ct).ConfigureAwait(false);
+
+        if (!await HasGlobalPositionColumnAsync(conn, ct).ConfigureAwait(false))
+            await MigrateAddGlobalPositionAsync(conn, ct).ConfigureAwait(false);
+
+        // Index creation runs last so it succeeds on both fresh-install and post-migration paths.
+        // Splitting it out of CREATE TABLE means a legacy table (no global_position) doesn't fail
+        // when the no-op `CREATE TABLE IF NOT EXISTS` runs above.
+        await EnsureGlobalPositionIndexAsync(conn, ct).ConfigureAwait(false);
+    }
+
+    private static async ValueTask CreateFreshSchemaAsync(NpgsqlConnection conn, CancellationToken ct)
+    {
+        using var createCmd = conn.CreateCommand();
+        createCmd.CommandText = """
             CREATE TABLE IF NOT EXISTS event_store (
-                stream_id      TEXT         NOT NULL,
-                position       BIGINT       NOT NULL,
-                event_type     TEXT         NOT NULL,
-                event_id       UUID         NOT NULL,
-                occurred_at    TIMESTAMPTZ  NOT NULL,
-                correlation_id UUID         NULL,
-                causation_id   UUID         NULL,
-                payload        BYTEA        NOT NULL,
+                stream_id       TEXT          NOT NULL,
+                position        BIGINT        NOT NULL,
+                global_position BIGSERIAL     NOT NULL,
+                event_type      TEXT          NOT NULL,
+                event_id        UUID          NOT NULL,
+                occurred_at     TIMESTAMPTZ   NOT NULL,
+                correlation_id  UUID          NULL,
+                causation_id    UUID          NULL,
+                payload         BYTEA         NOT NULL,
                 PRIMARY KEY (stream_id, position)
-                -- TODO(perf): add a covering index on (stream_id) INCLUDE (position) for O(log n) MAX(position) version-check scans on high-event-count streams
             )
             """;
-        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        await createCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    private static async ValueTask EnsureGlobalPositionIndexAsync(NpgsqlConnection conn, CancellationToken ct)
+    {
+        using var indexCmd = conn.CreateCommand();
+        indexCmd.CommandText = "CREATE INDEX IF NOT EXISTS event_store_global_position_idx ON event_store (global_position)";
+        await indexCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    private static async ValueTask<bool> HasGlobalPositionColumnAsync(NpgsqlConnection conn, CancellationToken ct)
+    {
+        using var detectCmd = conn.CreateCommand();
+        detectCmd.CommandText = """
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'event_store' AND column_name = 'global_position'
+            """;
+        return await detectCmd.ExecuteScalarAsync(ct).ConfigureAwait(false) is not null;
+    }
+
+    private static async ValueTask MigrateAddGlobalPositionAsync(NpgsqlConnection conn, CancellationToken ct)
+    {
+        // Run the migration inside one transaction with an EXCLUSIVE table lock so concurrent
+        // app starts cannot interleave the ADD COLUMN / backfill / SEQUENCE / DEFAULT steps.
+        var tx = await conn.BeginTransactionAsync(ct).ConfigureAwait(false);
+#pragma warning disable MA0004
+        await using var __ = tx;
+#pragma warning restore MA0004
+
+        try
+        {
+            using var migrateCmd = conn.CreateCommand();
+            migrateCmd.Transaction = tx;
+            migrateCmd.CommandText = """
+                LOCK TABLE event_store IN EXCLUSIVE MODE;
+                ALTER TABLE event_store ADD COLUMN IF NOT EXISTS global_position BIGINT NULL;
+                UPDATE event_store SET global_position = sub.rn
+                FROM (
+                    SELECT stream_id, position,
+                           ROW_NUMBER() OVER (ORDER BY occurred_at ASC, stream_id ASC, position ASC) AS rn
+                    FROM event_store
+                ) sub
+                WHERE event_store.stream_id = sub.stream_id AND event_store.position = sub.position;
+                ALTER TABLE event_store ALTER COLUMN global_position SET NOT NULL;
+                CREATE SEQUENCE IF NOT EXISTS event_store_global_position_seq;
+                SELECT setval('event_store_global_position_seq', COALESCE((SELECT MAX(global_position) FROM event_store), 0) + 1, false);
+                ALTER TABLE event_store ALTER COLUMN global_position SET DEFAULT nextval('event_store_global_position_seq');
+                ALTER SEQUENCE event_store_global_position_seq OWNED BY event_store.global_position;
+                """;
+            await migrateCmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            await tx.CommitAsync(ct).ConfigureAwait(false);
+        }
+        catch
+        {
+            try { await tx.RollbackAsync(CancellationToken.None).ConfigureAwait(false); } catch { /* connection may already be dead */ }
+            throw;
+        }
     }
 
     /// <inheritdoc/>
@@ -130,6 +211,8 @@ public sealed class PostgreSqlEventStoreAdapter : IEventStoreAdapter
             var position = expectedVersion.Value + i + 1;
             using var ins = conn.CreateCommand();
             ins.Transaction = tx;
+            // global_position is intentionally omitted — BIGSERIAL (or the post-upgrade SEQUENCE
+            // DEFAULT) auto-assigns the next monotonic value.
             ins.CommandText = """
                 INSERT INTO event_store (stream_id, position, event_type, event_id, occurred_at, correlation_id, causation_id, payload)
                 VALUES (@streamId, @position, @eventType, @eventId, @occurredAt, @correlationId, @causationId, @payload)
@@ -157,14 +240,27 @@ public sealed class PostgreSqlEventStoreAdapter : IEventStoreAdapter
         await using var _ = conn;
 #pragma warning restore MA0004
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = """
-            SELECT position, event_type, event_id, occurred_at, correlation_id, causation_id, payload
-            FROM event_store
-            WHERE stream_id = @streamId AND position >= @from
-            ORDER BY position ASC
-            """;
-        cmd.Parameters.AddWithValue("streamId", id.Value);
-        cmd.Parameters.AddWithValue("from", from.Value);
+        if (id.IsGlobal)
+        {
+            cmd.CommandText = """
+                SELECT position, event_type, event_id, occurred_at, correlation_id, causation_id, payload, global_position
+                FROM event_store
+                WHERE global_position >= @from
+                ORDER BY global_position ASC
+                """;
+            cmd.Parameters.AddWithValue("from", from.Value);
+        }
+        else
+        {
+            cmd.CommandText = """
+                SELECT position, event_type, event_id, occurred_at, correlation_id, causation_id, payload, global_position
+                FROM event_store
+                WHERE stream_id = @streamId AND position >= @from
+                ORDER BY position ASC
+                """;
+            cmd.Parameters.AddWithValue("streamId", id.Value);
+            cmd.Parameters.AddWithValue("from", from.Value);
+        }
 
         var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
 #pragma warning disable MA0004
@@ -172,15 +268,17 @@ public sealed class PostgreSqlEventStoreAdapter : IEventStoreAdapter
 #pragma warning restore MA0004
         while (await reader.ReadAsync(ct).ConfigureAwait(false))
         {
-            var position      = new StreamPosition(reader.GetInt64(0));
+            var perStreamPos  = reader.GetInt64(0);
             var eventType     = reader.GetString(1);
             var eventId       = reader.GetGuid(2);
             var occurredAt    = new DateTimeOffset(reader.GetDateTime(3), TimeSpan.Zero);
             var correlationId = reader.IsDBNull(4) ? (Guid?)null : reader.GetGuid(4);
             var causationId   = reader.IsDBNull(5) ? (Guid?)null : reader.GetGuid(5);
             var payloadBytes  = (byte[])reader.GetValue(6);
+            var globalPos     = reader.GetInt64(7);
 
             var metadata = new EventMetadata(eventId, eventType, occurredAt, correlationId, causationId);
+            var position = id.IsGlobal ? new StreamPosition(globalPos) : new StreamPosition(perStreamPos);
             yield return new RawEvent(position, eventType, payloadBytes.AsMemory(), metadata);
         }
     }
