@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/compare/ZeroAlloc.EventSourcing.SqlServer-v1.0.0...ZeroAlloc.EventSourcing.SqlServer-v1.1.0) (2026-06-11)
+
+
+### Features
+
+* SQLite adapter + * global stream consistency across the ecosystem ([#187](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/issues/187)) ([097edfc](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/commit/097edfcfc62f322bcc8e577a1e96cc04fe37a9b4))
+
 ## 1.0.0 (2026-04-29)
 
 
