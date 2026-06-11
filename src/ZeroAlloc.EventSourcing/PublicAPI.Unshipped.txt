@@ -1,4 +1,6 @@
 #nullable enable
+ZeroAlloc.EventSourcing.StreamId.IsGlobal.get -> bool
+static ZeroAlloc.EventSourcing.StreamId.Global.get -> ZeroAlloc.EventSourcing.StreamId
 ZeroAlloc.EventSourcing.AppendResult
 ZeroAlloc.EventSourcing.AppendResult.AppendResult() -> void
 ZeroAlloc.EventSourcing.AppendResult.AppendResult(ZeroAlloc.EventSourcing.StreamId StreamId, ZeroAlloc.EventSourcing.StreamPosition NextExpectedVersion) -> void
