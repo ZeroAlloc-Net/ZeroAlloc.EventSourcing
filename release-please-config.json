@@ -23,6 +23,11 @@
       "release-type": "simple",
       "changelog-path": "CHANGELOG.md"
     },
+    "src/ZeroAlloc.EventSourcing.Outbox": {
+      "package-name": "ZeroAlloc.EventSourcing.Outbox",
+      "release-type": "simple",
+      "changelog-path": "CHANGELOG.md"
+    },
     "src/ZeroAlloc.EventSourcing.Sql": {
       "package-name": "ZeroAlloc.EventSourcing.Sql",
       "release-type": "simple",

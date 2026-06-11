@@ -1,0 +1,26 @@
+#nullable enable
+ZeroAlloc.EventSourcing.Outbox.EventSourcingBuilderOutboxExtensions
+ZeroAlloc.EventSourcing.Outbox.OutboxDispatcher
+ZeroAlloc.EventSourcing.Outbox.OutboxDispatcher.DisposeAsync() -> System.Threading.Tasks.ValueTask
+ZeroAlloc.EventSourcing.Outbox.OutboxDispatcher.OutboxDispatcher(ZeroAlloc.EventSourcing.IEventStore! store, ZeroAlloc.EventSourcing.ICheckpointStore! checkpoints, ZeroAlloc.EventSourcing.Mediator.INotificationDispatcher! dispatcher, ZeroAlloc.EventSourcing.IDeadLetterStore? deadLetters, ZeroAlloc.EventSourcing.Outbox.OutboxOptions! options, Microsoft.Extensions.Logging.ILogger<ZeroAlloc.EventSourcing.Outbox.OutboxDispatcher!>! logger) -> void
+ZeroAlloc.EventSourcing.Outbox.OutboxDispatcher.StartAsync(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
+ZeroAlloc.EventSourcing.Outbox.OutboxDispatcher.StopAsync(System.Threading.CancellationToken cancellationToken) -> System.Threading.Tasks.Task!
+ZeroAlloc.EventSourcing.Outbox.OutboxOptions
+ZeroAlloc.EventSourcing.Outbox.OutboxOptions.BatchSize.get -> int
+ZeroAlloc.EventSourcing.Outbox.OutboxOptions.BatchSize.set -> void
+ZeroAlloc.EventSourcing.Outbox.OutboxOptions.CommitStrategy.get -> ZeroAlloc.EventSourcing.CommitStrategy
+ZeroAlloc.EventSourcing.Outbox.OutboxOptions.CommitStrategy.set -> void
+ZeroAlloc.EventSourcing.Outbox.OutboxOptions.ConsumerId.get -> string!
+ZeroAlloc.EventSourcing.Outbox.OutboxOptions.ConsumerId.set -> void
+ZeroAlloc.EventSourcing.Outbox.OutboxOptions.ErrorStrategy.get -> ZeroAlloc.EventSourcing.ErrorHandlingStrategy
+ZeroAlloc.EventSourcing.Outbox.OutboxOptions.ErrorStrategy.set -> void
+ZeroAlloc.EventSourcing.Outbox.OutboxOptions.Exclude<TEvent>() -> ZeroAlloc.EventSourcing.Outbox.OutboxOptions!
+ZeroAlloc.EventSourcing.Outbox.OutboxOptions.ExcludedTypes.get -> System.Collections.Generic.IReadOnlyCollection<System.Type!>!
+ZeroAlloc.EventSourcing.Outbox.OutboxOptions.MaxRetries.get -> int
+ZeroAlloc.EventSourcing.Outbox.OutboxOptions.MaxRetries.set -> void
+ZeroAlloc.EventSourcing.Outbox.OutboxOptions.OutboxOptions() -> void
+ZeroAlloc.EventSourcing.Outbox.OutboxOptions.PollInterval.get -> System.TimeSpan
+ZeroAlloc.EventSourcing.Outbox.OutboxOptions.PollInterval.set -> void
+ZeroAlloc.EventSourcing.Outbox.OutboxOptions.RetryPolicy.get -> ZeroAlloc.EventSourcing.IRetryPolicy!
+ZeroAlloc.EventSourcing.Outbox.OutboxOptions.RetryPolicy.set -> void
+static ZeroAlloc.EventSourcing.Outbox.EventSourcingBuilderOutboxExtensions.AddOutbox(this ZeroAlloc.EventSourcing.EventSourcingBuilder! builder, System.Action<ZeroAlloc.EventSourcing.Outbox.OutboxOptions!>? configure = null) -> ZeroAlloc.EventSourcing.EventSourcingBuilder!
