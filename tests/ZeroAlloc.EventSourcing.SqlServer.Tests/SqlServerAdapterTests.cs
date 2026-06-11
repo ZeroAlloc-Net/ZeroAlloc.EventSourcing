@@ -107,12 +107,12 @@ public sealed class SqlServerAdapterTests : IAsyncLifetime
         await _adapter.AppendAsync(id, events, StreamPosition.Start);
 
         var read = new List<RawEvent>();
+        // EXCLUSIVE semantics: from=2 returns events with position > 2 — only OrderDelivered (pos=3).
         await foreach (var e in _adapter.ReadAsync(id, new StreamPosition(2)))
             read.Add(e);
 
-        read.Should().HaveCount(2);
-        read[0].EventType.Should().Be("OrderShipped");
-        read[1].EventType.Should().Be("OrderDelivered");
+        read.Should().HaveCount(1);
+        read[0].EventType.Should().Be("OrderDelivered");
     }
 
     [Fact]

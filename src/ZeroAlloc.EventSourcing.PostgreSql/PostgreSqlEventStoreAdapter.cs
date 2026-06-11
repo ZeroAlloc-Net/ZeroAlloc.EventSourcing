@@ -242,20 +242,24 @@ public sealed class PostgreSqlEventStoreAdapter : IEventStoreAdapter
         using var cmd = conn.CreateCommand();
         if (id.IsGlobal)
         {
+            // EXCLUSIVE `> @from` semantics: required by StreamConsumer, which checkpoints to the
+            // position of the last delivered event and re-reads from that cursor. INCLUSIVE
+            // (`>= @from`) would cause infinite re-delivery of the boundary event.
             cmd.CommandText = """
                 SELECT position, event_type, event_id, occurred_at, correlation_id, causation_id, payload, global_position
                 FROM event_store
-                WHERE global_position >= @from
+                WHERE global_position > @from
                 ORDER BY global_position ASC
                 """;
             cmd.Parameters.AddWithValue("from", from.Value);
         }
         else
         {
+            // EXCLUSIVE `> @from` semantics — see global-branch comment above.
             cmd.CommandText = """
                 SELECT position, event_type, event_id, occurred_at, correlation_id, causation_id, payload, global_position
                 FROM event_store
-                WHERE stream_id = @streamId AND position >= @from
+                WHERE stream_id = @streamId AND position > @from
                 ORDER BY position ASC
                 """;
             cmd.Parameters.AddWithValue("streamId", id.Value);

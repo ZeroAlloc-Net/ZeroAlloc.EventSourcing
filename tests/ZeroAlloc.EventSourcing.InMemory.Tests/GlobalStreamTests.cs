@@ -30,10 +30,11 @@ public class GlobalStreamTests
         await adapter.AppendAsync(new StreamId("s3"), Raw("C"), StreamPosition.Start);
 
         var events = new List<string>();
+        // EXCLUSIVE semantics: from=2 returns events with global_position > 2 — only C (pos=3).
         await foreach (var e in adapter.ReadAsync(StreamId.Global, new StreamPosition(2)))
             events.Add(e.EventType);
 
-        events.Should().Equal("B", "C");
+        events.Should().Equal("C");
     }
 
     [Fact]

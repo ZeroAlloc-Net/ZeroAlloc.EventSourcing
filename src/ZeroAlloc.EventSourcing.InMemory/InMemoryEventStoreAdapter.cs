@@ -54,8 +54,11 @@ public sealed class InMemoryEventStoreAdapter : IEventStoreAdapter
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         // Global stream: yield events from all streams ordered by the global position assigned
-        // at append time. <paramref name="from"/> is interpreted as an exclusive lower bound
-        // on the global position — entries with GlobalPosition >= from.Value are returned.
+        // at append time. <paramref name="from"/> is interpreted as an EXCLUSIVE lower bound
+        // on the global position — entries with GlobalPosition > from.Value are returned.
+        // This matches the per-stream EXCLUSIVE convention (Skip-based) and is required by
+        // StreamConsumer, which checkpoints to the position of the last delivered event and
+        // would otherwise re-deliver the same event indefinitely.
         // The legacy "$all" alias is intentionally NOT recognised here; "*" / StreamId.Global
         // is the canonical identity per Task 1's design.
         if (id.IsGlobal)
@@ -73,7 +76,7 @@ public sealed class InMemoryEventStoreAdapter : IEventStoreAdapter
 
             foreach (var entry in merged)
             {
-                if (entry.GlobalPosition < from.Value) continue;
+                if (entry.GlobalPosition <= from.Value) continue;
                 ct.ThrowIfCancellationRequested();
                 // Yield with Position = global position — the semantic overload from the design.
                 yield return entry.RawEvent with { Position = new StreamPosition(entry.GlobalPosition) };

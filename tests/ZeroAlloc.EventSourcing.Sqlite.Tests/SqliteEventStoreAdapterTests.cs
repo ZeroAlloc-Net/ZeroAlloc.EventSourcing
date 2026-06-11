@@ -161,12 +161,12 @@ public sealed class SqliteEventStoreAdapterTests : IAsyncLifetime
         await adapter.AppendAsync(id, events, StreamPosition.Start);
 
         var read = new List<RawEvent>();
+        // EXCLUSIVE semantics: from=2 returns events with position > 2 — only E3 (pos=3).
         await foreach (var e in adapter.ReadAsync(id, new StreamPosition(2)))
             read.Add(e);
 
-        read.Should().HaveCount(2);
-        read[0].EventType.Should().Be("E2");
-        read[1].EventType.Should().Be("E3");
+        read.Should().HaveCount(1);
+        read[0].EventType.Should().Be("E3");
     }
 
     [Fact]
@@ -200,14 +200,13 @@ public sealed class SqliteEventStoreAdapterTests : IAsyncLifetime
         await adapter.AppendAsync(new StreamId("c"), new[] { MakeRaw("C1") }.AsMemory(), StreamPosition.Start);
 
         var read = new List<RawEvent>();
+        // EXCLUSIVE semantics: from=2 returns events with global_position > 2 — only C1 (pos=3).
         await foreach (var e in adapter.ReadAsync(StreamId.Global, new StreamPosition(2)))
             read.Add(e);
 
-        read.Should().HaveCount(2);
-        read[0].EventType.Should().Be("B1");
-        read[0].Position.Value.Should().Be(2);
-        read[1].EventType.Should().Be("C1");
-        read[1].Position.Value.Should().Be(3);
+        read.Should().HaveCount(1);
+        read[0].EventType.Should().Be("C1");
+        read[0].Position.Value.Should().Be(3);
     }
 
     [Fact]

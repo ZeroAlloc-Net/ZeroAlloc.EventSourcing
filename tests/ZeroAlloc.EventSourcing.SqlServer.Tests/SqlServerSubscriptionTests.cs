@@ -86,12 +86,14 @@ public sealed class SqlServerSubscriptionTests : IAsyncLifetime
             MakeRaw("OrderPlaced"),
             MakeRaw("OrderShipped"),
             MakeRaw("OrderDelivered"),
+            MakeRaw("OrderRefunded"),
         }.AsMemory(), StreamPosition.Start);
 
         var received = new List<RawEvent>();
         var tcs = new TaskCompletionSource();
 
-        // Subscribe from position 3 — only "OrderDelivered" (at position 3) should arrive
+        // EXCLUSIVE semantics: subscribe from position 3 — only events with position > 3 should
+        // arrive, i.e. "OrderRefunded" (at position 4).
         var sub = await _adapter.SubscribeAsync(id, new StreamPosition(3), (e, _) =>
         {
             received.Add(e);
@@ -104,7 +106,7 @@ public sealed class SqlServerSubscriptionTests : IAsyncLifetime
         await sub.DisposeAsync();
 
         received.Should().HaveCount(1);
-        received[0].EventType.Should().Be("OrderDelivered");
+        received[0].EventType.Should().Be("OrderRefunded");
     }
 
     [Fact]
