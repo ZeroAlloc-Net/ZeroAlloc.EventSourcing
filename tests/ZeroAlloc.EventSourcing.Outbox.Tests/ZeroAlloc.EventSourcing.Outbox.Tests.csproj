@@ -19,6 +19,7 @@
     <PackageReference Include="Microsoft.Extensions.Logging" />
     <PackageReference Include="ZeroAlloc.Mediator" />
     <PackageReference Include="ZeroAlloc.Mediator.Generator" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <PackageReference Include="Microsoft.Data.Sqlite" />
   </ItemGroup>
 
   <ItemGroup>
@@ -28,6 +29,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\ZeroAlloc.EventSourcing.Outbox\ZeroAlloc.EventSourcing.Outbox.csproj" />
     <ProjectReference Include="..\..\src\ZeroAlloc.EventSourcing.InMemory\ZeroAlloc.EventSourcing.InMemory.csproj" />
+    <ProjectReference Include="..\..\src\ZeroAlloc.EventSourcing.Sqlite\ZeroAlloc.EventSourcing.Sqlite.csproj" />
     <ProjectReference Include="..\..\src\ZeroAlloc.EventSourcing.Mediator.Generator\ZeroAlloc.EventSourcing.Mediator.Generator.csproj"
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="false" />
