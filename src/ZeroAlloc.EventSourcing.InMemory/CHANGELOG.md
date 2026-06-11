@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/compare/ZeroAlloc.EventSourcing.InMemory-v1.0.0...ZeroAlloc.EventSourcing.InMemory-v1.1.0) (2026-06-11)
+
+
+### Features
+
+* ZeroAlloc.EventSourcing.Outbox v0.1.0 — at-least-once cross-aggregate dispatch ([#185](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/issues/185)) ([bdabab2](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/commit/bdabab22fba32058f38b54672c674a6cec44a2e4))
+
 ## 1.0.0 (2026-04-29)
 
 
