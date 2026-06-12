@@ -6,15 +6,19 @@
     <Project Path="src/ZeroAlloc.EventSourcing.Kafka/ZeroAlloc.EventSourcing.Kafka.csproj" />
     <Project Path="src/ZeroAlloc.EventSourcing.Mediator/ZeroAlloc.EventSourcing.Mediator.csproj" />
     <Project Path="src/ZeroAlloc.EventSourcing.Mediator.Generator/ZeroAlloc.EventSourcing.Mediator.Generator.csproj" />
+    <Project Path="src/ZeroAlloc.EventSourcing.Outbox/ZeroAlloc.EventSourcing.Outbox.csproj" />
     <Project Path="src/ZeroAlloc.EventSourcing.PostgreSql/ZeroAlloc.EventSourcing.PostgreSql.csproj" />
     <Project Path="src/ZeroAlloc.EventSourcing.Sql/ZeroAlloc.EventSourcing.Sql.csproj" />
     <Project Path="src/ZeroAlloc.EventSourcing.SqlServer/ZeroAlloc.EventSourcing.SqlServer.csproj" />
+    <Project Path="src/ZeroAlloc.EventSourcing.Sqlite/ZeroAlloc.EventSourcing.Sqlite.csproj" />
     <Project Path="src/ZeroAlloc.EventSourcing.Telemetry/ZeroAlloc.EventSourcing.Telemetry.csproj" />
     <Project Path="src/ZeroAlloc.EventSourcing/ZeroAlloc.EventSourcing.csproj" />
   </Folder>
   <Folder Name="/samples/">
     <Project Path="samples/ZeroAlloc.EventSourcing.AotSmoke/ZeroAlloc.EventSourcing.AotSmoke.csproj" />
     <Project Path="samples/ZeroAlloc.EventSourcing.Mediator.AotSmoke/ZeroAlloc.EventSourcing.Mediator.AotSmoke.csproj" />
+    <Project Path="samples/ZeroAlloc.EventSourcing.Outbox.AotSmoke/ZeroAlloc.EventSourcing.Outbox.AotSmoke.csproj" />
+    <Project Path="samples/ZeroAlloc.EventSourcing.Sqlite.AotSmoke/ZeroAlloc.EventSourcing.Sqlite.AotSmoke.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/ZeroAlloc.EventSourcing.Aggregates.Tests/ZeroAlloc.EventSourcing.Aggregates.Tests.csproj" />
@@ -22,8 +26,10 @@
     <Project Path="tests/ZeroAlloc.EventSourcing.Kafka.Tests/ZeroAlloc.EventSourcing.Kafka.Tests.csproj" />
     <Project Path="tests/ZeroAlloc.EventSourcing.Mediator.Generator.Tests/ZeroAlloc.EventSourcing.Mediator.Generator.Tests.csproj" />
     <Project Path="tests/ZeroAlloc.EventSourcing.Mediator.Tests/ZeroAlloc.EventSourcing.Mediator.Tests.csproj" />
+    <Project Path="tests/ZeroAlloc.EventSourcing.Outbox.Tests/ZeroAlloc.EventSourcing.Outbox.Tests.csproj" />
     <Project Path="tests/ZeroAlloc.EventSourcing.PostgreSql.Tests/ZeroAlloc.EventSourcing.PostgreSql.Tests.csproj" />
     <Project Path="tests/ZeroAlloc.EventSourcing.Sql.Tests/ZeroAlloc.EventSourcing.Sql.Tests.csproj" />
+    <Project Path="tests/ZeroAlloc.EventSourcing.Sqlite.Tests/ZeroAlloc.EventSourcing.Sqlite.Tests.csproj" />
     <Project Path="tests/ZeroAlloc.EventSourcing.SqlServer.Tests/ZeroAlloc.EventSourcing.SqlServer.Tests.csproj" />
     <Project Path="tests/ZeroAlloc.EventSourcing.Telemetry.Tests/ZeroAlloc.EventSourcing.Telemetry.Tests.csproj" />
     <Project Path="tests/ZeroAlloc.EventSourcing.Tests/ZeroAlloc.EventSourcing.Tests.csproj" />
