@@ -1,6 +1,9 @@
 <Project>
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <!-- Allow pinning transitively-resolved package versions (used below to
+         override the vulnerable native SQLite binary pulled in by Microsoft.Data.Sqlite). -->
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
   </PropertyGroup>
   <ItemGroup>
     <PackageVersion Include="ZeroAlloc.Results"                  Version="1.2.0" />
@@ -26,6 +29,12 @@
     <PackageVersion Include="NSubstitute"                        Version="5.3.0" />
     <PackageVersion Include="Microsoft.Data.SqlClient"           Version="7.0.1" />
     <PackageVersion Include="Microsoft.Data.Sqlite"              Version="10.0.9" />
+    <!-- CVE-2025-6965 / GHSA-2m69-gcr7-jv3q: Microsoft.Data.Sqlite 10.0.9 pulls
+         SQLitePCLRaw.lib.e_sqlite3 2.1.11 (bundles SQLite < 3.50.2). Pin the native
+         binary to 3.50.3 (SQLite 3.50.3) via transitive pinning. core/provider stay
+         on 2.x (the sqlite3 C ABI is stable). Drop once Microsoft.Data.Sqlite ships
+         a bumped SQLitePCLRaw. -->
+    <PackageVersion Include="SQLitePCLRaw.lib.e_sqlite3"         Version="3.50.3" />
     <PackageVersion Include="Testcontainers.PostgreSql"          Version="4.12.0" />
     <PackageVersion Include="Testcontainers.MsSql"               Version="4.12.0" />
     <PackageVersion Include="BenchmarkDotNet"                    Version="0.15.8" />
