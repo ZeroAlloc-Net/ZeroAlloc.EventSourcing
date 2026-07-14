@@ -75,7 +75,7 @@ public sealed class KafkaConsumerGroupConsumerTests
         await sut.ConsumeAsync((_, _) => Task.CompletedTask);
 
         consumer.Received(1).Seek(Arg.Is<TopicPartitionOffset>(
-            tpo => tpo.Partition.Value == 0 && tpo.Offset.Value == 42));
+            tpo => tpo != null && tpo.Partition.Value == 0 && tpo.Offset.Value == 42));
     }
 
     [Fact]
@@ -99,7 +99,7 @@ public sealed class KafkaConsumerGroupConsumerTests
         await sut.ConsumeAsync((_, _) => Task.CompletedTask);
 
         consumer.Received(1).Seek(Arg.Is<TopicPartitionOffset>(
-            tpo => tpo.Partition.Value == 0 && tpo.Offset == Offset.Beginning));
+            tpo => tpo != null && tpo.Partition.Value == 0 && tpo.Offset == Offset.Beginning));
     }
 
     [Fact]

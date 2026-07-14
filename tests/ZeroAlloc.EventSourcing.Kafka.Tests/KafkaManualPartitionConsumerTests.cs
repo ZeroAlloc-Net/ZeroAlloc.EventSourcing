@@ -56,6 +56,7 @@ public sealed class KafkaManualPartitionConsumerTests
         await sut.ConsumeAsync((_, _) => Task.CompletedTask);
 
         consumer.Received(1).Assign(Arg.Is<IEnumerable<TopicPartitionOffset>>(tpos =>
+            tpos != null &&
             tpos.Any(t => t.Partition.Value == 0 && t.Offset.Value == 5) &&
             tpos.Any(t => t.Partition.Value == 1 && t.Offset.Value == 10)));
     }
@@ -78,6 +79,7 @@ public sealed class KafkaManualPartitionConsumerTests
         await sut.ConsumeAsync((_, _) => Task.CompletedTask);
 
         consumer.Received(1).Assign(Arg.Is<IEnumerable<TopicPartitionOffset>>(tpos =>
+            tpos != null &&
             tpos.Any(t => t.Partition.Value == 0 && t.Offset == Offset.Beginning)));
     }
 
