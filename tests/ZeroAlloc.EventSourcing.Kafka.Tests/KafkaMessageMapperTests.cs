@@ -1,6 +1,6 @@
 #pragma warning disable CS8601 // Possible null reference assignment.
 using Confluent.Kafka;
-using FluentAssertions;
+using AwesomeAssertions;
 using NSubstitute;
 
 namespace ZeroAlloc.EventSourcing.Kafka.Tests;

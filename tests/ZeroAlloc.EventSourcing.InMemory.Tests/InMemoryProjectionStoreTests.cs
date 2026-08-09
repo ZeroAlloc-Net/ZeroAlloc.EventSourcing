@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using ZeroAlloc.EventSourcing;
 using ZeroAlloc.EventSourcing.InMemory;
 using ZeroAlloc.EventSourcing.Tests;

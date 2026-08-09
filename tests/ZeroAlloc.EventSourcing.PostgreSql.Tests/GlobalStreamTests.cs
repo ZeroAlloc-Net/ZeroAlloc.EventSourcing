@@ -1,5 +1,5 @@
 using System.Text;
-using FluentAssertions;
+using AwesomeAssertions;
 using Npgsql;
 using Testcontainers.PostgreSql;
 using ZeroAlloc.EventSourcing;

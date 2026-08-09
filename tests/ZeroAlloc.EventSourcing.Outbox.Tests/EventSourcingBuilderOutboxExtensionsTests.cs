@@ -1,6 +1,6 @@
 using System;
 using System.Linq;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using ZeroAlloc.EventSourcing.InMemory;

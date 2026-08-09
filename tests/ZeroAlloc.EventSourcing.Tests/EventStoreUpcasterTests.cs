@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using ZeroAlloc.EventSourcing;
 using ZeroAlloc.EventSourcing.InMemory;

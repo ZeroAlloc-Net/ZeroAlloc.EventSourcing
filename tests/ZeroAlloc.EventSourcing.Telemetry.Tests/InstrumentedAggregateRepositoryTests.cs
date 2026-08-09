@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
-using FluentAssertions;
+using AwesomeAssertions;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using ZeroAlloc.EventSourcing;

@@ -1,6 +1,6 @@
 using System;
 using System.Threading.Tasks;
-using FluentAssertions;
+using AwesomeAssertions;
 using ZeroAlloc.EventSourcing;
 
 namespace ZeroAlloc.EventSourcing.Outbox.Tests;
