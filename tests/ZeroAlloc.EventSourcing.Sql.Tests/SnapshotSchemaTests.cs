@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using Npgsql;
 using ZeroAlloc.EventSourcing.Sql;
 

@@ -1,6 +1,6 @@
 using System.Data;
 using System.Text;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Data.SqlClient;
 using Testcontainers.MsSql;
 using ZeroAlloc.EventSourcing;

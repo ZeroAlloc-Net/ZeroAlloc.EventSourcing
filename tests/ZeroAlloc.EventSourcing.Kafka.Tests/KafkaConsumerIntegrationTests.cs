@@ -1,6 +1,6 @@
 using Confluent.Kafka;
 using Confluent.Kafka.Admin;
-using FluentAssertions;
+using AwesomeAssertions;
 using Testcontainers.Kafka;
 using Xunit;
 using ZeroAlloc.EventSourcing.Kafka;

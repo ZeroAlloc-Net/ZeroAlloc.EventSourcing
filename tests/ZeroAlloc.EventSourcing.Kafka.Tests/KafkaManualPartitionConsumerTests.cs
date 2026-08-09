@@ -1,5 +1,5 @@
 using Confluent.Kafka;
-using FluentAssertions;
+using AwesomeAssertions;
 using NSubstitute;
 using Xunit;
 using ZeroAlloc.EventSourcing;

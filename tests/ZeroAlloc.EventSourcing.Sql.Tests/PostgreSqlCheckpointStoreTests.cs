@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using Testcontainers.PostgreSql;
 using Xunit;
 using Npgsql;

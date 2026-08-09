@@ -1,5 +1,5 @@
 using System.Text;
-using FluentAssertions;
+using AwesomeAssertions;
 using Microsoft.Data.Sqlite;
 using ZeroAlloc.EventSourcing;
 using ZeroAlloc.EventSourcing.Sqlite;

@@ -1,4 +1,4 @@
-using FluentAssertions;
+using AwesomeAssertions;
 using Testcontainers.MsSql;
 using Xunit;
 using ZeroAlloc.EventSourcing;
