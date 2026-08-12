@@ -26,7 +26,7 @@
     <PackageVersion Include="AwesomeAssertions"                   Version="9.5.0" />
     <PackageVersion Include="coverlet.collector"                 Version="10.0.1" />
     <PackageVersion Include="Npgsql"                             Version="10.0.3" />
-    <PackageVersion Include="NSubstitute"                        Version="6.0.0" />
+    <PackageVersion Include="NSubstitute"                        Version="6.1.0" />
     <PackageVersion Include="Microsoft.Data.SqlClient"           Version="7.0.2" />
     <PackageVersion Include="Microsoft.Data.Sqlite"              Version="10.0.10" />
     <!-- CVE-2025-6965 / GHSA-2m69-gcr7-jv3q: Microsoft.Data.Sqlite 10.0.9 pulls
