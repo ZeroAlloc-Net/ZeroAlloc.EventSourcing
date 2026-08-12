@@ -16,7 +16,7 @@
     <PackageVersion Include="Meziantou.Analyzer"                 Version="3.0.140" />
     <PackageVersion Include="ZeroAlloc.Telemetry"               Version="1.6.1" />
     <PackageVersion Include="ZeroAlloc.StateMachine"            Version="1.5.1" />
-    <PackageVersion Include="Roslynator.Analyzers"               Version="4.15.0" />
+    <PackageVersion Include="Roslynator.Analyzers"               Version="4.16.0" />
     <PackageVersion Include="xunit"                              Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio"          Version="3.1.5" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk"             Version="18.8.1" />
