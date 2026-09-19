@@ -6,6 +6,7 @@
     <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
   </PropertyGroup>
   <ItemGroup>
+    <PackageVersion Include="ZeroAlloc.TestHelpers" Version="1.2.3" />
     <PackageVersion Include="ZeroAlloc.Results"                  Version="1.2.1" />
     <PackageVersion Include="ZeroAlloc.Collections"              Version="1.1.4" />
     <PackageVersion Include="ZeroAlloc.AsyncEvents"              Version="1.1.2" />
