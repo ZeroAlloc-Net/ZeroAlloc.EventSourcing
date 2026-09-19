@@ -14,17 +14,17 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       releases_created: ${{ steps.release.outputs.releases_created }}
-      paths_released: ${{ steps.release.outputs.paths_released }}
+      version: ${{ steps.release.outputs.version }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
       - name: Release Please
         uses: googleapis/release-please-action@v5
         id: release
         with:
           # Manifest mode: read release-please-config.json + .release-please-manifest.json
-          # from the repo root. 9-package fan-out with include-component-in-tag means
-          # tags look like ZeroAlloc.EventSourcing-v1.1.0,
-          # ZeroAlloc.EventSourcing.EfCore-v1.0.0, etc. paths_released drives the
-          # publish job so we only pack/push the packages that actually got bumped.
+          # from the repo root. A single root component covers every package, so one
+          # version and one tag (ZeroAlloc.EventSourcing-v1.2.1) cover the whole release
+          # and every commit is attributed to something. See docs/releasing.md.
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
           token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
@@ -83,25 +83,39 @@ jobs:
       - name: Test
         run: dotnet test ZeroAlloc.EventSourcing.slnx -c Release --no-build --filter "FullyQualifiedName!~SqlServer&FullyQualifiedName!~PostgreSql"
 
-      - name: Pack each released package at its release version
+      # One version covers every package. Under the old per-package components,
+      # -p:PackageVersion applied globally, so each sibling stamped its OWN number onto the
+      # ZeroAlloc.EventSourcing ProjectReference -- .Mediator 1.0.1 shipped "depends on
+      # ZeroAlloc.EventSourcing >= 1.0.1", a version that does not exist. See docs/releasing.md.
+      - name: Pack all packages at the release version
         env:
-          PATHS_RELEASED: ${{ needs.release-please.outputs.paths_released }}
+          VERSION: ${{ needs.release-please.outputs.version }}
         run: |
+          set -euo pipefail
+          if [ -z "$VERSION" ]; then
+            echo "::error::release-please reported a release but produced no version"
+            exit 1
+          fi
           mkdir -p ./nupkg
-          # paths_released is a JSON array of paths whose packages got bumped this run.
-          # Each package's manifest version is mirrored into <path>/version.txt by
-          # release-please's "simple" release type, so we read it and pack at that version.
-          for path in $(echo "$PATHS_RELEASED" | jq -r '.[]'); do
-            version=$(cat "$path/version.txt")
-            csproj=$(ls "$path"/*.csproj | head -1)
-            echo "Packing $csproj at version $version"
-            dotnet pack "$csproj" -c Release --no-build \
-              -p:PackageVersion="$version" -o ./nupkg
+          for csproj in src/*/*.csproj; do
+            # Most projects do not declare IsPackable and default to packable, so exclude
+            # explicitly-unpackable ones rather than requiring an opt-in.
+            if grep -q "<IsPackable>false</IsPackable>" "$csproj"; then
+              echo "Skipping $csproj (not packable)"
+              continue
+            fi
+            echo "Packing $csproj at $VERSION"
+            dotnet pack "$csproj" -c Release --no-build -p:PackageVersion="$VERSION" -o ./nupkg
           done
           ls -la ./nupkg
+          # Releasing nothing while reporting success is the failure mode this prevents.
+          if ! ls ./nupkg/*.nupkg >/dev/null 2>&1; then
+            echo "::error::no packages were produced"
+            exit 1
+          fi
 
-      - name: Verify generator pack layout (only if Generators was released)
-        if: contains(needs.release-please.outputs.paths_released, 'src/ZeroAlloc.EventSourcing.Generators')
+
+      - name: Verify generator pack layout
         run: ./scripts/verify-generator-pack-layout.sh ./nupkg
 
       - name: Push to NuGet
@@ -114,19 +128,9 @@ jobs:
       - name: Upload to GitHub Releases
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          PATHS_RELEASED: ${{ needs.release-please.outputs.paths_released }}
+          TAG: ${{ needs.release-please.outputs.tag_name }}
         run: |
-          # Each released package gets its own tag like ZeroAlloc.EventSourcing-v1.1.0.
-          # Upload that package's .nupkg to its own GitHub Release.
-          for path in $(echo "$PATHS_RELEASED" | jq -r '.[]'); do
-            version=$(cat "$path/version.txt")
-            package_name=$(basename "$path")
-            tag="${package_name}-v${version}"
-            nupkg=$(ls ./nupkg/${package_name}.${version}.nupkg 2>/dev/null || true)
-            if [ -n "$nupkg" ]; then
-              echo "Uploading $nupkg to release $tag"
-              gh release upload "$tag" "$nupkg" --clobber
-            else
-              echo "No .nupkg found for $package_name at version $version (skipping upload)"
-            fi
-          done
+          set -euo pipefail
+          # One release per run now, so every package attaches to the same tag.
+          echo "Uploading $(ls ./nupkg/*.nupkg | wc -l) packages to release $TAG"
+          gh release upload "$TAG" ./nupkg/*.nupkg --clobber

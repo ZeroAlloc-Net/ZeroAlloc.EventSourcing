@@ -1,79 +1,55 @@
 {
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
-  "release-type": "simple",
-  "include-component-in-tag": true,
   "packages": {
-    "src/ZeroAlloc.EventSourcing": {
+    ".": {
+      "release-type": "simple",
       "package-name": "ZeroAlloc.EventSourcing",
-      "release-type": "simple",
-      "changelog-path": "CHANGELOG.md"
-    },
-    "src/ZeroAlloc.EventSourcing.Aggregates": {
-      "package-name": "ZeroAlloc.EventSourcing.Aggregates",
-      "release-type": "simple",
-      "changelog-path": "CHANGELOG.md"
-    },
-    "src/ZeroAlloc.EventSourcing.Generators": {
-      "package-name": "ZeroAlloc.EventSourcing.Generators",
-      "release-type": "simple",
-      "changelog-path": "CHANGELOG.md"
-    },
-    "src/ZeroAlloc.EventSourcing.InMemory": {
-      "package-name": "ZeroAlloc.EventSourcing.InMemory",
-      "release-type": "simple",
-      "changelog-path": "CHANGELOG.md"
-    },
-    "src/ZeroAlloc.EventSourcing.Outbox": {
-      "package-name": "ZeroAlloc.EventSourcing.Outbox",
-      "release-type": "simple",
-      "changelog-path": "CHANGELOG.md"
-    },
-    "src/ZeroAlloc.EventSourcing.Sql": {
-      "package-name": "ZeroAlloc.EventSourcing.Sql",
-      "release-type": "simple",
-      "changelog-path": "CHANGELOG.md"
-    },
-    "src/ZeroAlloc.EventSourcing.SqlServer": {
-      "package-name": "ZeroAlloc.EventSourcing.SqlServer",
-      "release-type": "simple",
-      "changelog-path": "CHANGELOG.md"
-    },
-    "src/ZeroAlloc.EventSourcing.Sqlite": {
-      "package-name": "ZeroAlloc.EventSourcing.Sqlite",
-      "release-type": "simple",
-      "changelog-path": "CHANGELOG.md"
-    },
-    "src/ZeroAlloc.EventSourcing.PostgreSql": {
-      "package-name": "ZeroAlloc.EventSourcing.PostgreSql",
-      "release-type": "simple",
-      "changelog-path": "CHANGELOG.md"
-    },
-    "src/ZeroAlloc.EventSourcing.Kafka": {
-      "package-name": "ZeroAlloc.EventSourcing.Kafka",
-      "release-type": "simple",
-      "changelog-path": "CHANGELOG.md"
-    },
-    "src/ZeroAlloc.EventSourcing.Mediator": {
-      "package-name": "ZeroAlloc.EventSourcing.Mediator",
-      "release-type": "simple",
-      "changelog-path": "CHANGELOG.md"
-    },
-    "src/ZeroAlloc.EventSourcing.Telemetry": {
-      "package-name": "ZeroAlloc.EventSourcing.Telemetry",
-      "release-type": "simple",
-      "changelog-path": "CHANGELOG.md"
+      "include-component-in-tag": true
     }
   },
   "changelog-sections": [
-    { "type": "feat", "section": "Features" },
-    { "type": "fix", "section": "Bug Fixes" },
-    { "type": "perf", "section": "Performance Improvements" },
-    { "type": "refactor", "section": "Code Refactoring" },
-    { "type": "docs", "section": "Documentation" },
-    { "type": "test", "section": "Tests" },
-    { "type": "deps", "section": "Dependencies" },
-    { "type": "build", "section": "Build System", "hidden": true },
-    { "type": "ci", "section": "Continuous Integration", "hidden": true },
-    { "type": "chore", "section": "Miscellaneous", "hidden": true }
+    {
+      "type": "feat",
+      "section": "Features"
+    },
+    {
+      "type": "fix",
+      "section": "Bug Fixes"
+    },
+    {
+      "type": "perf",
+      "section": "Performance Improvements"
+    },
+    {
+      "type": "refactor",
+      "section": "Code Refactoring"
+    },
+    {
+      "type": "docs",
+      "section": "Documentation"
+    },
+    {
+      "type": "test",
+      "section": "Tests"
+    },
+    {
+      "type": "deps",
+      "section": "Dependencies"
+    },
+    {
+      "type": "build",
+      "section": "Build System",
+      "hidden": true
+    },
+    {
+      "type": "ci",
+      "section": "Continuous Integration",
+      "hidden": true
+    },
+    {
+      "type": "chore",
+      "section": "Miscellaneous",
+      "hidden": true
+    }
   ]
 }
