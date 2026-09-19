@@ -4,7 +4,12 @@
     ".": {
       "release-type": "simple",
       "package-name": "ZeroAlloc.EventSourcing",
-      "include-component-in-tag": true
+      "include-component-in-tag": true,
+      "exclude-paths": [
+        "tests",
+        "samples",
+        "src/ZeroAlloc.EventSourcing.Benchmarks"
+      ]
     }
   },
   "changelog-sections": [
