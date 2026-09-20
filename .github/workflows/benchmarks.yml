@@ -87,7 +87,7 @@ jobs:
           dotnet run --project src/ZeroAlloc.EventSourcing.Benchmarks -c Release --no-build --framework net10.0 -- \
             --filter '${{ inputs.filter }}'
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: benchmarks
