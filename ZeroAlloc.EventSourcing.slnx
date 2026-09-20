@@ -34,4 +34,7 @@
     <Project Path="tests/ZeroAlloc.EventSourcing.Telemetry.Tests/ZeroAlloc.EventSourcing.Telemetry.Tests.csproj" />
     <Project Path="tests/ZeroAlloc.EventSourcing.Tests/ZeroAlloc.EventSourcing.Tests.csproj" />
   </Folder>
+  <Folder Name="/benchmarks/">
+    <Project Path="src/ZeroAlloc.EventSourcing.Benchmarks/ZeroAlloc.EventSourcing.Benchmarks.csproj" />
+  </Folder>
 </Solution>
