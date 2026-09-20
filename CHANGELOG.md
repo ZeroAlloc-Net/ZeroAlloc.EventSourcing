@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.3](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/compare/ZeroAlloc.EventSourcing-v1.2.2...ZeroAlloc.EventSourcing-v1.2.3) (2026-09-20)
+
+
+### Bug Fixes
+
+* stamp the assembly with the release version ([#326](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/issues/326)) ([e45726d](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/commit/e45726deabf44a8ef7ce8165cd5053e9e171ebea))
+
 ## [1.2.2](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/compare/ZeroAlloc.EventSourcing-v1.2.1...ZeroAlloc.EventSourcing-v1.2.2) (2026-09-20)
 
 
