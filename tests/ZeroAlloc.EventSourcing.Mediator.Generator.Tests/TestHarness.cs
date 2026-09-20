@@ -5,7 +5,8 @@ using System.Reflection;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
-using VerifyXunit;
+
+using ZeroAlloc.TestHelpers;
 
 namespace ZeroAlloc.EventSourcing.Mediator.Generator.Tests;
 
@@ -30,10 +31,10 @@ internal static class TestHarness
         }
         """;
 
-    public static Task Verify(string userSource)
+    public static void Verify(string userSource)
     {
         var driver = RunDriver(userSource, out _);
-        return Verifier.Verify(driver);
+        GeneratorSnapshot.Verify(driver);
     }
 
     public static ImmutableArray<Diagnostic> RunDiagnostics(string userSource)

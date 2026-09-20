@@ -10,14 +10,13 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="ZeroAlloc.TestHelpers" />
     <PackageReference Include="coverlet.collector" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
     <PackageReference Include="ZeroAlloc.Mediator" />
-    <PackageReference Include="Verify.Xunit" />
-    <PackageReference Include="Verify.SourceGenerators" />
   </ItemGroup>
 
   <ItemGroup>
@@ -26,6 +25,14 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\ZeroAlloc.EventSourcing.Mediator.Generator\ZeroAlloc.EventSourcing.Mediator.Generator.csproj" />
+  </ItemGroup>
+
+
+  <!-- Snapshots are data, not code. Verify's targets excluded them from compilation; without
+       that every .verified.cs is compiled and collides (CS0101). -->
+  <ItemGroup>
+    <Compile Remove="**/*.verified.*" />
+    <Compile Remove="**/*.received.*" />
   </ItemGroup>
 
 </Project>
