@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.4](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/compare/ZeroAlloc.EventSourcing-v1.2.3...ZeroAlloc.EventSourcing-v1.2.4) (2026-09-20)
+
+
+### Bug Fixes
+
+* **ci:** pin the SDK floor at the .NET 10 GA band, not the newest patch ([#332](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/issues/332)) ([a8f4c23](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/commit/a8f4c23a7bcf82dd5eac66d6a6da60860b58a99e))
+
 ## [1.2.3](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/compare/ZeroAlloc.EventSourcing-v1.2.2...ZeroAlloc.EventSourcing-v1.2.3) (2026-09-20)
 
 
