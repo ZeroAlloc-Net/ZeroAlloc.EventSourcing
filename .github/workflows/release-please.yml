@@ -78,7 +78,7 @@ jobs:
         run: dotnet restore ZeroAlloc.EventSourcing.slnx
 
       - name: Build
-        run: dotnet build ZeroAlloc.EventSourcing.slnx -c Release --no-restore
+        run: dotnet build ZeroAlloc.EventSourcing.slnx -c Release --no-restore -p:Version=${{ needs.release-please.outputs.version }}
 
       - name: Test
         run: dotnet test ZeroAlloc.EventSourcing.slnx -c Release --no-build --filter "FullyQualifiedName!~SqlServer&FullyQualifiedName!~PostgreSql"
