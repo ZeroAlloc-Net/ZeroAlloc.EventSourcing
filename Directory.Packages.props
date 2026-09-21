@@ -49,7 +49,7 @@
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.12" />
     <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.12" />
     <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.12" />
-    <PackageVersion Include="ZeroAlloc.Mediator"                Version="5.1.4" />
-    <PackageVersion Include="ZeroAlloc.Mediator.Generator"      Version="5.1.4" />
+    <PackageVersion Include="ZeroAlloc.Mediator"                Version="5.1.5" />
+    <PackageVersion Include="ZeroAlloc.Mediator.Generator"      Version="5.1.5" />
   </ItemGroup>
 </Project>
