@@ -241,7 +241,7 @@ public abstract class KafkaConsumerBase : IStreamConsumer, IDisposable
                     case ErrorHandlingStrategy.DeadLetter:
                         if (_deadLetterStore is null)
                             throw new InvalidOperationException(
-                                "ErrorHandlingStrategy.DeadLetter requires IDeadLetterStore to be registered.");
+                                "ErrorHandlingStrategy.DeadLetter requires IDeadLetterStore to be registered.", ex);
                         await _deadLetterStore.WriteAsync(ConsumerId, envelope, ex, ct).ConfigureAwait(false);
                         return;
                     default:
