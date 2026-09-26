@@ -141,7 +141,7 @@ public sealed class StreamConsumer : IStreamConsumer
                         if (_deadLetterStore == null)
                             throw new InvalidOperationException(
                                 "ErrorHandlingStrategy.DeadLetter requires a dead-letter store. " +
-                                "Pass an IDeadLetterStore to the StreamConsumer constructor.");
+                                "Pass an IDeadLetterStore to the StreamConsumer constructor.", ex);
                         await _deadLetterStore.WriteAsync(ConsumerId, envelope, ex, cancellationToken).ConfigureAwait(false);
                         return; // skip this event and continue consuming
                     default:
