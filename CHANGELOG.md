@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.5](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/compare/ZeroAlloc.EventSourcing-v1.2.4...ZeroAlloc.EventSourcing-v1.2.5) (2026-09-26)
+
+
+### Bug Fixes
+
+* embed caught exceptions as innerException ([#362](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/issues/362)) ([98529df](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/commit/98529dfb67a62eafd6ad8552ac2a7a5e5f62c116))
+
 ## [1.2.4](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/compare/ZeroAlloc.EventSourcing-v1.2.3...ZeroAlloc.EventSourcing-v1.2.4) (2026-09-20)
 
 
