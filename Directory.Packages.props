@@ -14,7 +14,7 @@
     <PackageVersion Include="ZeroAlloc.Serialisation"            Version="2.4.4" />
     <PackageVersion Include="ZeroAlloc.Pipeline"                 Version="1.2.4" />
     <PackageVersion Include="ZeroAlloc.Analyzers"                Version="1.5.4" />
-    <PackageVersion Include="Meziantou.Analyzer"                 Version="3.0.283" />
+    <PackageVersion Include="Meziantou.Analyzer"                 Version="3.0.287" />
     <PackageVersion Include="ZeroAlloc.Telemetry"               Version="1.6.3" />
     <PackageVersion Include="ZeroAlloc.StateMachine"            Version="1.5.4" />
     <PackageVersion Include="Roslynator.Analyzers"               Version="5.0.0" />
