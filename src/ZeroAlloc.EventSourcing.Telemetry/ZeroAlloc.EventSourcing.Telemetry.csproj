@@ -7,6 +7,10 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
   </ItemGroup>
+  <ItemGroup Condition="'$(IsRoslynComponent)' != 'true'">
+    <PackageReference Include="Meziantou.Analyzer" PrivateAssets="all" />
+    <PackageReference Include="Roslynator.Analyzers" PrivateAssets="all" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\ZeroAlloc.EventSourcing\ZeroAlloc.EventSourcing.csproj" />
     <ProjectReference Include="..\ZeroAlloc.EventSourcing.Aggregates\ZeroAlloc.EventSourcing.Aggregates.csproj" />
