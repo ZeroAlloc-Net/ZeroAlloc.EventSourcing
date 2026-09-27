@@ -33,37 +33,58 @@ jobs:
           global-json-file: global.json
           dotnet-version: 10.0.x
 
+      - name: Read manifest version
+        id: version
+        run: |
+          set -euo pipefail
+          version=$(jq -r '.["."]' .release-please-manifest.json)
+          if [ -z "$version" ] || [ "$version" = "null" ]; then
+            echo "::error::.release-please-manifest.json has no version for the root component"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Manifest version: $version"
+
       - name: Restore
-        run: dotnet restore
+        run: dotnet restore ZeroAlloc.EventSourcing.slnx
 
+      # -p:Version here, because the pack below runs with --no-build: the assemblies must carry
+      # the version the packages claim. See ZeroAlloc-Net/.github#26 and #36.
       - name: Build
-        run: dotnet build --configuration Release --no-restore
+        run: dotnet build ZeroAlloc.EventSourcing.slnx -c Release --no-restore -p:Version=${{ steps.version.outputs.version }}
 
-      # NOTE: No Test step. publish-from-manifest is a rescue workflow â€” its sole
+      # NOTE: No Test step. publish-from-manifest is a rescue workflow — its sole
       # job is to pack + push artifacts. PR-time CI (ci.yml) already validated
       # the full test suite against the same build artifacts before merge.
       # Re-running tests here adds 8-10 min and introduces flakiness (SQL
       # testcontainer subscription/dead-letter races) that doesn't affect
       # package correctness.
 
-      - name: Pack each released package at its manifest version
+      # The manifest has a single root component, ".", that versions every package, so pack
+      # every src project at that version, as release-please.yml does. This step used to glob
+      # "<manifest path>/*.csproj", which for "." matched no project: the rescue packed nothing.
+      - name: Pack all packages at the manifest version
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
+          set -euo pipefail
           mkdir -p ./nupkg
-          # Walk every path in the release-please manifest and pack at the recorded version.
-          jq -r 'to_entries[] | "\(.key) \(.value)"' .release-please-manifest.json | \
-            while read path version; do
-              for csproj in "$path"/*.csproj; do
-                echo "Packing $csproj at version $version"
-                # No --no-build, and -p:Version rather than -p:PackageVersion alone. Each
-                # project carries its own manifest version here, so the solution cannot be
-                # stamped once up front; packing must rebuild the project at its own version
-                # or the assembly keeps a fallback while the package claims the real one.
-                # See ZeroAlloc-Net/.github#26.
-                dotnet pack "$csproj" -c Release \
-                  -p:Version="$version" -o ./nupkg
-              done
-            done
+          for csproj in src/*/*.csproj; do
+            if grep -q "<IsPackable>false</IsPackable>" "$csproj"; then
+              echo "Skipping $csproj (not packable)"
+              continue
+            fi
+            echo "Packing $csproj at $VERSION"
+            dotnet pack "$csproj" -c Release --no-build -p:Version="$VERSION" -o ./nupkg
+          done
           ls -la ./nupkg
+          if ! ls ./nupkg/*.nupkg >/dev/null 2>&1; then
+            echo "::error::no packages were produced"
+            exit 1
+          fi
+
+      - name: Verify generator pack layout
+        run: ./scripts/verify-generator-pack-layout.sh ./nupkg
 
       - name: Push to NuGet
         run: |
