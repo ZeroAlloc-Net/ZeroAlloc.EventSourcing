@@ -52,8 +52,11 @@ jobs:
           docker exec $(docker ps -f name=mssql -q) /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P YourPassword123! -N -C -Q "CREATE DATABASE test;" || true
       - name: Restore
         run: dotnet restore ZeroAlloc.EventSourcing.slnx
+      # The dry-run pack below uses --no-build, so this build must carry the version it packs at.
+      # Without it the assemblies were stamped 1.0.0.0 while the packages claimed 0.0.0-dryrun;
+      # the version guard in Directory.Build.props fails such a pack. See ZeroAlloc-Net/.github#36.
       - name: Build
-        run: dotnet build ZeroAlloc.EventSourcing.slnx --no-restore --configuration Release
+        run: dotnet build ZeroAlloc.EventSourcing.slnx --no-restore --configuration Release -p:Version=0.0.0-dryrun
       - name: Test
         run: dotnet test ZeroAlloc.EventSourcing.slnx --no-build --configuration Release --logger "trx;LogFileName=results.trx" --results-directory ./TestResults --filter "FullyQualifiedName!~SqlServer&FullyQualifiedName!~PostgreSql"
       - name: Upload test results
@@ -62,25 +65,19 @@ jobs:
         with:
           name: test-results
           path: "**/TestResults/*.trx"
-      - name: Verify pack (dry-run, all 10 packages)
+      # Discovered as release-please.yml does, not listed: the old hardcoded list of ten had
+      # already missed Outbox and Sqlite, so the dry-run never packed two shipped packages.
+      - name: Verify pack (dry-run, every packable src project)
         run: |
+          set -euo pipefail
           mkdir -p ./nupkg-dryrun
-          for csproj in \
-              src/ZeroAlloc.EventSourcing/ZeroAlloc.EventSourcing.csproj \
-              src/ZeroAlloc.EventSourcing.Aggregates/ZeroAlloc.EventSourcing.Aggregates.csproj \
-              src/ZeroAlloc.EventSourcing.Generators/ZeroAlloc.EventSourcing.Generators.csproj \
-              src/ZeroAlloc.EventSourcing.InMemory/ZeroAlloc.EventSourcing.InMemory.csproj \
-              src/ZeroAlloc.EventSourcing.Sql/ZeroAlloc.EventSourcing.Sql.csproj \
-              src/ZeroAlloc.EventSourcing.SqlServer/ZeroAlloc.EventSourcing.SqlServer.csproj \
-              src/ZeroAlloc.EventSourcing.PostgreSql/ZeroAlloc.EventSourcing.PostgreSql.csproj \
-              src/ZeroAlloc.EventSourcing.Kafka/ZeroAlloc.EventSourcing.Kafka.csproj \
-              src/ZeroAlloc.EventSourcing.Mediator/ZeroAlloc.EventSourcing.Mediator.csproj \
-              src/ZeroAlloc.EventSourcing.Telemetry/ZeroAlloc.EventSourcing.Telemetry.csproj
-          do
+          for csproj in src/*/*.csproj; do
+            if grep -q "<IsPackable>false</IsPackable>" "$csproj"; then
+              echo "Skipping $csproj (not packable)"
+              continue
+            fi
             echo "Packing $csproj..."
-            dotnet pack "$csproj" -c Release --no-build \
-              -p:PackageVersion=0.0.0-dryrun \
-              -o ./nupkg-dryrun
+            dotnet pack "$csproj" -c Release --no-build -p:Version=0.0.0-dryrun -o ./nupkg-dryrun
           done
           ls -la ./nupkg-dryrun
       - name: Verify generator pack layout
