@@ -285,15 +285,20 @@ services.AddScoped<IAggregateRepository<Order, OrderId>>(sp =>
 
 ## Schema Table
 
-Both PostgreSQL and SQL Server use the same table schema:
+PostgreSQL and SQL Server use the same columns:
 
-| Column | Type | Key | Notes |
-|---|---|---|---|
-| `stream_id` | VARCHAR(256) | PRIMARY KEY | Identifier for the event stream |
-| `position` | BIGINT | | Version/position in stream where snapshot was taken |
-| `state_type` | VARCHAR(256) | | Fully-qualified type name of the state (validation) |
-| `payload` | BYTEA (PG) / VARBINARY(MAX) (SS) | | Serialized aggregate state |
-| `created_at` | TIMESTAMP | | When the snapshot was created (UTC) |
+| Column | PostgreSQL | SQL Server | Key | Notes |
+|---|---|---|---|---|
+| `stream_id` | VARCHAR(255) | NVARCHAR(255) | PRIMARY KEY | Identifier for the event stream |
+| `position` | BIGINT | BIGINT | | Version/position in stream where snapshot was taken |
+| `state_type` | VARCHAR(500) | NVARCHAR(500) | | Fully-qualified type name of the state (validation) |
+| `payload` | BYTEA | VARBINARY(MAX) | | Serialized aggregate state |
+| `created_at` | TIMESTAMPTZ | DATETIMEOFFSET | | When the snapshot was created (UTC) |
+
+SQL Server stores the string columns as `NVARCHAR`: a `VARCHAR` column under a code-page collation
+turns every character outside the code page into `?`. Versions before the fix for #384 created
+them as `VARCHAR`; `EnsureSchemaAsync` converts such a table in place. Values already stored as `?`
+cannot be recovered.
 
 ### Indexes
 

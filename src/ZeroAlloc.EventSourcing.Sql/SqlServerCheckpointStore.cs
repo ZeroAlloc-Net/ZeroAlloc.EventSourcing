@@ -24,33 +24,35 @@ public sealed class SqlServerCheckpointStore : ICheckpointStore
     }
 
     /// <summary>
-    /// Creates the <c>dbo.consumer_checkpoints</c> table in SQL Server if it does not already exist.
-    /// This method is idempotent and safe to call multiple times.
+    /// Creates the <c>dbo.consumer_checkpoints</c> table in SQL Server if it does not already exist,
+    /// and converts a <c>VARCHAR</c> <c>consumer_id</c> left by an earlier version to <c>NVARCHAR</c>.
+    /// This method is idempotent and safe to call multiple times, also from app instances that
+    /// start together.
     /// </summary>
+    /// <remarks>
+    /// Earlier versions stored the consumer id as <c>VARCHAR</c>, which turns characters outside the
+    /// database code page into <c>?</c>. Ids already stored that way cannot be recovered.
+    /// </remarks>
     /// <param name="ct">A cancellation token.</param>
-    public async ValueTask EnsureSchemaAsync(CancellationToken ct = default)
-    {
-        using var conn = new SqlConnection(_connectionString);
-        await conn.OpenAsync(ct).ConfigureAwait(false);
-        #pragma warning disable MA0004
-        using var cmd = conn.CreateCommand();
-        #pragma warning restore MA0004
-        cmd.CommandText = """
-            IF NOT EXISTS (
-                SELECT 1 FROM sys.tables t
-                INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
-                WHERE s.name = 'dbo' AND t.name = 'consumer_checkpoints'
+    public ValueTask EnsureSchemaAsync(CancellationToken ct = default) =>
+        SqlServerSchema.EnsureTableAsync(_connectionString, "consumer_checkpoints", CreateTableSql, Columns, ct);
+
+    private static readonly SqlServerSchema.NVarCharColumn[] Columns = [new("consumer_id", 256)];
+
+    private const string CreateTableSql = """
+        IF NOT EXISTS (
+            SELECT 1 FROM sys.tables t
+            INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
+            WHERE s.name = 'dbo' AND t.name = 'consumer_checkpoints'
+        )
+        BEGIN
+            CREATE TABLE dbo.consumer_checkpoints (
+                consumer_id NVARCHAR(256) NOT NULL PRIMARY KEY,
+                position    BIGINT        NOT NULL,
+                updated_at  DATETIME2     NOT NULL
             )
-            BEGIN
-                CREATE TABLE dbo.consumer_checkpoints (
-                    consumer_id VARCHAR(256) NOT NULL PRIMARY KEY,
-                    position    BIGINT       NOT NULL,
-                    updated_at  DATETIME2    NOT NULL
-                )
-            END
-            """;
-        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-    }
+        END
+        """;
 
     /// <inheritdoc/>
     public async Task<StreamPosition?> ReadAsync(string consumerId, CancellationToken ct = default)
