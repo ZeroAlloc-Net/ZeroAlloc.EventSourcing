@@ -4,6 +4,7 @@ static ZeroAlloc.EventSourcing.InMemory.EventSourcingBuilderExtensions.UseInMemo
 static ZeroAlloc.EventSourcing.InMemory.EventSourcingBuilderExtensions.UseInMemoryEventStore(this ZeroAlloc.EventSourcing.EventSourcingBuilder! builder) -> ZeroAlloc.EventSourcing.EventSourcingBuilder!
 static ZeroAlloc.EventSourcing.InMemory.EventSourcingBuilderExtensions.UseInMemoryProjectionStore(this ZeroAlloc.EventSourcing.EventSourcingBuilder! builder) -> ZeroAlloc.EventSourcing.EventSourcingBuilder!
 static ZeroAlloc.EventSourcing.InMemory.EventSourcingBuilderExtensions.UseInMemorySnapshotStore(this ZeroAlloc.EventSourcing.EventSourcingBuilder! builder) -> ZeroAlloc.EventSourcing.EventSourcingBuilder!
+static ZeroAlloc.EventSourcing.InMemory.EventSourcingBuilderExtensions.UseInMemorySnapshotStore<TState>(this ZeroAlloc.EventSourcing.EventSourcingBuilder! builder) -> ZeroAlloc.EventSourcing.EventSourcingBuilder!
 ZeroAlloc.EventSourcing.InMemory.EventSourcingBuilderExtensions
 ZeroAlloc.EventSourcing.InMemory.InMemoryDeadLetterStore
 ZeroAlloc.EventSourcing.InMemory.InMemoryDeadLetterStore.InMemoryDeadLetterStore() -> void

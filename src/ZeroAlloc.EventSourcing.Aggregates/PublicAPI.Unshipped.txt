@@ -1,2 +1,1 @@
 #nullable enable
-ZeroAlloc.EventSourcing.Aggregates.Aggregate<TId, TState>.RestoreState(TState state, ZeroAlloc.EventSourcing.StreamPosition position) -> void

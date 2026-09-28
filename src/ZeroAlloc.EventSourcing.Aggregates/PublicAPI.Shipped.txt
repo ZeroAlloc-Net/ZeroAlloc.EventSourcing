@@ -8,6 +8,7 @@ ZeroAlloc.EventSourcing.Aggregates.Aggregate<TId, TState>.Id.get -> TId
 ZeroAlloc.EventSourcing.Aggregates.Aggregate<TId, TState>.Id.set -> void
 ZeroAlloc.EventSourcing.Aggregates.Aggregate<TId, TState>.OriginalVersion.get -> ZeroAlloc.EventSourcing.StreamPosition
 ZeroAlloc.EventSourcing.Aggregates.Aggregate<TId, TState>.Raise<TEvent>(TEvent event) -> void
+ZeroAlloc.EventSourcing.Aggregates.Aggregate<TId, TState>.RestoreState(TState state, ZeroAlloc.EventSourcing.StreamPosition position) -> void
 ZeroAlloc.EventSourcing.Aggregates.Aggregate<TId, TState>.State.get -> TState
 ZeroAlloc.EventSourcing.Aggregates.Aggregate<TId, TState>.Version.get -> ZeroAlloc.EventSourcing.StreamPosition
 ZeroAlloc.EventSourcing.Aggregates.AggregateRepository<TAggregate, TId>
