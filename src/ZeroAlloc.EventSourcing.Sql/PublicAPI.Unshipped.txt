@@ -1,1 +1,19 @@
 #nullable enable
+static ZeroAlloc.EventSourcing.Sql.EventSourcingBuilderExtensions.AddPostgreSqlCheckpointStore(this Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder! builder, Npgsql.NpgsqlDataSource! dataSource) -> Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder!
+static ZeroAlloc.EventSourcing.Sql.EventSourcingBuilderExtensions.AddPostgreSqlCheckpointStore(this Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder! builder, string! connectionString) -> Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder!
+static ZeroAlloc.EventSourcing.Sql.EventSourcingBuilderExtensions.AddPostgreSqlCheckpointStore(this Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder! builder, System.Action<ZeroAlloc.EventSourcing.Sql.PostgreSqlHealthCheckOptions!>! configure) -> Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder!
+static ZeroAlloc.EventSourcing.Sql.EventSourcingBuilderExtensions.AddPostgreSqlEventStore(this Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder! builder, Npgsql.NpgsqlDataSource! dataSource) -> Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder!
+static ZeroAlloc.EventSourcing.Sql.EventSourcingBuilderExtensions.AddPostgreSqlEventStore(this Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder! builder, string! connectionString) -> Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder!
+static ZeroAlloc.EventSourcing.Sql.EventSourcingBuilderExtensions.AddPostgreSqlEventStore(this Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder! builder, System.Action<ZeroAlloc.EventSourcing.Sql.PostgreSqlHealthCheckOptions!>! configure) -> Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder!
+ZeroAlloc.EventSourcing.Sql.PostgreSqlHealthCheckOptions
+ZeroAlloc.EventSourcing.Sql.PostgreSqlHealthCheckOptions.ConnectionString.get -> string?
+ZeroAlloc.EventSourcing.Sql.PostgreSqlHealthCheckOptions.ConnectionString.set -> void
+ZeroAlloc.EventSourcing.Sql.PostgreSqlHealthCheckOptions.DataSource.get -> Npgsql.NpgsqlDataSource?
+ZeroAlloc.EventSourcing.Sql.PostgreSqlHealthCheckOptions.DataSource.set -> void
+ZeroAlloc.EventSourcing.Sql.PostgreSqlHealthCheckOptions.FailureStatus.get -> Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus?
+ZeroAlloc.EventSourcing.Sql.PostgreSqlHealthCheckOptions.FailureStatus.set -> void
+ZeroAlloc.EventSourcing.Sql.PostgreSqlHealthCheckOptions.Name.get -> string?
+ZeroAlloc.EventSourcing.Sql.PostgreSqlHealthCheckOptions.Name.set -> void
+ZeroAlloc.EventSourcing.Sql.PostgreSqlHealthCheckOptions.PostgreSqlHealthCheckOptions() -> void
+ZeroAlloc.EventSourcing.Sql.PostgreSqlHealthCheckOptions.Tags.get -> System.Collections.Generic.IEnumerable<string!>?
+ZeroAlloc.EventSourcing.Sql.PostgreSqlHealthCheckOptions.Tags.set -> void

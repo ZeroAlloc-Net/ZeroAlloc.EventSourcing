@@ -77,7 +77,8 @@ public sealed class KafkaConsumerGroupConsumer : KafkaConsumerBase
         IDeadLetterStore? deadLetterStore = null)
         : base(consumer, checkpointStore, serializer, registry,
                Validated(options).Topic,
-               options.PollTimeout, options.ConsumerOptions, deadLetterStore)
+               options.PollTimeout, options.ConsumerOptions, deadLetterStore,
+               ownsConsumer: false)
     {
         _options = options;
     }

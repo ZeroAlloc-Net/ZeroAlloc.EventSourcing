@@ -73,6 +73,13 @@ public abstract class KafkaConsumerBase : IStreamConsumer, IDisposable
     }
 
     /// <summary>Internal constructor for testing — accepts an injected IConsumer.</summary>
+    /// <remarks>
+    /// Obsolete: this overload and the production constructor both carry an optional parameter,
+    /// which violates RS0026. Call the constructor that takes <c>ownsConsumer</c> and pass
+    /// <see langword="false"/>; it behaves identically.
+    /// </remarks>
+    [Obsolete("Use the constructor that takes ownsConsumer and pass false. "
+        + "This overload will be removed in the next major version.", DiagnosticId = "ZAES002")]
     protected internal KafkaConsumerBase(
         IConsumer<string, byte[]> consumer,
         ICheckpointStore checkpointStore,
