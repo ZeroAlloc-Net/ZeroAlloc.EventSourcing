@@ -1,6 +1,6 @@
 using System.Text.Json;
 using AwesomeAssertions;
-using Testcontainers.MsSql;
+using ZeroAlloc.EventSourcing.Testing;
 using ZeroAlloc.EventSourcing;
 using ZeroAlloc.EventSourcing.Sql;
 
@@ -10,10 +10,10 @@ namespace ZeroAlloc.EventSourcing.Sql.Tests;
 /// Contract tests for <see cref="SqlServerSnapshotStore{TState}"/> against a real SQL Server database.
 /// Inherits all contract tests from <see cref="SnapshotStoreContractTests{TStore}"/>.
 /// </summary>
-[Collection("SqlServer")]
-public sealed class SqlServerSnapshotStoreTests : SnapshotStoreContractTests<SqlServerSnapshotStore<SnapshotTestState>>
+[Collection(SqlServerCollection.Name)]
+public sealed class SqlServerSnapshotStoreTests(SqlServerContainerFixture fixture) : SnapshotStoreContractTests<SqlServerSnapshotStore<SnapshotTestState>>
 {
-    private readonly MsSqlContainer _container = new MsSqlBuilder("mcr.microsoft.com/mssql/server:2022-latest").Build();
+    private TestDatabase _database = null!;
 
     /// <summary>Test that constructor rejects null connection string.</summary>
     [Fact]
@@ -42,8 +42,8 @@ public sealed class SqlServerSnapshotStoreTests : SnapshotStoreContractTests<Sql
     /// <inheritdoc/>
     protected override async Task<SqlServerSnapshotStore<SnapshotTestState>> CreateStoreAsync()
     {
-        await _container.StartAsync();
-        var store = new SqlServerSnapshotStore<SnapshotTestState>(_container.GetConnectionString(), new JsonEventSerializer());
+        _database = await fixture.CreateDatabaseAsync();
+        var store = new SqlServerSnapshotStore<SnapshotTestState>(_database.GetConnectionString(), new JsonEventSerializer());
         await store.EnsureSchemaAsync();
         return store;
     }
@@ -51,7 +51,7 @@ public sealed class SqlServerSnapshotStoreTests : SnapshotStoreContractTests<Sql
     /// <inheritdoc/>
     public override async Task DisposeAsync()
     {
-        await _container.StopAsync();
+        await _database.DisposeAsync();
     }
 
     private sealed class JsonEventSerializer : IEventSerializer

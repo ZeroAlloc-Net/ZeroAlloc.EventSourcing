@@ -1,5 +1,5 @@
 using AwesomeAssertions;
-using Testcontainers.MsSql;
+using ZeroAlloc.EventSourcing.Testing;
 using Xunit;
 using ZeroAlloc.EventSourcing;
 using ZeroAlloc.EventSourcing.Sql;
@@ -7,22 +7,22 @@ using ZeroAlloc.EventSourcing.Tests;
 
 namespace ZeroAlloc.EventSourcing.Sql.Tests;
 
-[Collection("SqlServer")]
-public sealed class SqlServerProjectionStoreTests : ProjectionStoreContractTests, IAsyncLifetime
+[Collection(SqlServerCollection.Name)]
+public sealed class SqlServerProjectionStoreTests(SqlServerContainerFixture fixture) : ProjectionStoreContractTests, IAsyncLifetime
 {
-    private readonly MsSqlContainer _container = new MsSqlBuilder("mcr.microsoft.com/mssql/server:2022-latest").Build();
+    private TestDatabase _database = null!;
     private SqlServerProjectionStore _store = null!;
 
     public async Task InitializeAsync()
     {
-        await _container.StartAsync();
-        _store = new SqlServerProjectionStore(_container.GetConnectionString());
+        _database = await fixture.CreateDatabaseAsync();
+        _store = new SqlServerProjectionStore(_database.GetConnectionString());
         await _store.EnsureSchemaAsync();
     }
 
     public async Task DisposeAsync()
     {
-        await _container.StopAsync();
+        await _database.DisposeAsync();
     }
 
     protected override IProjectionStore CreateStore() => _store;

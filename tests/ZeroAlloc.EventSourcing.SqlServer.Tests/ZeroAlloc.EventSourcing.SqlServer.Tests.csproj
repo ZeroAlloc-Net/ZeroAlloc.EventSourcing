@@ -23,6 +23,12 @@
     <ProjectReference Include="..\..\src\ZeroAlloc.EventSourcing.SqlServer\ZeroAlloc.EventSourcing.SqlServer.csproj" />
   </ItemGroup>
 
+  <!-- One container per collection, one empty database per test. -->
+  <ItemGroup>
+    <Compile Include="..\Shared\TestDatabase.cs" Link="Shared\TestDatabase.cs" />
+    <Compile Include="..\Shared\SqlServerContainerFixture.cs" Link="Shared\SqlServerContainerFixture.cs" />
+  </ItemGroup>
+
   <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>

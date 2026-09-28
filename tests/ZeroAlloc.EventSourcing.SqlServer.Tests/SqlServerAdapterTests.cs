@@ -1,26 +1,27 @@
 using System.Text;
 using AwesomeAssertions;
-using Testcontainers.MsSql;
+using ZeroAlloc.EventSourcing.Testing;
 using ZeroAlloc.EventSourcing;
 using ZeroAlloc.EventSourcing.SqlServer;
 
 namespace ZeroAlloc.EventSourcing.SqlServer.Tests;
 
-public sealed class SqlServerAdapterTests : IAsyncLifetime
+[Collection(SqlServerCollection.Name)]
+public sealed class SqlServerAdapterTests(SqlServerContainerFixture fixture) : IAsyncLifetime
 {
-    private readonly MsSqlContainer _container = new MsSqlBuilder("mcr.microsoft.com/mssql/server:2022-latest").Build();
+    private TestDatabase _database = null!;
     private SqlServerEventStoreAdapter _adapter = null!;
 
     public async Task InitializeAsync()
     {
-        await _container.StartAsync();
-        _adapter = new SqlServerEventStoreAdapter(_container.GetConnectionString());
+        _database = await fixture.CreateDatabaseAsync();
+        _adapter = new SqlServerEventStoreAdapter(_database.GetConnectionString());
         await _adapter.EnsureSchemaAsync();
     }
 
     public async Task DisposeAsync()
     {
-        await _container.DisposeAsync();
+        await _database.DisposeAsync();
     }
 
     private static RawEvent MakeRaw(string eventType, string payload = "{}")

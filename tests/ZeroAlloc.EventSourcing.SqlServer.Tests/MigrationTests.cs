@@ -2,26 +2,27 @@ using System.Data;
 using System.Text;
 using AwesomeAssertions;
 using Microsoft.Data.SqlClient;
-using Testcontainers.MsSql;
+using ZeroAlloc.EventSourcing.Testing;
 using ZeroAlloc.EventSourcing;
 using ZeroAlloc.EventSourcing.SqlServer;
 
 namespace ZeroAlloc.EventSourcing.SqlServer.Tests;
 
-public sealed class MigrationTests : IAsyncLifetime
+[Collection(SqlServerCollection.Name)]
+public sealed class MigrationTests(SqlServerContainerFixture fixture) : IAsyncLifetime
 {
-    private readonly MsSqlContainer _container = new MsSqlBuilder("mcr.microsoft.com/mssql/server:2022-latest").Build();
+    private TestDatabase _database = null!;
     private string _connectionString = null!;
 
     public async Task InitializeAsync()
     {
-        await _container.StartAsync();
-        _connectionString = _container.GetConnectionString();
+        _database = await fixture.CreateDatabaseAsync();
+        _connectionString = _database.GetConnectionString();
     }
 
     public async Task DisposeAsync()
     {
-        await _container.DisposeAsync();
+        await _database.DisposeAsync();
     }
 
     private async Task DropTableAsync()

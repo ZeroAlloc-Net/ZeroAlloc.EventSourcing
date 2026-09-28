@@ -1,23 +1,23 @@
 using System.Text.Json;
 using Npgsql;
-using Testcontainers.PostgreSql;
 using ZeroAlloc.EventSourcing;
 using ZeroAlloc.EventSourcing.Sql;
+using ZeroAlloc.EventSourcing.Testing;
 using ZeroAlloc.EventSourcing.Tests;
 
 namespace ZeroAlloc.EventSourcing.Sql.Tests;
 
-[Collection("PostgreSQL")]
-public sealed class PostgreSqlDeadLetterStoreTests : DeadLetterStoreContractTests, IAsyncLifetime
+[Collection(PostgreSqlCollection.Name)]
+public sealed class PostgreSqlDeadLetterStoreTests(PostgreSqlContainerFixture fixture) : DeadLetterStoreContractTests, IAsyncLifetime
 {
-    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:16-alpine").Build();
+    private TestDatabase _database = null!;
     private NpgsqlDataSource _dataSource = null!;
     private PostgreSqlDeadLetterStore _store = null!;
 
     public async Task InitializeAsync()
     {
-        await _container.StartAsync().ConfigureAwait(false);
-        _dataSource = NpgsqlDataSource.Create(_container.GetConnectionString());
+        _database = await fixture.CreateDatabaseAsync().ConfigureAwait(false);
+        _dataSource = NpgsqlDataSource.Create(_database.GetConnectionString());
         _store = new PostgreSqlDeadLetterStore(_dataSource, new JsonEventSerializer());
         await _store.EnsureSchemaAsync().ConfigureAwait(false);
     }
@@ -25,7 +25,7 @@ public sealed class PostgreSqlDeadLetterStoreTests : DeadLetterStoreContractTest
     public async Task DisposeAsync()
     {
         await _dataSource.DisposeAsync().ConfigureAwait(false);
-        await _container.StopAsync().ConfigureAwait(false);
+        await _database.DisposeAsync().ConfigureAwait(false);
     }
 
     protected override IDeadLetterStore CreateStore() => _store;

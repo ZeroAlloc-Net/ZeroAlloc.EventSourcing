@@ -1,27 +1,27 @@
 using System.Text.Json;
-using Testcontainers.MsSql;
 using ZeroAlloc.EventSourcing;
 using ZeroAlloc.EventSourcing.Sql;
+using ZeroAlloc.EventSourcing.Testing;
 using ZeroAlloc.EventSourcing.Tests;
 
 namespace ZeroAlloc.EventSourcing.Sql.Tests;
 
-[Collection("SqlServer")]
-public sealed class SqlServerDeadLetterStoreTests : DeadLetterStoreContractTests, IAsyncLifetime
+[Collection(SqlServerCollection.Name)]
+public sealed class SqlServerDeadLetterStoreTests(SqlServerContainerFixture fixture) : DeadLetterStoreContractTests, IAsyncLifetime
 {
-    private readonly MsSqlContainer _container = new MsSqlBuilder("mcr.microsoft.com/mssql/server:2022-latest").Build();
+    private TestDatabase _database = null!;
     private SqlServerDeadLetterStore _store = null!;
 
     public async Task InitializeAsync()
     {
-        await _container.StartAsync().ConfigureAwait(false);
-        _store = new SqlServerDeadLetterStore(_container.GetConnectionString(), new JsonEventSerializer());
+        _database = await fixture.CreateDatabaseAsync().ConfigureAwait(false);
+        _store = new SqlServerDeadLetterStore(_database.GetConnectionString(), new JsonEventSerializer());
         await _store.EnsureSchemaAsync().ConfigureAwait(false);
     }
 
     public async Task DisposeAsync()
     {
-        await _container.StopAsync().ConfigureAwait(false);
+        await _database.DisposeAsync().ConfigureAwait(false);
     }
 
     protected override IDeadLetterStore CreateStore() => _store;

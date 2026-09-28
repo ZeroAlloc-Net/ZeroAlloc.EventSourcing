@@ -22,6 +22,12 @@
     <ProjectReference Include="..\..\src\ZeroAlloc.EventSourcing.PostgreSql\ZeroAlloc.EventSourcing.PostgreSql.csproj" />
   </ItemGroup>
 
+  <!-- One container per collection, one empty database per test. -->
+  <ItemGroup>
+    <Compile Include="..\Shared\TestDatabase.cs" Link="Shared\TestDatabase.cs" />
+    <Compile Include="..\Shared\PostgreSqlContainerFixture.cs" Link="Shared\PostgreSqlContainerFixture.cs" />
+  </ItemGroup>
+
   <ItemGroup>
     <Using Include="Xunit" />
   </ItemGroup>

@@ -1,22 +1,23 @@
 using System.Text;
 using AwesomeAssertions;
 using Npgsql;
-using Testcontainers.PostgreSql;
+using ZeroAlloc.EventSourcing.Testing;
 using ZeroAlloc.EventSourcing;
 using ZeroAlloc.EventSourcing.PostgreSql;
 
 namespace ZeroAlloc.EventSourcing.PostgreSql.Tests;
 
-public sealed class PostgreSqlAdapterTests : IAsyncLifetime
+[Collection(PostgreSqlCollection.Name)]
+public sealed class PostgreSqlAdapterTests(PostgreSqlContainerFixture fixture) : IAsyncLifetime
 {
-    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:16-alpine").Build();
+    private TestDatabase _database = null!;
     private PostgreSqlEventStoreAdapter _adapter = null!;
     private NpgsqlDataSource _dataSource = null!;
 
     public async Task InitializeAsync()
     {
-        await _container.StartAsync();
-        _dataSource = NpgsqlDataSource.Create(_container.GetConnectionString());
+        _database = await fixture.CreateDatabaseAsync();
+        _dataSource = NpgsqlDataSource.Create(_database.GetConnectionString());
         _adapter = new PostgreSqlEventStoreAdapter(_dataSource);
         await _adapter.EnsureSchemaAsync();
     }
@@ -24,7 +25,7 @@ public sealed class PostgreSqlAdapterTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _dataSource.DisposeAsync();
-        await _container.DisposeAsync();
+        await _database.DisposeAsync();
     }
 
     private static RawEvent MakeRaw(string eventType, string payload = "{}")
