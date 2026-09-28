@@ -64,27 +64,6 @@ jobs:
     needs: release-please
     if: needs.release-please.outputs.releases_created == 'true'
     runs-on: ubuntu-latest
-    services:
-      sql-server:
-        image: mcr.microsoft.com/mssql/server:2025-latest
-        env:
-          ACCEPT_EULA: Y
-          MSSQL_SA_PASSWORD: YourPassword123!
-          MSSQL_PID: Developer
-        ports:
-          - 1433:1433
-      postgres:
-        image: postgres:18-alpine
-        env:
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
     steps:
       - uses: actions/checkout@v7
         with:
@@ -101,22 +80,16 @@ jobs:
             10.0.x
           dotnet-quality: 'ga'
 
-      - name: Wait for databases to start
-        run: sleep 15
-
-      - name: Create test databases
-        run: |
-          docker exec $(docker ps -f name=postgres -q) psql -U postgres -c "CREATE DATABASE test;" || true
-          docker exec $(docker ps -f name=mssql -q) /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P YourPassword123! -N -C -Q "CREATE DATABASE test;" || true
-
       - name: Restore
         run: dotnet restore ZeroAlloc.EventSourcing.slnx
 
       - name: Build
         run: dotnet build ZeroAlloc.EventSourcing.slnx -c Release --no-restore -p:Version=${{ needs.release-please.outputs.version }}
 
+      # Every test runs before publishing, the SQL Server, PostgreSQL and Kafka ones included:
+      # they start their own containers through Testcontainers on the runner's Docker.
       - name: Test
-        run: dotnet test ZeroAlloc.EventSourcing.slnx -c Release --no-build --filter "FullyQualifiedName!~SqlServer&FullyQualifiedName!~PostgreSql"
+        run: dotnet test ZeroAlloc.EventSourcing.slnx -c Release --no-build
 
       # One version covers every package. Under the old per-package components,
       # -p:PackageVersion applied globally, so each sibling stamped its OWN number onto the

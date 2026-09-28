@@ -1,7 +1,7 @@
 using System.Text.Json;
 using AwesomeAssertions;
 using Npgsql;
-using Testcontainers.PostgreSql;
+using ZeroAlloc.EventSourcing.Testing;
 using ZeroAlloc.EventSourcing;
 using ZeroAlloc.EventSourcing.Sql;
 
@@ -11,8 +11,8 @@ namespace ZeroAlloc.EventSourcing.Sql.Tests;
 /// Integration tests for <see cref="PostgreSqlSnapshotStore{TState}"/> with Testcontainers PostgreSQL.
 /// Tests against a real PostgreSQL database instance.
 /// </summary>
-[Collection("PostgreSQL")]
-public sealed class PostgreSqlSnapshotStoreIntegrationTests : IAsyncLifetime
+[Collection(PostgreSqlCollection.Name)]
+public sealed class PostgreSqlSnapshotStoreIntegrationTests(PostgreSqlContainerFixture fixture) : IAsyncLifetime
 {
     /// <summary>Test aggregate state for integration testing.</summary>
     public struct OrderState
@@ -27,15 +27,15 @@ public sealed class PostgreSqlSnapshotStoreIntegrationTests : IAsyncLifetime
         public string Status { get; set; }
     }
 
-    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:16-alpine").Build();
+    private TestDatabase _database = null!;
     private NpgsqlDataSource _dataSource = null!;
     private PostgreSqlSnapshotStore<OrderState> _store = null!;
     private TestEventSerializer _serializer = null!;
 
     public async Task InitializeAsync()
     {
-        await _container.StartAsync();
-        _dataSource = NpgsqlDataSource.Create(_container.GetConnectionString());
+        _database = await fixture.CreateDatabaseAsync();
+        _dataSource = NpgsqlDataSource.Create(_database.GetConnectionString());
         _serializer = new TestEventSerializer();
         _store = new PostgreSqlSnapshotStore<OrderState>(_dataSource, _serializer);
         await _store.EnsureSchemaAsync();
@@ -44,7 +44,7 @@ public sealed class PostgreSqlSnapshotStoreIntegrationTests : IAsyncLifetime
     public async Task DisposeAsync()
     {
         await _dataSource.DisposeAsync();
-        await _container.StopAsync();
+        await _database.DisposeAsync();
     }
 
     [Fact]

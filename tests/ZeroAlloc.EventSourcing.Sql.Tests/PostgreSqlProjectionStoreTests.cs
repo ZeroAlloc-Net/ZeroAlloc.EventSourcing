@@ -1,6 +1,6 @@
 using AwesomeAssertions;
 using Npgsql;
-using Testcontainers.PostgreSql;
+using ZeroAlloc.EventSourcing.Testing;
 using Xunit;
 using ZeroAlloc.EventSourcing;
 using ZeroAlloc.EventSourcing.Sql;
@@ -8,17 +8,17 @@ using ZeroAlloc.EventSourcing.Tests;
 
 namespace ZeroAlloc.EventSourcing.Sql.Tests;
 
-[Collection("PostgreSQL")]
-public sealed class PostgreSqlProjectionStoreTests : ProjectionStoreContractTests, IAsyncLifetime
+[Collection(PostgreSqlCollection.Name)]
+public sealed class PostgreSqlProjectionStoreTests(PostgreSqlContainerFixture fixture) : ProjectionStoreContractTests, IAsyncLifetime
 {
-    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:16-alpine").Build();
+    private TestDatabase _database = null!;
     private NpgsqlDataSource _dataSource = null!;
     private PostgreSqlProjectionStore _store = null!;
 
     public async Task InitializeAsync()
     {
-        await _container.StartAsync();
-        _dataSource = NpgsqlDataSource.Create(_container.GetConnectionString());
+        _database = await fixture.CreateDatabaseAsync();
+        _dataSource = NpgsqlDataSource.Create(_database.GetConnectionString());
         _store = new PostgreSqlProjectionStore(_dataSource);
         await _store.EnsureSchemaAsync();
     }
@@ -26,7 +26,7 @@ public sealed class PostgreSqlProjectionStoreTests : ProjectionStoreContractTest
     public async Task DisposeAsync()
     {
         await _dataSource.DisposeAsync();
-        await _container.StopAsync();
+        await _database.DisposeAsync();
     }
 
     protected override IProjectionStore CreateStore() => _store;

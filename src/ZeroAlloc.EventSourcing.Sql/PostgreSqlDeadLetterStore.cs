@@ -27,9 +27,15 @@ public sealed class PostgreSqlDeadLetterStore : IDeadLetterStore
     }
 
     /// <summary>
-    /// Creates the <c>dead_letters</c> table in PostgreSQL if it does not already exist.
+    /// Creates the <c>dead_letters</c> table in PostgreSQL if it does not already exist, and adds the
+    /// event metadata columns to a table created by an earlier version.
     /// This method is idempotent and safe to call multiple times.
     /// </summary>
+    /// <remarks>
+    /// The metadata columns are nullable because a migrated table already holds rows written without
+    /// them. <see cref="ReadAllAsync"/> returns <see cref="Guid.Empty"/> as the event id and the
+    /// failure time as the occurrence time for such rows.
+    /// </remarks>
     /// <param name="ct">A cancellation token.</param>
     public async ValueTask EnsureSchemaAsync(CancellationToken ct = default)
     {
@@ -47,8 +53,17 @@ public sealed class PostgreSqlDeadLetterStore : IDeadLetterStore
                 payload          BYTEA           NOT NULL,
                 exception_type   VARCHAR(500)    NOT NULL,
                 exception_message TEXT           NOT NULL,
-                failed_at        TIMESTAMPTZ     NOT NULL
-            )
+                failed_at        TIMESTAMPTZ     NOT NULL,
+                event_id         UUID            NULL,
+                occurred_at      TIMESTAMPTZ     NULL,
+                correlation_id   UUID            NULL,
+                causation_id     UUID            NULL
+            );
+
+            ALTER TABLE dead_letters ADD COLUMN IF NOT EXISTS event_id       UUID        NULL;
+            ALTER TABLE dead_letters ADD COLUMN IF NOT EXISTS occurred_at    TIMESTAMPTZ NULL;
+            ALTER TABLE dead_letters ADD COLUMN IF NOT EXISTS correlation_id UUID        NULL;
+            ALTER TABLE dead_letters ADD COLUMN IF NOT EXISTS causation_id   UUID        NULL;
             """;
         await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
@@ -65,9 +80,11 @@ public sealed class PostgreSqlDeadLetterStore : IDeadLetterStore
         using var command = connection.CreateCommand();
         command.CommandText = """
             INSERT INTO dead_letters
-                (consumer_id, stream_id, position, event_type, payload, exception_type, exception_message, failed_at)
+                (consumer_id, stream_id, position, event_type, payload, exception_type, exception_message, failed_at,
+                 event_id, occurred_at, correlation_id, causation_id)
             VALUES
-                (@consumer_id, @stream_id, @position, @event_type, @payload, @exception_type, @exception_message, @failed_at)
+                (@consumer_id, @stream_id, @position, @event_type, @payload, @exception_type, @exception_message, @failed_at,
+                 @event_id, @occurred_at, @correlation_id, @causation_id)
             """;
 
         command.Parameters.AddWithValue("@consumer_id", consumerId);
@@ -78,6 +95,12 @@ public sealed class PostgreSqlDeadLetterStore : IDeadLetterStore
         command.Parameters.AddWithValue("@exception_type", exception.GetType().Name);
         command.Parameters.AddWithValue("@exception_message", exception.Message);
         command.Parameters.AddWithValue("@failed_at", failedAt);
+        command.Parameters.Add("@event_id", NpgsqlDbType.Uuid).Value = envelope.Metadata.EventId;
+        command.Parameters.Add("@occurred_at", NpgsqlDbType.TimestampTz).Value = envelope.Metadata.OccurredAt.ToUniversalTime();
+        command.Parameters.Add("@correlation_id", NpgsqlDbType.Uuid).Value =
+            (object?)envelope.Metadata.CorrelationId ?? DBNull.Value;
+        command.Parameters.Add("@causation_id", NpgsqlDbType.Uuid).Value =
+            (object?)envelope.Metadata.CausationId ?? DBNull.Value;
 
         await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
@@ -90,7 +113,8 @@ public sealed class PostgreSqlDeadLetterStore : IDeadLetterStore
         #pragma warning restore MA0004
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT consumer_id, stream_id, position, event_type, payload, exception_type, exception_message, failed_at
+            SELECT consumer_id, stream_id, position, event_type, payload, exception_type, exception_message, failed_at,
+                   event_id, occurred_at, correlation_id, causation_id
             FROM dead_letters
             ORDER BY id
             """;
@@ -109,8 +133,14 @@ public sealed class PostgreSqlDeadLetterStore : IDeadLetterStore
             var exceptionType = reader.GetString(5);
             var exceptionMessage = reader.GetString(6);
             var failedAt = reader.GetFieldValue<DateTimeOffset>(7);
+            var eventId = await reader.IsDBNullAsync(8, ct).ConfigureAwait(false) ? Guid.Empty : reader.GetGuid(8);
+            var occurredAt = await reader.IsDBNullAsync(9, ct).ConfigureAwait(false)
+                ? failedAt
+                : reader.GetFieldValue<DateTimeOffset>(9);
+            Guid? correlationId = await reader.IsDBNullAsync(10, ct).ConfigureAwait(false) ? null : reader.GetGuid(10);
+            Guid? causationId = await reader.IsDBNullAsync(11, ct).ConfigureAwait(false) ? null : reader.GetGuid(11);
 
-            var metadata = new EventMetadata(Guid.NewGuid(), eventType, failedAt, null, null);
+            var metadata = new EventMetadata(eventId, eventType, occurredAt, correlationId, causationId);
             var envelope = new EventEnvelope(new StreamId(streamId), new StreamPosition(position), payload, metadata);
 
             yield return new DeadLetterEntry(envelope, consumerId, exceptionType, exceptionMessage, failedAt);

@@ -1,5 +1,5 @@
 using AwesomeAssertions;
-using Testcontainers.MsSql;
+using ZeroAlloc.EventSourcing.Testing;
 using Xunit;
 using ZeroAlloc.EventSourcing;
 using ZeroAlloc.EventSourcing.Sql;
@@ -11,24 +11,24 @@ namespace ZeroAlloc.EventSourcing.Sql.Tests;
 /// Integration tests for <see cref="SqlServerCheckpointStore"/> using a real SQL Server instance via Testcontainers.
 /// Inherits all contract tests from <see cref="CheckpointStoreContractTests"/>.
 /// </summary>
-[Collection("SqlServer")]
-public sealed class SqlServerCheckpointStoreTests : CheckpointStoreContractTests, IAsyncLifetime
+[Collection(SqlServerCollection.Name)]
+public sealed class SqlServerCheckpointStoreTests(SqlServerContainerFixture fixture) : CheckpointStoreContractTests, IAsyncLifetime
 {
-    private readonly MsSqlContainer _container = new MsSqlBuilder("mcr.microsoft.com/mssql/server:2022-latest").Build();
+    private TestDatabase _database = null!;
     private SqlServerCheckpointStore _store = null!;
 
     /// <inheritdoc/>
     public async Task InitializeAsync()
     {
-        await _container.StartAsync();
-        _store = new SqlServerCheckpointStore(_container.GetConnectionString());
+        _database = await fixture.CreateDatabaseAsync();
+        _store = new SqlServerCheckpointStore(_database.GetConnectionString());
         await _store.EnsureSchemaAsync();
     }
 
     /// <inheritdoc/>
     public async Task DisposeAsync()
     {
-        await _container.StopAsync();
+        await _database.DisposeAsync();
     }
 
     /// <inheritdoc/>

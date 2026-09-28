@@ -1,6 +1,6 @@
 using System.Text.Json;
 using AwesomeAssertions;
-using Testcontainers.MsSql;
+using ZeroAlloc.EventSourcing.Testing;
 using ZeroAlloc.EventSourcing;
 using ZeroAlloc.EventSourcing.Sql;
 
@@ -10,8 +10,8 @@ namespace ZeroAlloc.EventSourcing.Sql.Tests;
 /// Integration tests for <see cref="SqlServerSnapshotStore{TState}"/> with Testcontainers SQL Server.
 /// Tests against a real SQL Server database instance.
 /// </summary>
-[Collection("SqlServer")]
-public sealed class SqlServerSnapshotStoreIntegrationTests : IAsyncLifetime
+[Collection(SqlServerCollection.Name)]
+public sealed class SqlServerSnapshotStoreIntegrationTests(SqlServerContainerFixture fixture) : IAsyncLifetime
 {
     /// <summary>Test aggregate state for integration testing.</summary>
     public struct OrderState
@@ -26,21 +26,21 @@ public sealed class SqlServerSnapshotStoreIntegrationTests : IAsyncLifetime
         public string Status { get; set; }
     }
 
-    private readonly MsSqlContainer _container = new MsSqlBuilder("mcr.microsoft.com/mssql/server:2022-latest").Build();
+    private TestDatabase _database = null!;
     private SqlServerSnapshotStore<OrderState> _store = null!;
     private TestEventSerializer _serializer = null!;
 
     public async Task InitializeAsync()
     {
-        await _container.StartAsync();
+        _database = await fixture.CreateDatabaseAsync();
         _serializer = new TestEventSerializer();
-        _store = new SqlServerSnapshotStore<OrderState>(_container.GetConnectionString(), _serializer);
+        _store = new SqlServerSnapshotStore<OrderState>(_database.GetConnectionString(), _serializer);
         await _store.EnsureSchemaAsync();
     }
 
     public async Task DisposeAsync()
     {
-        await _container.StopAsync();
+        await _database.DisposeAsync();
     }
 
     [Fact]

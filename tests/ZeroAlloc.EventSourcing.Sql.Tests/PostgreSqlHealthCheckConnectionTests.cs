@@ -2,7 +2,7 @@ using AwesomeAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Npgsql;
-using Testcontainers.PostgreSql;
+using ZeroAlloc.EventSourcing.Testing;
 using ZeroAlloc.EventSourcing.Sql;
 
 namespace ZeroAlloc.EventSourcing.Sql.Tests;
@@ -13,20 +13,19 @@ namespace ZeroAlloc.EventSourcing.Sql.Tests;
 /// left one physical connection open per run. These tests run the checks repeatedly and count
 /// the server-side connections they leave behind.
 /// </summary>
-[Collection("PostgreSQL")]
-public sealed class PostgreSqlHealthCheckConnectionTests : IAsyncLifetime
+[Collection(PostgreSqlCollection.Name)]
+public sealed class PostgreSqlHealthCheckConnectionTests(PostgreSqlContainerFixture fixture) : IAsyncLifetime
 {
     private const int Runs = 10;
 
-    private PostgreSqlContainer _container = null!;
+    private TestDatabase _database = null!;
 
     public async Task InitializeAsync()
     {
-        _container = new PostgreSqlBuilder("postgres:16-alpine").Build();
-        await _container.StartAsync();
+        _database = await fixture.CreateDatabaseAsync();
     }
 
-    public async Task DisposeAsync() => await _container.StopAsync();
+    public async Task DisposeAsync() => await _database.DisposeAsync();
 
     [Fact]
     public async Task EventStoreCheck_WithConnectionString_DoesNotLeaveAConnectionOpenPerRun()
@@ -41,7 +40,7 @@ public sealed class PostgreSqlHealthCheckConnectionTests : IAsyncLifetime
     private async Task<long> OpenConnectionsAfterRuns(
         string applicationName, Action<IHealthChecksBuilder, string> add)
     {
-        var connectionString = new NpgsqlConnectionStringBuilder(_container.GetConnectionString())
+        var connectionString = new NpgsqlConnectionStringBuilder(_database.GetConnectionString())
         {
             ApplicationName = applicationName,
         }.ConnectionString;
@@ -58,7 +57,7 @@ public sealed class PostgreSqlHealthCheckConnectionTests : IAsyncLifetime
             report.Status.Should().Be(HealthStatus.Healthy);
         }
 
-        var probe = new NpgsqlConnectionStringBuilder(_container.GetConnectionString())
+        var probe = new NpgsqlConnectionStringBuilder(_database.GetConnectionString())
         {
             Pooling = false,
         }.ConnectionString;

@@ -1,7 +1,7 @@
 using System.Text.Json;
 using AwesomeAssertions;
 using Npgsql;
-using Testcontainers.PostgreSql;
+using ZeroAlloc.EventSourcing.Testing;
 using ZeroAlloc.EventSourcing;
 using ZeroAlloc.EventSourcing.Sql;
 
@@ -11,10 +11,10 @@ namespace ZeroAlloc.EventSourcing.Sql.Tests;
 /// Contract tests for <see cref="PostgreSqlSnapshotStore{TState}"/> against a real PostgreSQL database.
 /// Inherits all contract tests from <see cref="SnapshotStoreContractTests{TStore}"/>.
 /// </summary>
-[Collection("PostgreSQL")]
-public sealed class PostgreSqlSnapshotStoreTests : SnapshotStoreContractTests<PostgreSqlSnapshotStore<SnapshotTestState>>
+[Collection(PostgreSqlCollection.Name)]
+public sealed class PostgreSqlSnapshotStoreTests(PostgreSqlContainerFixture fixture) : SnapshotStoreContractTests<PostgreSqlSnapshotStore<SnapshotTestState>>
 {
-    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:16-alpine").Build();
+    private TestDatabase _database = null!;
     private NpgsqlDataSource _dataSource = null!;
 
     /// <summary>Test that constructor rejects null dataSource.</summary>
@@ -28,8 +28,8 @@ public sealed class PostgreSqlSnapshotStoreTests : SnapshotStoreContractTests<Po
     /// <inheritdoc/>
     protected override async Task<PostgreSqlSnapshotStore<SnapshotTestState>> CreateStoreAsync()
     {
-        await _container.StartAsync();
-        _dataSource = NpgsqlDataSource.Create(_container.GetConnectionString());
+        _database = await fixture.CreateDatabaseAsync();
+        _dataSource = NpgsqlDataSource.Create(_database.GetConnectionString());
         var store = new PostgreSqlSnapshotStore<SnapshotTestState>(_dataSource, new JsonEventSerializer());
         await store.EnsureSchemaAsync();
         return store;
@@ -39,7 +39,7 @@ public sealed class PostgreSqlSnapshotStoreTests : SnapshotStoreContractTests<Po
     public override async Task DisposeAsync()
     {
         await _dataSource.DisposeAsync();
-        await _container.StopAsync();
+        await _database.DisposeAsync();
     }
 
     private sealed class JsonEventSerializer : IEventSerializer

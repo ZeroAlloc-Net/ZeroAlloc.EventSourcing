@@ -1,5 +1,5 @@
 using AwesomeAssertions;
-using Testcontainers.PostgreSql;
+using ZeroAlloc.EventSourcing.Testing;
 using Xunit;
 using Npgsql;
 using ZeroAlloc.EventSourcing;
@@ -8,18 +8,18 @@ using ZeroAlloc.EventSourcing.Sql;
 
 namespace ZeroAlloc.EventSourcing.Sql.Tests;
 
-public class PostgreSqlCheckpointStoreTests : CheckpointStoreContractTests, IAsyncLifetime
+[Collection(PostgreSqlCollection.Name)]
+public class PostgreSqlCheckpointStoreTests(PostgreSqlContainerFixture fixture) : CheckpointStoreContractTests, IAsyncLifetime
 {
-    private PostgreSqlContainer _container = null!;
+    private TestDatabase _database = null!;
     private NpgsqlDataSource _dataSource = null!;
     private PostgreSqlCheckpointStore _store = null!;
 
     public async Task InitializeAsync()
     {
-        _container = new PostgreSqlBuilder("postgres:16-alpine").Build();
-        await _container.StartAsync();
+        _database = await fixture.CreateDatabaseAsync();
 
-        _dataSource = NpgsqlDataSource.Create(_container.GetConnectionString());
+        _dataSource = NpgsqlDataSource.Create(_database.GetConnectionString());
         _store = new PostgreSqlCheckpointStore(_dataSource);
         await _store.EnsureSchemaAsync(CancellationToken.None);
     }
@@ -27,7 +27,7 @@ public class PostgreSqlCheckpointStoreTests : CheckpointStoreContractTests, IAsy
     public async Task DisposeAsync()
     {
         await _dataSource.DisposeAsync();
-        await _container.StopAsync();
+        await _database.DisposeAsync();
     }
 
     protected override ICheckpointStore CreateStore() => _store;
