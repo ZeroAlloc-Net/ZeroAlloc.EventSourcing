@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.3.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/compare/ZeroAlloc.EventSourcing-v1.2.5...ZeroAlloc.EventSourcing-v1.3.0) (2026-09-28)
+
+
+### Features
+
+* add Aggregate.RestoreState so snapshot loads work outside the library ([b7170c6](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/commit/b7170c6b563b8568a927ccd792ad3f8e0915b871))
+* add RS0026-clean overloads and deprecate the optional-parameter shapes ([0f642d3](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/commit/0f642d359a2a8575bcc9c4b3ef167aa84eb7121a))
+* register snapshot stores per state type so they resolve under NativeAOT ([8e4e32e](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/commit/8e4e32ec5f5954c279da1a17d439bc1eb1f5d465))
+
+
+### Bug Fixes
+
+* keep event metadata in the SQL Server and PostgreSQL dead-letter stores ([afd1231](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/commit/afd123170518ccc1e2263fda7e1d807d4e7cb9b4))
+* mark released analyzer rules and public api as shipped and automate the move ([#378](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/issues/378)) ([293842d](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/commit/293842d920f4d5dbd7f205b23b95aade9a339a54))
+* stop PostgreSQL health checks leaving a connection open on every run ([0f642d3](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/commit/0f642d359a2a8575bcc9c4b3ef167aa84eb7121a))
+* store SQL Server checkpoint, projection, snapshot and dead-letter ids as NVARCHAR ([#386](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/issues/386)) ([c85028c](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/commit/c85028c3115d96a6ecc590507c0d4ba04367e16d)), closes [#384](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/issues/384)
+* ValidateAndReplay no longer discards a snapshot taken at the head of the stream ([b7170c6](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/commit/b7170c6b563b8568a927ccd792ad3f8e0915b871))
+
+
+### Tests
+
+* cover value types in every NativeAOT smoke ([8e4e32e](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/commit/8e4e32ec5f5954c279da1a17d439bc1eb1f5d465))
+
 ## [1.2.5](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/compare/ZeroAlloc.EventSourcing-v1.2.4...ZeroAlloc.EventSourcing-v1.2.5) (2026-09-26)
 
 
