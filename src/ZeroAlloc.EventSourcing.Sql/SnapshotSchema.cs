@@ -1,4 +1,3 @@
-using Microsoft.Data.SqlClient;
 using Npgsql;
 using ZeroAlloc.EventSourcing;
 
@@ -34,9 +33,9 @@ public static class SnapshotSchema
         )
         BEGIN
             CREATE TABLE dbo.snapshots (
-                stream_id   VARCHAR(255)       NOT NULL,
+                stream_id   NVARCHAR(255)      NOT NULL,
                 position    BIGINT             NOT NULL,
-                state_type  VARCHAR(500)       NOT NULL,
+                state_type  NVARCHAR(500)      NOT NULL,
                 payload     VARBINARY(MAX)     NOT NULL,
                 created_at  DATETIMEOFFSET     NOT NULL,
                 CONSTRAINT PK_snapshots PRIMARY KEY (stream_id)
@@ -66,9 +65,18 @@ public static class SnapshotSchema
     }
 
     /// <summary>
-    /// Creates the snapshots table in SQL Server if it does not already exist.
-    /// This method is idempotent and safe to call multiple times.
+    /// Creates the snapshots table in SQL Server if it does not already exist, and converts the
+    /// <c>VARCHAR</c> <c>stream_id</c> and <c>state_type</c> columns of a table created by an earlier
+    /// version to <c>NVARCHAR</c>.
+    /// This method is idempotent and safe to call multiple times, also from app instances that
+    /// start together.
     /// </summary>
+    /// <remarks>
+    /// Earlier versions stored these columns as <c>VARCHAR</c>, which turns characters outside the
+    /// database code page into <c>?</c>. Values already stored that way cannot be recovered.
+    /// Running <see cref="SqlServerCreateTable"/> alone creates a new table but does not convert
+    /// an existing one.
+    /// </remarks>
     /// <param name="connectionString">A valid SQL Server connection string.</param>
     /// <param name="ct">A cancellation token.</param>
     public static async ValueTask EnsureSqlServerSchemaAsync(
@@ -77,12 +85,13 @@ public static class SnapshotSchema
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
 
-        using var conn = new SqlConnection(connectionString);
-        await conn.OpenAsync(ct).ConfigureAwait(false);
-        #pragma warning disable MA0004
-        using var cmd = conn.CreateCommand();
-        #pragma warning restore MA0004
-        cmd.CommandText = SqlServerCreateTable;
-        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        await SqlServerSchema.EnsureTableAsync(connectionString, "snapshots", SqlServerCreateTable, SqlServerColumns, ct)
+            .ConfigureAwait(false);
     }
+
+    private static readonly SqlServerSchema.NVarCharColumn[] SqlServerColumns =
+    [
+        new("stream_id", 255),
+        new("state_type", 500),
+    ];
 }

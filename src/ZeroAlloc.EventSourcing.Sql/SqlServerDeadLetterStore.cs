@@ -28,58 +28,69 @@ public sealed class SqlServerDeadLetterStore : IDeadLetterStore
     }
 
     /// <summary>
-    /// Creates the <c>dbo.dead_letters</c> table in SQL Server if it does not already exist, and adds
-    /// the event metadata columns to a table created by an earlier version.
-    /// This method is idempotent and safe to call multiple times.
+    /// Creates the <c>dbo.dead_letters</c> table in SQL Server if it does not already exist, and
+    /// upgrades a table created by an earlier version: it adds the event metadata columns and
+    /// converts the <c>VARCHAR</c> id and type name columns to <c>NVARCHAR</c>.
+    /// This method is idempotent and safe to call multiple times, also from app instances that
+    /// start together.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// The metadata columns are nullable because a migrated table already holds rows written without
     /// them. <see cref="ReadAllAsync"/> returns <see cref="Guid.Empty"/> as the event id and the
     /// failure time as the occurrence time for such rows.
+    /// </para>
+    /// <para>
+    /// Earlier versions stored the consumer id, stream id, event type and exception type as
+    /// <c>VARCHAR</c>, which turns characters outside the database code page into <c>?</c>. Values
+    /// already stored that way cannot be recovered.
+    /// </para>
     /// </remarks>
     /// <param name="ct">A cancellation token.</param>
-    public async ValueTask EnsureSchemaAsync(CancellationToken ct = default)
-    {
-        using var conn = new SqlConnection(_connectionString);
-        await conn.OpenAsync(ct).ConfigureAwait(false);
-        #pragma warning disable MA0004
-        using var cmd = conn.CreateCommand();
-        #pragma warning restore MA0004
-        cmd.CommandText = """
-            IF NOT EXISTS (
-                SELECT 1 FROM sys.tables t
-                INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
-                WHERE s.name = 'dbo' AND t.name = 'dead_letters'
-            )
-            BEGIN
-                CREATE TABLE dbo.dead_letters (
-                    id                BIGINT IDENTITY(1,1) PRIMARY KEY,
-                    consumer_id       VARCHAR(256)         NOT NULL,
-                    stream_id         VARCHAR(255)         NOT NULL,
-                    position          BIGINT               NOT NULL,
-                    event_type        VARCHAR(500)         NOT NULL,
-                    payload           VARBINARY(MAX)       NOT NULL,
-                    exception_type    VARCHAR(500)         NOT NULL,
-                    exception_message NVARCHAR(MAX)        NOT NULL,
-                    failed_at         DATETIMEOFFSET       NOT NULL,
-                    event_id          UNIQUEIDENTIFIER     NULL,
-                    occurred_at       DATETIMEOFFSET       NULL,
-                    correlation_id    UNIQUEIDENTIFIER     NULL,
-                    causation_id      UNIQUEIDENTIFIER     NULL
-                )
-            END
+    public ValueTask EnsureSchemaAsync(CancellationToken ct = default) =>
+        SqlServerSchema.EnsureTableAsync(_connectionString, "dead_letters", CreateTableSql, Columns, ct);
 
-            IF COL_LENGTH('dbo.dead_letters', 'event_id') IS NULL
-                ALTER TABLE dbo.dead_letters ADD event_id UNIQUEIDENTIFIER NULL;
-            IF COL_LENGTH('dbo.dead_letters', 'occurred_at') IS NULL
-                ALTER TABLE dbo.dead_letters ADD occurred_at DATETIMEOFFSET NULL;
-            IF COL_LENGTH('dbo.dead_letters', 'correlation_id') IS NULL
-                ALTER TABLE dbo.dead_letters ADD correlation_id UNIQUEIDENTIFIER NULL;
-            IF COL_LENGTH('dbo.dead_letters', 'causation_id') IS NULL
-                ALTER TABLE dbo.dead_letters ADD causation_id UNIQUEIDENTIFIER NULL;
-            """;
-        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
-    }
+    private static readonly SqlServerSchema.NVarCharColumn[] Columns =
+    [
+        new("consumer_id", 256),
+        new("stream_id", 255),
+        new("event_type", 500),
+        new("exception_type", 500),
+    ];
+
+    private const string CreateTableSql = """
+        IF NOT EXISTS (
+            SELECT 1 FROM sys.tables t
+            INNER JOIN sys.schemas s ON t.schema_id = s.schema_id
+            WHERE s.name = 'dbo' AND t.name = 'dead_letters'
+        )
+        BEGIN
+            CREATE TABLE dbo.dead_letters (
+                id                BIGINT IDENTITY(1,1) PRIMARY KEY,
+                consumer_id       NVARCHAR(256)        NOT NULL,
+                stream_id         NVARCHAR(255)        NOT NULL,
+                position          BIGINT               NOT NULL,
+                event_type        NVARCHAR(500)        NOT NULL,
+                payload           VARBINARY(MAX)       NOT NULL,
+                exception_type    NVARCHAR(500)        NOT NULL,
+                exception_message NVARCHAR(MAX)        NOT NULL,
+                failed_at         DATETIMEOFFSET       NOT NULL,
+                event_id          UNIQUEIDENTIFIER     NULL,
+                occurred_at       DATETIMEOFFSET       NULL,
+                correlation_id    UNIQUEIDENTIFIER     NULL,
+                causation_id      UNIQUEIDENTIFIER     NULL
+            )
+        END
+
+        IF COL_LENGTH('dbo.dead_letters', 'event_id') IS NULL
+            ALTER TABLE dbo.dead_letters ADD event_id UNIQUEIDENTIFIER NULL;
+        IF COL_LENGTH('dbo.dead_letters', 'occurred_at') IS NULL
+            ALTER TABLE dbo.dead_letters ADD occurred_at DATETIMEOFFSET NULL;
+        IF COL_LENGTH('dbo.dead_letters', 'correlation_id') IS NULL
+            ALTER TABLE dbo.dead_letters ADD correlation_id UNIQUEIDENTIFIER NULL;
+        IF COL_LENGTH('dbo.dead_letters', 'causation_id') IS NULL
+            ALTER TABLE dbo.dead_letters ADD causation_id UNIQUEIDENTIFIER NULL;
+        """;
 
     /// <inheritdoc/>
     public async ValueTask WriteAsync(string consumerId, EventEnvelope envelope, Exception exception, CancellationToken ct = default)
