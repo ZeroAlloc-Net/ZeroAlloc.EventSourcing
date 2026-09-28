@@ -61,5 +61,11 @@ using ZeroAlloc.EventSourcing.AotSmoke;
     }
 }
 
+// Path 3: value types. Struct state, struct events and nullable value-type event fields
+// through the event store, repository, snapshot store and snapshot decorator.
+var valueTypes = await ValueTypeSmoke.RunAsync();
+if (valueTypes != 0)
+    return valueTypes;
+
 Console.WriteLine("AOT smoke: PASS");
 return 0;
