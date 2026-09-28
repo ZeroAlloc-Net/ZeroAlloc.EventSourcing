@@ -785,7 +785,7 @@ services
     .AddSerializerDispatcher()
     .AddEventSourcing()
     .UsePostgreSqlEventStore("Host=localhost;Database=EventStore;User=postgres;Password=password")
-    .UsePostgreSqlSnapshotStore("Host=localhost;Database=EventStore;User=postgres;Password=password")
+    .UsePostgreSqlSnapshotStore<OrderState>("Host=localhost;Database=EventStore;User=postgres;Password=password")
     .UseAggregateRepository<Order, OrderId>(
         () => new Order(),
         id => new StreamId($"order-{id.Value}"))

@@ -26,7 +26,7 @@ internal static class ValueTypeSmoke
         services.AddSingleton<IEventTypeRegistry, AccountRegistryWithLegacy>();
         services.AddEventSourcing()
             .UseInMemoryEventStore()
-            .UseInMemorySnapshotStore()
+            .UseInMemorySnapshotStore<AccountState>()
             .AddUpcaster<FundsDepositedV1, FundsDeposited>(static v1 => new FundsDeposited(v1.Amount, null))
             .UseAggregateRepository<Account, AccountId>(static () => new Account(), StreamFor);
 

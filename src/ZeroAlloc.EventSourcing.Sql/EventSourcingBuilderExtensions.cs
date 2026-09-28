@@ -34,6 +34,39 @@ public static class EventSourcingBuilderExtensions
     }
 
     /// <summary>
+    /// Registers <see cref="PostgreSqlSnapshotStore{TState}"/> as
+    /// <see cref="ISnapshotStore{TState}"/> for the specified aggregate state type.
+    /// </summary>
+    /// <remarks>
+    /// Call this method once per aggregate state type. The registration is closed over
+    /// <typeparamref name="TState"/>, so it resolves under NativeAOT; an open-generic
+    /// registration cannot, because every snapshot state is a value type.
+    /// Also registers a <see cref="NpgsqlDataSource"/> singleton using
+    /// <see cref="NpgsqlDataSource.Create(string)"/> if one is not already present.
+    /// Uses <c>TryAddSingleton</c> — an existing <see cref="ISnapshotStore{TState}"/>
+    /// registration is not overwritten.
+    /// <para>
+    /// If <see cref="IEventSerializer"/> is registered in the container it will be used for
+    /// serialization; otherwise the store operates without serialization support.
+    /// </para>
+    /// </remarks>
+    /// <typeparam name="TState">The aggregate state type.</typeparam>
+    /// <param name="builder">The <see cref="EventSourcingBuilder"/> to configure.</param>
+    /// <param name="connectionString">A valid PostgreSQL connection string.</param>
+    /// <returns>The same <paramref name="builder"/> for method chaining.</returns>
+    public static EventSourcingBuilder UsePostgreSqlSnapshotStore<TState>(
+        this EventSourcingBuilder builder, string connectionString)
+        where TState : struct
+    {
+        builder.Services.TryAddSingleton(_ => NpgsqlDataSource.Create(connectionString));
+        builder.Services.TryAddSingleton<ISnapshotStore<TState>>(
+            static sp => new PostgreSqlSnapshotStore<TState>(
+                sp.GetRequiredService<NpgsqlDataSource>(),
+                sp.GetService<IEventSerializer>()));
+        return builder;
+    }
+
+    /// <summary>
     /// Registers <see cref="PostgreSqlSnapshotStore{TState}"/> as the open-generic
     /// <see cref="ISnapshotStore{TState}"/> implementation.
     /// </summary>
@@ -47,10 +80,18 @@ public static class EventSourcingBuilderExtensions
     /// be injected automatically; if none is registered the store operates without
     /// serialization support.
     /// </para>
+    /// <para>
+    /// Obsolete: the open-generic registration throws under NativeAOT for every snapshot state,
+    /// because <see cref="ISnapshotStore{TState}"/> requires a value type and the container
+    /// cannot build a value-type instantiation of an open generic without dynamic code.
+    /// </para>
     /// </remarks>
     /// <param name="builder">The <see cref="EventSourcingBuilder"/> to configure.</param>
     /// <param name="connectionString">A valid PostgreSQL connection string.</param>
     /// <returns>The same <paramref name="builder"/> for method chaining.</returns>
+    [Obsolete("Use UsePostgreSqlSnapshotStore<TState>(connectionString) once per aggregate state type. "
+        + "The open-generic registration cannot resolve a value-type state under NativeAOT. "
+        + "This overload will be removed in the next major version.", DiagnosticId = "ZAES003")]
     public static EventSourcingBuilder UsePostgreSqlSnapshotStore(
         this EventSourcingBuilder builder, string connectionString)
     {
