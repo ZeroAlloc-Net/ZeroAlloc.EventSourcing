@@ -61,9 +61,14 @@ jobs:
   aot-smoke:
     name: aot-smoke
     runs-on: ubuntu-latest
-    # Publishes samples/ZeroAlloc.EventSourcing.AotSmoke with PublishAot=true.
-    # Exercises the generator + Aggregate<TId,TState> flow: Raise() + ApplyEvent()
-    # + DequeueUncommitted. Doesn't require a database, keeping the smoke fast.
+    # A hang in a NativeAOT binary must fail the job, not hold the runner for six hours.
+    timeout-minutes: 45
+    # Publishes every samples/*AotSmoke project with PublishAot=true and runs the binary.
+    # They were listed by hand before, and the list only ever held the first one, so the
+    # Mediator, Outbox and Sqlite smokes added later were never run at all. Discovery keeps
+    # a new smoke from being left out the same way.
+    # One job rather than a matrix: aot-smoke is a required check on main, and a matrix
+    # would report under per-leg names instead.
     steps:
       - uses: actions/checkout@v7
       - name: Setup .NET
@@ -77,12 +82,45 @@ jobs:
           dotnet-quality: 'ga'
       - name: Install AOT native toolchain
         run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
-      - name: Restore
-        run: dotnet restore samples/ZeroAlloc.EventSourcing.AotSmoke/ZeroAlloc.EventSourcing.AotSmoke.csproj
-      - name: Publish AOT
-        run: dotnet publish samples/ZeroAlloc.EventSourcing.AotSmoke/ZeroAlloc.EventSourcing.AotSmoke.csproj -r linux-x64 -c Release -o ./aot-out
-      - name: Run AOT binary
-        run: ./aot-out/ZeroAlloc.EventSourcing.AotSmoke
+      - name: Publish and run every AOT smoke
+        run: |
+          set -uo pipefail
+          shopt -s nullglob
+          projects=(samples/*AotSmoke/*.csproj)
+          if [ ${#projects[@]} -eq 0 ]; then
+            echo "::error::No samples/*AotSmoke projects found"
+            exit 1
+          fi
+          echo "Found ${#projects[@]} AOT smoke projects"
+          failed=()
+          for csproj in "${projects[@]}"; do
+            name=$(basename "$csproj" .csproj)
+            out="./aot-out/$name"
+            echo "::group::$name"
+            if ! dotnet publish "$csproj" -r linux-x64 -c Release -o "$out"; then
+              echo "::endgroup::"
+              echo "::error::$name failed to publish"
+              failed+=("$name: publish")
+              continue
+            fi
+            # 124 means timeout killed it: a hang, which only shows up under NativeAOT.
+            timeout 120 "$out/$name"
+            rc=$?
+            echo "::endgroup::"
+            if [ $rc -eq 124 ]; then
+              echo "::error::$name hung and was killed after 120s"
+              failed+=("$name: timed out")
+            elif [ $rc -ne 0 ]; then
+              echo "::error::$name exited with $rc"
+              failed+=("$name: exit $rc")
+            else
+              echo "$name passed"
+            fi
+          done
+          if [ ${#failed[@]} -ne 0 ]; then
+            printf 'Failed: %s\n' "${failed[@]}"
+            exit 1
+          fi
 
   # A release PR must mark everything it releases as shipped: the analyzer rules in
   # AnalyzerReleases.Unshipped.md and the API in every PublicAPI.Unshipped.txt. The
