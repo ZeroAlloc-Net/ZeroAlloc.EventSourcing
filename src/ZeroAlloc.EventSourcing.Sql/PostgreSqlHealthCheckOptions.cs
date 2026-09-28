@@ -16,8 +16,8 @@ namespace ZeroAlloc.EventSourcing.Sql;
 public sealed class PostgreSqlHealthCheckOptions
 {
     /// <summary>
-    /// PostgreSQL connection string. Each health check invocation creates a new
-    /// <see cref="NpgsqlDataSource"/> from it.
+    /// PostgreSQL connection string. Each health check invocation opens a connection from
+    /// Npgsql's shared pool for it and returns it afterwards.
     /// </summary>
     public string? ConnectionString { get; set; }
 

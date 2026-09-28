@@ -209,14 +209,14 @@ public static class EventSourcingBuilderExtensions
 
     /// <summary>
     /// Registers <see cref="PostgreSqlEventStoreHealthCheck"/> under the name
-    /// <c>postgresql-event-store</c>. Performs a <c>SELECT 1</c> against a newly created
-    /// <see cref="NpgsqlDataSource"/>.
+    /// <c>postgresql-event-store</c>. Performs a <c>SELECT 1</c> on a pooled
+    /// connection for the connection string.
     /// </summary>
     /// <remarks>
-    /// Each health check invocation creates a new <see cref="NpgsqlDataSource"/> from
-    /// <paramref name="connectionString"/>. This keeps every registration fully independent —
-    /// no shared singleton — so calling this method with different connection strings works
-    /// correctly. The overhead is acceptable for a periodic health check.
+    /// Each health check invocation opens a connection from Npgsql's shared pool for
+    /// <paramref name="connectionString"/> and returns it afterwards. No
+    /// <see cref="NpgsqlDataSource"/> is registered or shared, so calling this method with
+    /// different connection strings works correctly.
     /// To set the name, failure status or tags, use
     /// <see cref="AddPostgreSqlEventStore(IHealthChecksBuilder, Action{PostgreSqlHealthCheckOptions})"/>.
     /// </remarks>
@@ -274,7 +274,7 @@ public static class EventSourcingBuilderExtensions
 
     /// <summary>
     /// Registers <see cref="PostgreSqlEventStoreHealthCheck"/> with the health check system.
-    /// Performs a <c>SELECT 1</c> against a newly created <see cref="NpgsqlDataSource"/>.
+    /// Performs a <c>SELECT 1</c> on a pooled connection for the connection string.
     /// </summary>
     /// <remarks>
     /// Obsolete: this overload and its <see cref="NpgsqlDataSource"/> sibling both carry optional
@@ -319,14 +319,14 @@ public static class EventSourcingBuilderExtensions
 
     /// <summary>
     /// Registers <see cref="PostgreSqlCheckpointStoreHealthCheck"/> under the name
-    /// <c>postgresql-checkpoint-store</c>. Performs a <c>SELECT 1</c> against a newly created
-    /// <see cref="NpgsqlDataSource"/>.
+    /// <c>postgresql-checkpoint-store</c>. Performs a <c>SELECT 1</c> on a pooled
+    /// connection for the connection string.
     /// </summary>
     /// <remarks>
-    /// Each health check invocation creates a new <see cref="NpgsqlDataSource"/> from
-    /// <paramref name="connectionString"/>. This keeps every registration fully independent —
-    /// no shared singleton — so calling this method with different connection strings works
-    /// correctly. The overhead is acceptable for a periodic health check.
+    /// Each health check invocation opens a connection from Npgsql's shared pool for
+    /// <paramref name="connectionString"/> and returns it afterwards. No
+    /// <see cref="NpgsqlDataSource"/> is registered or shared, so calling this method with
+    /// different connection strings works correctly.
     /// To set the name, failure status or tags, use
     /// <see cref="AddPostgreSqlCheckpointStore(IHealthChecksBuilder, Action{PostgreSqlHealthCheckOptions})"/>.
     /// </remarks>
@@ -384,7 +384,7 @@ public static class EventSourcingBuilderExtensions
 
     /// <summary>
     /// Registers <see cref="PostgreSqlCheckpointStoreHealthCheck"/> with the health check system.
-    /// Performs a <c>SELECT 1</c> against a newly created <see cref="NpgsqlDataSource"/>.
+    /// Performs a <c>SELECT 1</c> on a pooled connection for the connection string.
     /// </summary>
     /// <remarks>
     /// Obsolete: this overload and its <see cref="NpgsqlDataSource"/> sibling both carry optional
