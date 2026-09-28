@@ -96,14 +96,14 @@ public sealed class SnapshotCachingRepositoryDecorator<TAggregate, TId, TState> 
 
         var (snapshotPosition, snapshotState) = snapshot.Value;
 
-        // Create a fresh aggregate instance and restore snapshot state
-        var aggregate = _aggregateFactory();
-        _restoreState(aggregate, snapshotState, snapshotPosition);
-
         // Validate snapshot position if required by strategy
         var validationResult = await ValidateSnapshotPositionAsync(streamId, snapshotPosition, id, ct).ConfigureAwait(false);
         if (validationResult.HasValue)
             return validationResult.Value;
+
+        // Create a fresh aggregate instance and restore snapshot state
+        var aggregate = _aggregateFactory();
+        _restoreState(aggregate, snapshotState, snapshotPosition);
 
         // Replay events after the snapshot
         await ReplayEventsAfterSnapshotAsync(aggregate, streamId, snapshotPosition, ct).ConfigureAwait(false);
@@ -113,14 +113,19 @@ public sealed class SnapshotCachingRepositoryDecorator<TAggregate, TId, TState> 
 
     private async ValueTask<Result<TAggregate, StoreError>?> ValidateSnapshotPositionAsync(StreamId streamId, StreamPosition snapshotPosition, TId id, CancellationToken ct)
     {
-        // For ValidateAndReplay strategy, verify the snapshot position exists in the event store
-        if (_strategy == SnapshotLoadingStrategy.ValidateAndReplay)
+        // For ValidateAndReplay strategy, verify the event at the snapshot position exists in the
+        // event store. A snapshot at Start covers no events, so there is nothing to check.
+        if (_strategy == SnapshotLoadingStrategy.ValidateAndReplay && snapshotPosition.Value > 0)
         {
-            // Try to read an event at the snapshot position to validate it exists
+            // Reads are exclusive of their start position, so reading from the position before the
+            // snapshot yields the event AT the snapshot position first, if it exists. Reading from the
+            // snapshot position itself would yield only later events, and would reject every snapshot
+            // taken at the head of the stream, which is where the decorator writes them.
             var positionFound = false;
-            await foreach (var envelope in _eventStore.ReadAsync(streamId, snapshotPosition, ct).ConfigureAwait(false))
+            var before = new StreamPosition(snapshotPosition.Value - 1);
+            await foreach (var envelope in _eventStore.ReadAsync(streamId, before, ct).ConfigureAwait(false))
             {
-                positionFound = true;
+                positionFound = envelope.Position == snapshotPosition;
                 break;
             }
 

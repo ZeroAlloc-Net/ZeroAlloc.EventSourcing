@@ -86,7 +86,7 @@ public sealed class SnapshotRestoreTests
         using var order = loaded.Value;
 
         // The load went through the snapshot: no read started at the beginning of the stream.
-        s.EventStore.ReadsFrom.Should().NotBeEmpty().And.OnlyContain(p => p == new StreamPosition(2));
+        s.EventStore.ReadsFrom.Should().NotBeEmpty().And.NotContain(StreamPosition.Start);
 
         order.State.IsPlaced.Should().BeTrue();
         order.State.Items.Should().Be(2);
@@ -114,6 +114,58 @@ public sealed class SnapshotRestoreTests
         await foreach (var e in s.EventStore.ReadAsync(StreamFor(id), StreamPosition.Start))
             positions.Add(e.Position.Value);
         positions.Should().Equal(1, 2, 3, 4);
+    }
+
+    [Theory]
+    [InlineData(SnapshotLoadingStrategy.TrustSnapshot)]
+    [InlineData(SnapshotLoadingStrategy.ValidateAndReplay)]
+    public async Task Load_SnapshotAtTheStreamHead_IsUsed(SnapshotLoadingStrategy strategy)
+    {
+        // The decorator writes its snapshots on save, at the version it just saved, so the
+        // latest snapshot is at the head of the stream until the next event is appended.
+        var s = Build(strategy);
+        var id = new OrderId(Guid.NewGuid());
+        using (var order = new Order())
+        {
+            order.Place("alice");
+            order.AddItem(10.50m);
+            (await s.Repository.SaveAsync(order, id)).IsSuccess.Should().BeTrue();
+        }
+        (await s.Snapshots.ReadAsync(StreamFor(id)))!.Value.Position.Value.Should().Be(2);
+        s.EventStore.ReadsFrom.Clear();
+
+        using var loaded = (await s.Repository.LoadAsync(id)).Value;
+
+        s.EventStore.ReadsFrom.Should().NotContain(StreamPosition.Start, "the snapshot covers the whole stream");
+        loaded.State.Items.Should().Be(1);
+        loaded.State.Total.Should().Be(10.50m);
+        loaded.Version.Value.Should().Be(2);
+        loaded.OriginalVersion.Value.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task Load_ValidateAndReplay_SnapshotBeyondTheStreamHead_FallsBackToAFullReplay()
+    {
+        var s = Build(SnapshotLoadingStrategy.ValidateAndReplay);
+        var id = new OrderId(Guid.NewGuid());
+        using (var order = new Order())
+        {
+            order.Place("alice");
+            (await s.Inner.SaveAsync(order, id)).IsSuccess.Should().BeTrue();
+        }
+        using (var source = new Order())
+        {
+            source.Place("mallory");
+            source.AddItem(999m);
+            await s.Snapshots.WriteAsync(StreamFor(id), new StreamPosition(2), source.State);
+        }
+
+        using var loaded = (await s.Repository.LoadAsync(id)).Value;
+
+        s.EventStore.ReadsFrom.Should().Contain(StreamPosition.Start);
+        loaded.State.Items.Should().Be(0);
+        loaded.Version.Value.Should().Be(1);
+        loaded.OriginalVersion.Value.Should().Be(1);
     }
 
     [Fact]
