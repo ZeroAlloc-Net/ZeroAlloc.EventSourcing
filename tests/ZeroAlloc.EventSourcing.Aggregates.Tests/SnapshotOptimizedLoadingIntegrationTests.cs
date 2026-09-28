@@ -72,11 +72,5 @@ public sealed class SnapshotOptimizedLoadingIntegrationTests : IAsyncLifetime
     }
 
     private static void RestoreOrderState(Order aggregate, OrderState state, StreamPosition fromPosition)
-    {
-        // Restore the state directly onto the aggregate using the snapshot position
-        // This sets both Version and OriginalVersion to the snapshot position
-        aggregate.ApplyHistoric(
-            new OrderPlacedEvent(state.OrderId!, state.Total),
-            fromPosition);
-    }
+        => aggregate.RestoreState(state, fromPosition);
 }

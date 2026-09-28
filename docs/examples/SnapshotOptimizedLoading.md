@@ -24,13 +24,19 @@ var snapshotRepo = new SnapshotCachingRepositoryDecorator<Order, OrderId, OrderS
     aggregateFactory: () => new Order());
 
 // Use like normal repository
-var result = await snapshotRepo.LoadAsync(new OrderId(123));
+var result = await snapshotRepo.LoadAsync(orderId);
 if (result.IsSuccess)
 {
     var order = result.Value;
     // Order is fully loaded with state restored from snapshot
 }
 ```
+
+`restoreState` calls `Aggregate<TId, TState>.RestoreState(state, position)`, which puts the snapshot
+onto the fresh aggregate from `aggregateFactory`: it sets `State`, `Version` and `OriginalVersion`
+exactly as replaying the events up to `position` would have, and queues no events. The next save
+therefore appends with the right expected version. `RestoreState` throws
+`InvalidOperationException` on an aggregate that has already raised, replayed or restored anything.
 
 ## Strategies
 

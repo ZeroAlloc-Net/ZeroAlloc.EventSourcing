@@ -192,38 +192,26 @@ Snapshots skip replaying old events:
 
 ```csharp
 // Without snapshot: replay all 10,000 events
-var order = new Order();
-order.SetId(orderId);
-await foreach (var envelope in eventStore.ReadAsync(streamId, StreamPosition.Start))
-{
-    order.ApplyHistoric(envelope.Event, envelope.Position);
-}
+var repository = new AggregateRepository<Order, OrderId>(
+    eventStore,
+    () => new Order(),
+    id => new StreamId($"order-{id.Value}"));
+var order = (await repository.LoadAsync(orderId)).Value;
 
 // With snapshot: restore state from position 5,000, replay only events 5,001-10,000
-var order = new Order();
-order.SetId(orderId);
-
-// Check for snapshot
-var snapshotResult = await snapshotStore.ReadAsync(streamId);
-StreamPosition startPosition = StreamPosition.Start;
-
-if (snapshotResult.HasValue)
-{
-    var (snapshotPosition, snapshotState) = snapshotResult.Value;
-    
-    // Restore state from snapshot
-    order.RestoreState(snapshotState, snapshotPosition);
-    
-    // Start replaying from after the snapshot
-    startPosition = snapshotPosition.Next();
-}
-
-// Replay remaining events
-await foreach (var envelope in eventStore.ReadAsync(streamId, startPosition))
-{
-    order.ApplyHistoric(envelope.Event, envelope.Position);
-}
+var snapshotRepository = new SnapshotCachingRepositoryDecorator<Order, OrderId, OrderState>(
+    innerRepository: repository,
+    snapshotStore: snapshotStore,
+    strategy: SnapshotLoadingStrategy.ValidateAndReplay,
+    restoreState: (order, state, pos) => order.RestoreState(state, pos),
+    eventStore: eventStore,
+    streamIdFactory: id => new StreamId($"order-{id.Value}"),
+    aggregateFactory: () => new Order());
+var restored = (await snapshotRepository.LoadAsync(orderId)).Value;
 ```
+
+`RestoreState` sets the aggregate's state, `Version` and `OriginalVersion` to the snapshot's, as
+replaying up to that position would have, and only works on a fresh aggregate.
 
 Snapshots are covered in detail in [Snapshots Usage](./snapshots-usage.md).
 
@@ -537,56 +525,41 @@ End-to-end example:
 ```csharp
 public class OrderService
 {
-    private readonly IEventStore _eventStore;
-    private readonly ISnapshotStore<OrderState> _snapshotStore;
-    
+    private readonly IAggregateRepository<Order, OrderId> _repository;
+
+    public OrderService(IEventStore eventStore, ISnapshotStore<OrderState> snapshotStore)
+    {
+        _repository = new SnapshotCachingRepositoryDecorator<Order, OrderId, OrderState>(
+            innerRepository: new AggregateRepository<Order, OrderId>(
+                eventStore,
+                () => new Order(),
+                id => new StreamId($"order-{id.Value}")),
+            snapshotStore: snapshotStore,
+            strategy: SnapshotLoadingStrategy.ValidateAndReplay,
+            restoreState: (order, state, pos) => order.RestoreState(state, pos),
+            eventStore: eventStore,
+            streamIdFactory: id => new StreamId($"order-{id.Value}"),
+            aggregateFactory: () => new Order(),
+            snapshotPolicy: SnapshotPolicy.EveryNEvents(100),  // === SNAPSHOT (every 100 events) ===
+            extractState: order => order.State);
+    }
+
     public async Task ShipOrder(OrderId orderId, string trackingNumber)
     {
-        var streamId = new StreamId($"order-{orderId.Value}");
-        
-        // === LOAD ===
-        var order = new Order();
-        order.SetId(orderId);
-        
-        // Try to load from snapshot
-        var snapshotResult = await _snapshotStore.ReadAsync(streamId);
-        StreamPosition startPosition = StreamPosition.Start;
-        
-        if (snapshotResult.HasValue)
-        {
-            var (snapshotPosition, state) = snapshotResult.Value;
-            order.RestoreState(state, snapshotPosition);
-            startPosition = snapshotPosition.Next();
-        }
-        
-        // Replay remaining events
-        await foreach (var envelope in _eventStore.ReadAsync(streamId, startPosition))
-        {
-            order.ApplyHistoric(envelope.Event, envelope.Position);
-        }
-        
+        // === LOAD === from the latest snapshot plus the events after it
+        var loaded = await _repository.LoadAsync(orderId);
+        if (!loaded.IsSuccess)
+            throw new InvalidOperationException($"Failed to load order: {loaded.Error}");
+        using var order = loaded.Value;
+
         // === MODIFY ===
         order.Ship(trackingNumber, "FedEx");
-        
-        // === SAVE ===
-        var events = order.DequeueUncommitted();
-        var result = await _eventStore.AppendAsync(
-            streamId, 
-            events, 
-            order.OriginalVersion);
-        
+
+        // === SAVE === appends with order.OriginalVersion as the expected version
+        var result = await _repository.SaveAsync(order, orderId);
         if (!result.IsSuccess)
             throw new InvalidOperationException(
                 $"Failed to save order: {result.Error}");
-        
-        // === SNAPSHOT (optional, every 100 events) ===
-        if (order.Version.Value % 100 == 0)
-        {
-            await _snapshotStore.WriteAsync(
-                streamId,
-                order.Version,
-                order.State);
-        }
     }
 }
 ```

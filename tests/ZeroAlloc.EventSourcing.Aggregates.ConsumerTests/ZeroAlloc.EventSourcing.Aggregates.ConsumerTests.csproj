@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Tests written the way an application uses the library: this assembly has NO
+    InternalsVisibleTo access, unlike ZeroAlloc.EventSourcing.Aggregates.Tests. A test here
+    only compiles against the public API, so it catches a feature that the in-repo tests can
+    reach through internals but an adopter cannot. See issue #387.
+  -->
+  <PropertyGroup>
+    <!-- Override Directory.Build.props multi-targeting — test projects target a single TFM -->
+    <TargetFramework>net9.0</TargetFramework>
+    <TargetFrameworks></TargetFrameworks>
+    <IsPackable>false</IsPackable>
+    <!-- Suppress CS1591: test classes don't need XML doc comments -->
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="AwesomeAssertions" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ZeroAlloc.EventSourcing.Aggregates\ZeroAlloc.EventSourcing.Aggregates.csproj" />
+    <ProjectReference Include="..\..\src\ZeroAlloc.EventSourcing.InMemory\ZeroAlloc.EventSourcing.InMemory.csproj" />
+    <ProjectReference Include="..\..\src\ZeroAlloc.EventSourcing.Generators\ZeroAlloc.EventSourcing.Generators.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+</Project>

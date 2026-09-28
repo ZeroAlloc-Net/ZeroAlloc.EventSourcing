@@ -48,49 +48,19 @@ var strategy = SnapshotLoadingStrategy.ValidateAndReplay;
 3. If valid, restore state and replay from after snapshot
 4. If invalid, fall back to full replay
 
-**Example fallback code when snapshot is missing or invalid:**
+`SnapshotCachingRepositoryDecorator` implements these steps. The only piece you write is the
+`restoreState` callback, which puts the snapshot onto the fresh aggregate through the public
+`Aggregate<TId, TState>.RestoreState(state, position)`:
 
 ```csharp
-// Try to load snapshot
-var snapshotResult = await snapshotStore.ReadAsync(streamId);
-StreamPosition startPosition = StreamPosition.Start;
-
-if (snapshotResult.HasValue)
-{
-    var (snapshotPosition, snapshotState) = snapshotResult.Value;
-    
-    // Validate snapshot position exists in event store
-    var isValid = await ValidateSnapshotPosition(streamId, snapshotPosition);
-    
-    if (isValid)
-    {
-        // Snapshot is good; restore from snapshot
-        order.RestoreState(snapshotState, snapshotPosition);
-        startPosition = snapshotPosition.Next();
-    }
-    // If invalid, startPosition remains StreamPosition.Start (full replay)
-}
-
-// Replay remaining events (or all if no valid snapshot)
-await foreach (var envelope in eventStore.ReadAsync(streamId, startPosition))
-{
-    order.ApplyHistoric(envelope.Event, envelope.Position);
-}
-
-private async Task<bool> ValidateSnapshotPosition(StreamId streamId, StreamPosition position)
-{
-    try
-    {
-        // Try to read the event at snapshot position
-        await eventStore.ReadSingleAsync(streamId, position);
-        return true;  // Position exists
-    }
-    catch (EventNotFoundException)
-    {
-        return false;  // Position doesn't exist; snapshot is stale
-    }
-}
+restoreState: (order, state, pos) => order.RestoreState(state, pos),
 ```
+
+`RestoreState` sets `State`, `Version` and `OriginalVersion` exactly as replaying the events up to
+`position` would have, and queues no events. It only works on a fresh aggregate, one that has not
+raised, replayed or restored anything, and throws `InvalidOperationException` otherwise. Replaying
+events onto an aggregate is internal to the repositories, so load through the decorator rather than
+writing the replay loop yourself; see [Using SnapshotCachingRepositoryDecorator](#using-snapshotcachingrepositorydecorator).
 
 **Guarantees:**
 - Protects against corrupted snapshots
@@ -110,7 +80,7 @@ var strategy = SnapshotLoadingStrategy.TrustSnapshot;
 **How it works:**
 1. Load snapshot
 2. Restore state immediately
-3. Replay no additional events
+3. Replay only the events after the snapshot position, without checking that position first
 
 **Guarantees:**
 - Fastest possible loading
@@ -201,48 +171,11 @@ public class SnapshotStrategyProvider
 
 ## Loading with Snapshots
 
-### Manual Snapshot Loading
-
-```csharp
-public async Task<Order> LoadOrder(OrderId orderId)
-{
-    var streamId = new StreamId($"order-{orderId.Value}");
-    var order = new Order();
-    order.SetId(orderId);
-    
-    // Step 1: Try to load snapshot
-    var snapshotResult = await _snapshotStore.ReadAsync(streamId);
-    StreamPosition startPosition = StreamPosition.Start;
-    
-    if (snapshotResult.HasValue)
-    {
-        var (snapshotPosition, snapshotState) = snapshotResult.Value;
-        
-        // Step 2: Restore state from snapshot
-        order.RestoreState(snapshotState, snapshotPosition);
-        
-        // Step 3: Start replaying from after snapshot
-        startPosition = snapshotPosition.Next();
-        
-        Console.WriteLine($"Loaded snapshot at position {snapshotPosition.Value}");
-    }
-    
-    // Step 4: Replay remaining events
-    var eventsReplayed = 0;
-    await foreach (var envelope in _eventStore.ReadAsync(streamId, startPosition))
-    {
-        order.ApplyHistoric(envelope.Event, envelope.Position);
-        eventsReplayed++;
-    }
-    
-    Console.WriteLine($"Replayed {eventsReplayed} events after snapshot");
-    return order;
-}
-```
-
 ### Using SnapshotCachingRepositoryDecorator
 
-The decorator handles snapshot loading automatically. See building-aggregates.md for the repository interface definition.
+The decorator handles snapshot loading. Replaying events onto an aggregate is internal to the
+repositories, so this is how application code loads from a snapshot. See building-aggregates.md for
+the repository interface definition.
 
 ```csharp
 // Setup: Create the decorated repository
@@ -272,9 +205,22 @@ if (result.IsSuccess)
 The decorator:
 1. Attempts to load snapshot
 2. Validates snapshot position (if strategy allows)
-3. Restores state from snapshot
+3. Creates a fresh aggregate with `aggregateFactory` and calls `restoreState` on it
 4. Replays remaining events
 5. Returns the loaded aggregate
+
+`restoreState` calls `Aggregate<TId, TState>.RestoreState(state, position)`, which sets `State`,
+`Version` and `OriginalVersion` as if the events up to `position` had been replayed. The next save
+therefore uses the right expected version. `RestoreState` throws `InvalidOperationException` on an
+aggregate that has already raised, replayed or restored anything, so `aggregateFactory` must return a
+new instance every time.
+
+To have the decorator write snapshots as well, pass `snapshotPolicy` and `extractState`:
+
+```csharp
+snapshotPolicy: SnapshotPolicy.EveryNEvents(100),
+extractState: order => order.State,
+```
 
 ## Snapshot Consistency
 
@@ -355,38 +301,6 @@ public async Task<bool> ValidateSnapshot(StreamId streamId, StreamPosition snaps
 }
 ```
 
-## Cache Behavior: In-Memory Caching
-
-The `SnapshotCachingRepositoryDecorator` can optionally cache snapshots in memory:
-
-```csharp
-// With in-memory cache
-var cache = new MemoryCache(new MemoryCacheOptions
-{
-    SizeLimit = 100 * 1024 * 1024  // 100MB cache
-});
-
-var snapshotRepository = new SnapshotCachingRepositoryDecorator<Order, OrderId, OrderState>(
-    innerRepository: innerRepository,
-    snapshotStore: _snapshotStore,
-    strategy: SnapshotLoadingStrategy.ValidateAndReplay,
-    restoreState: (order, state, pos) => order.RestoreState(state, pos),
-    eventStore: _eventStore,
-    streamIdFactory: id => new StreamId($"order-{id.Value}"),
-    aggregateFactory: () => new Order(),
-    cache: cache);  // Enable caching
-```
-
-**Benefits:**
-- Snapshots loaded from memory instead of database
-- Dramatically faster subsequent loads
-- Reduces database pressure
-
-**Considerations:**
-- Memory usage grows with cache size
-- Stale cached snapshots if not invalidated properly
-- Cache invalidation is complex
-
 ## SQL Snapshot Stores
 
 Snapshots are stored in databases for persistence.
@@ -434,52 +348,28 @@ var snapshotStore = new SqlServerSnapshotStore<OrderState>(connectionString);
 [Fact]
 public async Task Snapshot_IsConsistentWithReplayed()
 {
-    // Arrange
+    // Arrange: two events, then a snapshot of the state after them, then two more events
     var orderId = new OrderId(Guid.NewGuid());
     var streamId = new StreamId($"order-{orderId.Value}");
-    
+
     var order = new Order();
     order.SetId(orderId);
     order.Place("ORD-001", 1500m);
     order.Confirm();
+    await _innerRepository.SaveAsync(order, orderId);
+    await _snapshotStore.WriteAsync(streamId, order.Version, order.State);
+
     order.Ship("TRACK-123");
     order.Deliver();
-    
-    var events = order.DequeueUncommitted();
-    await _eventStore.AppendAsync(streamId, events, StreamPosition.Start);
-    
-    // Save snapshot at position 2 (after Confirm)
-    await _snapshotStore.WriteAsync(
-        streamId,
-        new StreamPosition(2),
-        order.State);
-    
-    // Act: Load with snapshot
-    var loadedOrder = new Order();
-    loadedOrder.SetId(orderId);
-    
-    var snapshot = await _snapshotStore.ReadAsync(streamId);
-    Assert.True(snapshot.HasValue);
-    
-    var (snapshotPos, snapshotState) = snapshot.Value;
-    loadedOrder.RestoreState(snapshotState, snapshotPos);
-    
-    // Replay remaining events
-    await foreach (var envelope in _eventStore.ReadAsync(
-        streamId, snapshotPos.Next()))
-    {
-        loadedOrder.ApplyHistoric(envelope.Event, envelope.Position);
-    }
-    
-    // Assert: State matches non-snapshot load
-    var fullOrder = new Order();
-    fullOrder.SetId(orderId);
-    await foreach (var envelope in _eventStore.ReadAsync(streamId, StreamPosition.Start))
-    {
-        fullOrder.ApplyHistoric(envelope.Event, envelope.Position);
-    }
-    
-    Assert.Equal(fullOrder.State, loadedOrder.State);
+    await _innerRepository.SaveAsync(order, orderId);
+
+    // Act: load through the snapshot, and by replaying the whole stream
+    var fromSnapshot = (await _snapshotRepository.LoadAsync(orderId)).Value;
+    var fullReplay = (await _innerRepository.LoadAsync(orderId)).Value;
+
+    // Assert: same state, and the same version for the next save's concurrency check
+    Assert.Equal(fullReplay.State, fromSnapshot.State);
+    Assert.Equal(fullReplay.OriginalVersion, fromSnapshot.OriginalVersion);
 }
 
 [Fact]
@@ -684,30 +574,26 @@ var snapshot = new Snapshot
 };
 ```
 
-### Mistake 2: Not Handling Missing Snapshots
+### Mistake 2: Restoring Onto an Aggregate That Already Has Events
 
 ```csharp
-// ✗ Bad: Assumes snapshot always exists
-var snapshot = await _snapshotStore.ReadAsync(streamId);
-var (position, state) = snapshot.Value;  // Crash if null!
+// ✗ Bad: the factory hands out the same instance, so the second load restores a snapshot
+// on top of events the first load already applied. RestoreState throws InvalidOperationException.
+var shared = new Order();
+var repository = new SnapshotCachingRepositoryDecorator<Order, OrderId, OrderState>(
+    // ...
+    restoreState: (order, state, pos) => order.RestoreState(state, pos),
+    aggregateFactory: () => shared);
 
-// ✓ Good: Handle missing snapshots
-var snapshot = await _snapshotStore.ReadAsync(streamId);
-StreamPosition startPosition = StreamPosition.Start;
-
-if (snapshot.HasValue)
-{
-    var (position, state) = snapshot.Value;
-    order.RestoreState(state, position);
-    startPosition = position.Next();
-}
-
-// Replay from start or after snapshot
-await foreach (var envelope in _eventStore.ReadAsync(streamId, startPosition))
-{
-    order.ApplyHistoric(envelope.Event, envelope.Position);
-}
+// ✓ Good: a new aggregate for every load
+var repository = new SnapshotCachingRepositoryDecorator<Order, OrderId, OrderState>(
+    // ...
+    restoreState: (order, state, pos) => order.RestoreState(state, pos),
+    aggregateFactory: () => new Order());
 ```
+
+A missing snapshot needs no handling: the decorator falls back to a full replay through the inner
+repository.
 
 ### Mistake 3: Forgetting to Save Snapshots
 
