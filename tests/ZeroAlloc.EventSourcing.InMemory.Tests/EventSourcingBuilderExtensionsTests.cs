@@ -60,10 +60,57 @@ public class EventSourcingBuilderExtensionsTests
     }
 
     [Fact]
-    public void UseInMemorySnapshotStore_RegistersOpenGeneric()
+    public void UseInMemorySnapshotStoreOfTState_RegistersInMemorySnapshotStore()
     {
         var services = BaseServices();
+        services.AddEventSourcing().UseInMemorySnapshotStore<TestState>();
+
+        var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<ISnapshotStore<TestState>>()
+                .Should().BeOfType<InMemorySnapshotStore<TestState>>();
+    }
+
+    // NativeAOT refuses to build a value-type instantiation of an open-generic registration,
+    // and TState is always a value type, so the registration must be closed over TState.
+    // The JIT has no such check, so this pins the shape; the AOT smoke proves the resolve.
+    [Fact]
+    public void UseInMemorySnapshotStoreOfTState_RegistersClosedServiceType()
+    {
+        var services = BaseServices();
+        services.AddEventSourcing().UseInMemorySnapshotStore<TestState>();
+
+        services.Should().ContainSingle(d => d.ServiceType == typeof(ISnapshotStore<TestState>));
+        services.Should().NotContain(d => d.ServiceType == typeof(ISnapshotStore<>));
+    }
+
+    [Fact]
+    public void UseInMemorySnapshotStoreOfTState_ReturnsBuilder_ForChaining()
+    {
+        var services = BaseServices();
+        var builder = services.AddEventSourcing();
+        builder.UseInMemorySnapshotStore<TestState>().Should().BeSameAs(builder);
+    }
+
+    [Fact]
+    public void UseInMemorySnapshotStoreOfTState_DoesNotOverwriteUserSnapshotStore()
+    {
+        var services = BaseServices();
+        var custom = new StubSnapshotStore();
+        services.AddSingleton<ISnapshotStore<TestState>>(custom);
+
+        services.AddEventSourcing().UseInMemorySnapshotStore<TestState>();
+
+        var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<ISnapshotStore<TestState>>().Should().BeSameAs(custom);
+    }
+
+    [Fact]
+    public void UseInMemorySnapshotStore_Obsolete_RegistersOpenGeneric()
+    {
+        var services = BaseServices();
+#pragma warning disable ZAES003 // the deprecated open-generic registration is still under test
         services.AddEventSourcing().UseInMemorySnapshotStore();
+#pragma warning restore ZAES003
 
         var provider = services.BuildServiceProvider();
         provider.GetRequiredService<ISnapshotStore<TestState>>()
@@ -104,11 +151,13 @@ public class EventSourcingBuilderExtensionsTests
     }
 
     [Fact]
-    public void UseInMemorySnapshotStore_ReturnsBuilder_ForChaining()
+    public void UseInMemorySnapshotStore_Obsolete_ReturnsBuilder_ForChaining()
     {
         var services = BaseServices();
         var builder = services.AddEventSourcing();
+#pragma warning disable ZAES003 // the deprecated open-generic registration is still under test
         builder.UseInMemorySnapshotStore().Should().BeSameAs(builder);
+#pragma warning restore ZAES003
     }
 
     [Fact]
@@ -128,7 +177,7 @@ public class EventSourcingBuilderExtensionsTests
     }
 
     [Fact]
-    public void UseInMemorySnapshotStore_DoesNotOverwriteUserSnapshotStore()
+    public void UseInMemorySnapshotStore_Obsolete_DoesNotOverwriteUserSnapshotStore()
     {
         var services = BaseServices();
         // NSubstitute/Castle cannot proxy ISnapshotStore<TestState> when TestState is a private struct
@@ -136,7 +185,9 @@ public class EventSourcingBuilderExtensionsTests
         var custom = new StubSnapshotStore();
         services.AddSingleton<ISnapshotStore<TestState>>(custom);
 
+#pragma warning disable ZAES003 // the deprecated open-generic registration is still under test
         services.AddEventSourcing().UseInMemorySnapshotStore();
+#pragma warning restore ZAES003
 
         var provider = services.BuildServiceProvider();
         provider.GetRequiredService<ISnapshotStore<TestState>>().Should().BeSameAs(custom);

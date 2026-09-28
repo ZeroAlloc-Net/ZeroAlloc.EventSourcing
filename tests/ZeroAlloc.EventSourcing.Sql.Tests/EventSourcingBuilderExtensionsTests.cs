@@ -52,10 +52,57 @@ public class EventSourcingBuilderExtensionsTests
         builder.UsePostgreSqlCheckpointStore(FakePgCs).Should().BeSameAs(builder);
     }
 
-    // ── PostgreSQL snapshot (open generic) ───────────────────────────────────
+    // ── PostgreSQL snapshot ──────────────────────────────────────────────────
 
     [Fact]
-    public void UsePostgreSqlSnapshotStore_RegistersOpenGeneric()
+    public void UsePostgreSqlSnapshotStoreOfTState_RegistersPostgreSqlSnapshotStore()
+    {
+        var services = BaseServices();
+        services.AddEventSourcing().UsePostgreSqlSnapshotStore<TestState>(FakePgCs);
+
+        var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<ISnapshotStore<TestState>>()
+                .Should().BeOfType<PostgreSqlSnapshotStore<TestState>>();
+    }
+
+    // NativeAOT refuses to build a value-type instantiation of an open-generic registration,
+    // and TState is always a value type, so the registration must be closed over TState.
+    [Fact]
+    public void UsePostgreSqlSnapshotStoreOfTState_RegistersClosedServiceType()
+    {
+        var services = BaseServices();
+        services.AddEventSourcing().UsePostgreSqlSnapshotStore<TestState>(FakePgCs);
+
+        services.Should().ContainSingle(d => d.ServiceType == typeof(ISnapshotStore<TestState>));
+        services.Should().NotContain(d => d.ServiceType == typeof(ISnapshotStore<>));
+    }
+
+    [Fact]
+    public void UsePostgreSqlSnapshotStoreOfTState_DoesNotOverwriteUserSnapshotStore()
+    {
+        var services = BaseServices();
+        var custom = new StubSnapshotStore();
+        services.AddSingleton<ISnapshotStore<TestState>>(custom);
+
+        services.AddEventSourcing().UsePostgreSqlSnapshotStore<TestState>(FakePgCs);
+
+        var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<ISnapshotStore<TestState>>().Should().BeSameAs(custom);
+    }
+
+    [Fact]
+    public void UsePostgreSqlSnapshotStoreOfTState_ReturnsBuilder_ForChaining()
+    {
+        var services = BaseServices();
+        var builder = services.AddEventSourcing();
+        builder.UsePostgreSqlSnapshotStore<TestState>(FakePgCs).Should().BeSameAs(builder);
+    }
+
+    // ── PostgreSQL snapshot, deprecated open generic ─────────────────────────
+
+#pragma warning disable ZAES003 // the deprecated open-generic registration is still under test
+    [Fact]
+    public void UsePostgreSqlSnapshotStore_Obsolete_RegistersOpenGeneric()
     {
         var services = BaseServices();
         services.AddEventSourcing().UsePostgreSqlSnapshotStore(FakePgCs);
@@ -66,7 +113,7 @@ public class EventSourcingBuilderExtensionsTests
     }
 
     [Fact]
-    public void UsePostgreSqlSnapshotStore_DoesNotOverwriteUserSnapshotStore()
+    public void UsePostgreSqlSnapshotStore_Obsolete_DoesNotOverwriteUserSnapshotStore()
     {
         var services = BaseServices();
         var custom = new StubSnapshotStore();
@@ -79,12 +126,13 @@ public class EventSourcingBuilderExtensionsTests
     }
 
     [Fact]
-    public void UsePostgreSqlSnapshotStore_ReturnsBuilder_ForChaining()
+    public void UsePostgreSqlSnapshotStore_Obsolete_ReturnsBuilder_ForChaining()
     {
         var services = BaseServices();
         var builder = services.AddEventSourcing();
         builder.UsePostgreSqlSnapshotStore(FakePgCs).Should().BeSameAs(builder);
     }
+#pragma warning restore ZAES003
 
     // ── PostgreSQL dead-letter ───────────────────────────────────────────────
 

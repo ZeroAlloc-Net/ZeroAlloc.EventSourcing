@@ -1,1 +1,2 @@
 #nullable enable
+static ZeroAlloc.EventSourcing.InMemory.EventSourcingBuilderExtensions.UseInMemorySnapshotStore<TState>(this ZeroAlloc.EventSourcing.EventSourcingBuilder! builder) -> ZeroAlloc.EventSourcing.EventSourcingBuilder!

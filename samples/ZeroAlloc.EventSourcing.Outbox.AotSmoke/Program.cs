@@ -3,8 +3,10 @@
 // AOT smoke for ZeroAlloc.EventSourcing.Outbox. Boots a Host, wires
 // InMemoryEventStoreAdapter + InMemoryCheckpointStore + a hand-rolled
 // INotificationDispatcher + OutboxDispatcher (via AddOutbox), appends one
-// SmokeEvent, lets the polling loop run for ~2 seconds, asserts the handler
-// was invoked exactly once.
+// SmokeEvent and two SmokeStructEvents, lets the polling loop run for ~2 seconds,
+// and asserts each event was delivered exactly once with its values intact.
+// SmokeStructEvent is a struct with a nullable value-type field, set on one and
+// null on the other.
 //
 // PublishAot=true + WarningsAsErrors on IL2026/IL2067/IL2075/IL2091/IL3050/IL3051
 // gates this assembly's dispatch path against any reflection escape.
@@ -44,6 +46,7 @@ var host = new HostBuilder()
         services.AddSingleton<IEventSerializer, SmokeEventSerializer>();
         services.AddSingleton<IEventTypeRegistry, SmokeTypeRegistry>();
         services.AddSingleton<SmokeHandler>();
+        services.AddSingleton<SmokeStructHandler>();
         services.AddSingleton<INotificationDispatcher, SmokeDispatcher>();
 
         services.AddEventSourcing()
@@ -67,7 +70,12 @@ await using var _hostScope = (IAsyncDisposable)host;
 var store = host.Services.GetRequiredService<IEventStore>();
 var appendResult = await store.AppendAsync(
     new StreamId("test-1"),
-    new object[] { new SmokeEvent(42) }.AsMemory(),
+    new object[]
+    {
+        new SmokeEvent(42),
+        new SmokeStructEvent(7, 12.5m),
+        new SmokeStructEvent(8, null),
+    }.AsMemory(),
     StreamPosition.Start);
 
 if (!appendResult.IsSuccess)
@@ -96,6 +104,19 @@ if (handler.Calls != 1)
     return 1;
 }
 
+var structEvents = host.Services.GetRequiredService<SmokeStructHandler>().Received;
+if (structEvents.Count != 2)
+{
+    Console.Error.WriteLine($"AOT smoke FAIL: expected 2 struct events, got {structEvents.Count}");
+    return 1;
+}
+if (structEvents[0] != new SmokeStructEvent(7, 12.5m) || structEvents[1] != new SmokeStructEvent(8, null))
+{
+    Console.Error.WriteLine(
+        $"AOT smoke FAIL: struct events expected (7, 12.5) then (8, null), got {structEvents[0]} then {structEvents[1]}");
+    return 1;
+}
+
 Console.WriteLine("Outbox AOT smoke PASS");
 return 0;
 
@@ -120,6 +141,29 @@ namespace ZeroAlloc.EventSourcing.Outbox.AotSmoke
         }
     }
 
+    /// <summary>Struct domain event with a nullable value-type field.</summary>
+    public readonly record struct SmokeStructEvent(long Sequence, decimal? Amount) : INotification;
+
+    /// <summary>Handler that records every SmokeStructEvent the dispatcher delivered, in order.</summary>
+    public sealed class SmokeStructHandler : INotificationHandler<SmokeStructEvent>
+    {
+        private readonly List<SmokeStructEvent> _received = new();
+        private readonly Lock _gate = new();
+
+        /// <summary>A copy of the events received so far.</summary>
+        public IReadOnlyList<SmokeStructEvent> Received
+        {
+            get { lock (_gate) return _received.ToArray(); }
+        }
+
+        /// <inheritdoc/>
+        public ValueTask Handle(SmokeStructEvent notification, CancellationToken ct)
+        {
+            lock (_gate) _received.Add(notification);
+            return ValueTask.CompletedTask;
+        }
+    }
+
     /// <summary>
     /// Hand-rolled <see cref="INotificationDispatcher"/> that switches over the known
     /// notification types in this compilation. Mirrors the shape of the generator-emitted
@@ -129,12 +173,18 @@ namespace ZeroAlloc.EventSourcing.Outbox.AotSmoke
     internal sealed class SmokeDispatcher : INotificationDispatcher
     {
         private readonly SmokeHandler _handler;
+        private readonly SmokeStructHandler _structHandler;
 
-        public SmokeDispatcher(SmokeHandler handler) => _handler = handler;
+        public SmokeDispatcher(SmokeHandler handler, SmokeStructHandler structHandler)
+        {
+            _handler = handler;
+            _structHandler = structHandler;
+        }
 
         public ValueTask DispatchAsync(object @event, CancellationToken ct) => @event switch
         {
             SmokeEvent e => _handler.Handle(e, ct),
+            SmokeStructEvent e => _structHandler.Handle(e, ct),
             _ => ValueTask.CompletedTask,
         };
     }
@@ -149,6 +199,10 @@ namespace ZeroAlloc.EventSourcing.Outbox.AotSmoke
         {
             if (@event is SmokeEvent evt)
                 return Encoding.UTF8.GetBytes(evt.Value.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            // "<sequence>|<amount>", with an empty amount for null.
+            if (@event is SmokeStructEvent se)
+                return Encoding.UTF8.GetBytes(string.Create(
+                    System.Globalization.CultureInfo.InvariantCulture, $"{se.Sequence}|{se.Amount}"));
             throw new NotSupportedException($"Unsupported event type {typeof(TEvent).FullName}");
         }
 
@@ -158,6 +212,16 @@ namespace ZeroAlloc.EventSourcing.Outbox.AotSmoke
             {
                 var value = int.Parse(Encoding.UTF8.GetString(payload.Span), System.Globalization.CultureInfo.InvariantCulture);
                 return new SmokeEvent(value);
+            }
+            if (eventType == typeof(SmokeStructEvent))
+            {
+                var text = Encoding.UTF8.GetString(payload.Span);
+                var bar = text.IndexOf('|', StringComparison.Ordinal);
+                var sequence = long.Parse(text.AsSpan(0, bar), System.Globalization.CultureInfo.InvariantCulture);
+                decimal? amount = bar == text.Length - 1
+                    ? null
+                    : decimal.Parse(text.AsSpan(bar + 1), System.Globalization.CultureInfo.InvariantCulture);
+                return new SmokeStructEvent(sequence, amount);
             }
             throw new NotSupportedException($"Unsupported event type {eventType.FullName}");
         }
@@ -171,6 +235,11 @@ namespace ZeroAlloc.EventSourcing.Outbox.AotSmoke
             if (eventType == nameof(SmokeEvent))
             {
                 type = typeof(SmokeEvent);
+                return true;
+            }
+            if (eventType == nameof(SmokeStructEvent))
+            {
+                type = typeof(SmokeStructEvent);
                 return true;
             }
             type = null;

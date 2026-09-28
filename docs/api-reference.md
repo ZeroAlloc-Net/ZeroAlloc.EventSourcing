@@ -689,7 +689,7 @@ Use Dependency Injection to plug in implementations. `AddEventSourcing()` return
 services
     .AddEventSourcing()                    // returns EventSourcingBuilder
     .UsePostgreSqlEventStore(connStr)      // IEventStoreAdapter + IEventStore
-    .UsePostgreSqlSnapshotStore(connStr)   // ISnapshotStore<>
+    .UsePostgreSqlSnapshotStore<OrderState>(connStr)   // ISnapshotStore<OrderState>
     .UseAggregateRepository<Order, OrderId>(
         () => new Order(),
         id => new StreamId($"order-{id.Value}"));
