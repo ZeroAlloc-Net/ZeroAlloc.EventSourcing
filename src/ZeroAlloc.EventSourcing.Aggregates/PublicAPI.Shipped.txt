@@ -1,0 +1,28 @@
+#nullable enable
+abstract ZeroAlloc.EventSourcing.Aggregates.Aggregate<TId, TState>.ApplyEvent(TState state, object! event) -> TState
+static ZeroAlloc.EventSourcing.Aggregates.EventSourcingBuilderExtensions.UseAggregateRepository<TAggregate, TId>(this ZeroAlloc.EventSourcing.EventSourcingBuilder! builder, System.Func<TAggregate>! factory, System.Func<TId, ZeroAlloc.EventSourcing.StreamId>! streamIdFactory) -> ZeroAlloc.EventSourcing.EventSourcingBuilder!
+ZeroAlloc.EventSourcing.Aggregates.Aggregate<TId, TState>
+ZeroAlloc.EventSourcing.Aggregates.Aggregate<TId, TState>.Aggregate() -> void
+ZeroAlloc.EventSourcing.Aggregates.Aggregate<TId, TState>.Dispose() -> void
+ZeroAlloc.EventSourcing.Aggregates.Aggregate<TId, TState>.Id.get -> TId
+ZeroAlloc.EventSourcing.Aggregates.Aggregate<TId, TState>.Id.set -> void
+ZeroAlloc.EventSourcing.Aggregates.Aggregate<TId, TState>.OriginalVersion.get -> ZeroAlloc.EventSourcing.StreamPosition
+ZeroAlloc.EventSourcing.Aggregates.Aggregate<TId, TState>.Raise<TEvent>(TEvent event) -> void
+ZeroAlloc.EventSourcing.Aggregates.Aggregate<TId, TState>.State.get -> TState
+ZeroAlloc.EventSourcing.Aggregates.Aggregate<TId, TState>.Version.get -> ZeroAlloc.EventSourcing.StreamPosition
+ZeroAlloc.EventSourcing.Aggregates.AggregateRepository<TAggregate, TId>
+ZeroAlloc.EventSourcing.Aggregates.AggregateRepository<TAggregate, TId>.AggregateRepository(ZeroAlloc.EventSourcing.IEventStore! store, System.Func<TAggregate>! factory, System.Func<TId, ZeroAlloc.EventSourcing.StreamId>! streamIdFactory) -> void
+ZeroAlloc.EventSourcing.Aggregates.AggregateRepository<TAggregate, TId>.LoadAsync(TId id, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeroAlloc.Results.Result<TAggregate, ZeroAlloc.EventSourcing.StoreError!>>
+ZeroAlloc.EventSourcing.Aggregates.AggregateRepository<TAggregate, TId>.SaveAsync(TAggregate aggregate, TId id, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeroAlloc.Results.Result<ZeroAlloc.EventSourcing.AppendResult, ZeroAlloc.EventSourcing.StoreError!>>
+ZeroAlloc.EventSourcing.Aggregates.EventSourcingBuilderExtensions
+ZeroAlloc.EventSourcing.Aggregates.IAggregate
+ZeroAlloc.EventSourcing.Aggregates.IAggregate.OriginalVersion.get -> ZeroAlloc.EventSourcing.StreamPosition
+ZeroAlloc.EventSourcing.Aggregates.IAggregateRepository<TAggregate, TId>
+ZeroAlloc.EventSourcing.Aggregates.IAggregateRepository<TAggregate, TId>.LoadAsync(TId id, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeroAlloc.Results.Result<TAggregate, ZeroAlloc.EventSourcing.StoreError!>>
+ZeroAlloc.EventSourcing.Aggregates.IAggregateRepository<TAggregate, TId>.SaveAsync(TAggregate aggregate, TId id, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeroAlloc.Results.Result<ZeroAlloc.EventSourcing.AppendResult, ZeroAlloc.EventSourcing.StoreError!>>
+ZeroAlloc.EventSourcing.Aggregates.IAggregateState<TSelf>
+ZeroAlloc.EventSourcing.Aggregates.IAggregateState<TSelf>.Initial.get -> TSelf
+ZeroAlloc.EventSourcing.Aggregates.SnapshotCachingRepositoryDecorator<TAggregate, TId, TState>
+ZeroAlloc.EventSourcing.Aggregates.SnapshotCachingRepositoryDecorator<TAggregate, TId, TState>.LoadAsync(TId id, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeroAlloc.Results.Result<TAggregate, ZeroAlloc.EventSourcing.StoreError!>>
+ZeroAlloc.EventSourcing.Aggregates.SnapshotCachingRepositoryDecorator<TAggregate, TId, TState>.SaveAsync(TAggregate aggregate, TId id, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeroAlloc.Results.Result<ZeroAlloc.EventSourcing.AppendResult, ZeroAlloc.EventSourcing.StoreError!>>
+ZeroAlloc.EventSourcing.Aggregates.SnapshotCachingRepositoryDecorator<TAggregate, TId, TState>.SnapshotCachingRepositoryDecorator(ZeroAlloc.EventSourcing.Aggregates.IAggregateRepository<TAggregate, TId>! innerRepository, ZeroAlloc.EventSourcing.ISnapshotStore<TState>! snapshotStore, ZeroAlloc.EventSourcing.SnapshotLoadingStrategy strategy, System.Action<TAggregate, TState, ZeroAlloc.EventSourcing.StreamPosition>! restoreState, ZeroAlloc.EventSourcing.IEventStore? eventStore = null, System.Func<TId, ZeroAlloc.EventSourcing.StreamId>? streamIdFactory = null, System.Func<TAggregate>? aggregateFactory = null, ZeroAlloc.EventSourcing.ISnapshotPolicy? snapshotPolicy = null, System.Func<TAggregate, TState>? extractState = null) -> void

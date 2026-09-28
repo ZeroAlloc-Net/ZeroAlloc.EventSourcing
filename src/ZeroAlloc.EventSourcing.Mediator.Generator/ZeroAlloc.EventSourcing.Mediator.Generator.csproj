@@ -8,9 +8,13 @@
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
     <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
-    <!-- RS2008: Analyzer release tracking — not packaging as a stand-alone analyzer, descriptors live alongside generator. -->
-    <NoWarn>$(NoWarn);RS2008</NoWarn>
   </PropertyGroup>
+  <ItemGroup>
+    <!-- Release tracking for the diagnostics this generator reports: RS2000-RS2008 check each
+         descriptor against these, so a shipped rule cannot change or disappear unnoticed. -->
+    <AdditionalFiles Include="AnalyzerReleases.Shipped.md" />
+    <AdditionalFiles Include="AnalyzerReleases.Unshipped.md" />
+  </ItemGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="ZeroAlloc.EventSourcing.Mediator.Generator.Tests" />
   </ItemGroup>
