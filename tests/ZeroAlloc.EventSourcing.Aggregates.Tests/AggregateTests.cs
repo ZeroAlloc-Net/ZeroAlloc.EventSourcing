@@ -98,4 +98,132 @@ public class AggregateTests
         order.OriginalVersion.Value.Should().Be(1);
         order.DequeueUncommitted().Length.Should().Be(0); // not uncommitted
     }
+    private static OrderState PlacedAndShippedState()
+    {
+        using var source = new Order();
+        source.Place("ORD-1", 75m);
+        source.Ship("TRACK-1");
+        return source.State;
+    }
+
+    [Fact]
+    public void RestoreState_OnFreshAggregate_SetsStateAndBothVersions_WithoutUncommittedEvents()
+    {
+        var state = PlacedAndShippedState();
+        using var order = new Order();
+
+        order.RestoreState(state, new StreamPosition(2));
+
+        order.State.IsPlaced.Should().BeTrue();
+        order.State.IsShipped.Should().BeTrue();
+        order.State.Total.Should().Be(75m);
+        order.Version.Value.Should().Be(2);
+        order.OriginalVersion.Value.Should().Be(2);
+        order.DequeueUncommitted().Length.Should().Be(0);
+    }
+
+    [Fact]
+    public void RestoreState_MatchesTheBookkeepingOfReplayingTheSameEvents()
+    {
+        using var replayed = new Order();
+        replayed.ApplyHistoric(new OrderPlacedEvent("ORD-1", 75m), new StreamPosition(1));
+        replayed.ApplyHistoric(new OrderShippedEvent("TRACK-1"), new StreamPosition(2));
+
+        using var restored = new Order();
+        restored.RestoreState(replayed.State, replayed.Version);
+
+        restored.State.Should().Be(replayed.State);
+        restored.Version.Should().Be(replayed.Version);
+        restored.OriginalVersion.Should().Be(replayed.OriginalVersion);
+        restored.DequeueUncommitted().Length.Should().Be(replayed.DequeueUncommitted().Length);
+    }
+
+    [Fact]
+    public void RestoreState_ThenTailEventsAndARaise_TracksVersionsLikeAFullReplay()
+    {
+        using var order = new Order();
+        order.RestoreState(PlacedAndShippedState(), new StreamPosition(2));
+        order.ApplyHistoric(new OrderShippedEvent("TRACK-2"), new StreamPosition(3));
+
+        order.Version.Value.Should().Be(3);
+        order.OriginalVersion.Value.Should().Be(3);
+
+        order.Ship("TRACK-3");
+
+        order.Version.Value.Should().Be(4);
+        order.OriginalVersion.Value.Should().Be(3); // the expected version for the next save
+        order.DequeueUncommitted().Length.Should().Be(1);
+    }
+
+    [Fact]
+    public void RestoreState_AfterRaise_Throws()
+    {
+        using var order = new Order();
+        order.Place("ORD-1", 1m);
+
+        var act = () => order.RestoreState(PlacedAndShippedState(), new StreamPosition(2));
+
+        act.Should().Throw<InvalidOperationException>();
+        order.Version.Value.Should().Be(1);
+        order.State.IsShipped.Should().BeFalse();
+    }
+
+    [Fact]
+    public void RestoreState_AfterRaisedEventsWereDequeued_StillThrows()
+    {
+        using var order = new Order();
+        order.Place("ORD-1", 1m);
+        order.DequeueUncommitted();
+
+        var act = () => order.RestoreState(PlacedAndShippedState(), new StreamPosition(2));
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void RestoreState_AfterHistoricEvents_Throws()
+    {
+        using var order = new Order();
+        order.ApplyHistoric(new OrderPlacedEvent("ORD-1", 1m), new StreamPosition(1));
+
+        var act = () => order.RestoreState(PlacedAndShippedState(), new StreamPosition(2));
+
+        act.Should().Throw<InvalidOperationException>();
+        order.Version.Value.Should().Be(1);
+    }
+
+    [Fact]
+    public void RestoreState_Twice_Throws()
+    {
+        using var order = new Order();
+        order.RestoreState(PlacedAndShippedState(), new StreamPosition(2));
+
+        var act = () => order.RestoreState(OrderState.Initial, new StreamPosition(5));
+
+        act.Should().Throw<InvalidOperationException>();
+        order.Version.Value.Should().Be(2);
+        order.State.IsShipped.Should().BeTrue();
+    }
+
+    [Fact]
+    public void RestoreState_TwiceAtStartPosition_Throws()
+    {
+        using var order = new Order();
+        order.RestoreState(OrderState.Initial, StreamPosition.Start);
+
+        var act = () => order.RestoreState(PlacedAndShippedState(), new StreamPosition(2));
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void RestoreState_WithNegativePosition_Throws()
+    {
+        using var order = new Order();
+
+        var act = () => order.RestoreState(PlacedAndShippedState(), StreamPosition.End);
+
+        act.Should().Throw<ArgumentOutOfRangeException>();
+        order.Version.Should().Be(StreamPosition.Start);
+    }
 }

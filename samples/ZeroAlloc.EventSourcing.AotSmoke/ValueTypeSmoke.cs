@@ -37,9 +37,8 @@ internal static class ValueTypeSmoke
         // Struct TState resolved from the container, the way an application gets its snapshot store.
         var snapshots = provider.GetRequiredService<ISnapshotStore<AccountState>>();
 
-        // The decorator only writes snapshots here. Loading from one needs a restoreState
-        // callback, and a consumer has no public way to put snapshot state onto an aggregate,
-        // so the load below goes through IgnoreSnapshot. See issue #387.
+        // This decorator writes the snapshots and loads by full replay. The snapshot loads are
+        // checked at the end, through decorators that restore with Aggregate.RestoreState.
         var decorator = new SnapshotCachingRepositoryDecorator<Account, AccountId, AccountState>(
             repository,
             snapshots,
@@ -163,7 +162,101 @@ internal static class ValueTypeSmoke
         }
         if (index != 5) return Fail($"expected 5 events in the stream, read {index}");
 
+        // Save 4 through the IgnoreSnapshot decorator: version 6, one event past the snapshot at 5,
+        // below the every-2 policy, so the snapshot stays at 5 and the next loads have a tail to replay.
+        loaded = await decorator.LoadAsync(id);
+        if (!loaded.IsSuccess) return Fail($"load before the tail event failed: {loaded.Error}");
+        using (var account = loaded.Value)
+        {
+            account.Deposit(0.05m, FirstValueDate);
+            var saved = await decorator.SaveAsync(account, id);
+            if (!saved.IsSuccess || saved.Value.NextExpectedVersion.Value != 6)
+                return Fail($"tail save expected version 6, got {(saved.IsSuccess ? saved.Value.NextExpectedVersion.Value.ToString() : saved.Error.ToString())}");
+        }
+
+        // Snapshot loads: the struct state at 5 restored through the public RestoreState, then the
+        // struct event at 6 replayed on top. Both strategies that read the snapshot.
+        var expectedAtSix = expectedAtFive with { Balance = 110.05m, Deposits = 3, LastValueDate = FirstValueDate };
+        var check = await LoadFromSnapshotAsync(
+            SnapshotLoadingStrategy.ValidateAndReplay, repository, snapshots, store, id, expectedAtFive, expectedAtSix, appendAfterLoad: false);
+        if (check != 0) return check;
+        check = await LoadFromSnapshotAsync(
+            SnapshotLoadingStrategy.TrustSnapshot, repository, snapshots, store, id, expectedAtFive, expectedAtSix, appendAfterLoad: true);
+        if (check != 0) return check;
+
         Console.WriteLine("AOT smoke: value types PASS");
+        return 0;
+    }
+
+    private static async Task<int> LoadFromSnapshotAsync(
+        SnapshotLoadingStrategy strategy,
+        IAggregateRepository<Account, AccountId> repository,
+        ISnapshotStore<AccountState> snapshots,
+        IEventStore store,
+        AccountId id,
+        AccountState expectedSnapshot,
+        AccountState expectedLoaded,
+        bool appendAfterLoad)
+    {
+        var restores = 0;
+        StreamPosition restoredAt = default;
+        AccountState restoredState = default;
+        var decorator = new SnapshotCachingRepositoryDecorator<Account, AccountId, AccountState>(
+            repository,
+            snapshots,
+            strategy,
+            (account, state, pos) =>
+            {
+                restores++;
+                restoredAt = pos;
+                restoredState = state;
+                account.RestoreState(state, pos);
+            },
+            store,
+            StreamFor,
+            static () => new Account());
+
+        var loaded = await decorator.LoadAsync(id);
+        if (!loaded.IsSuccess) return Fail($"{strategy} load failed: {loaded.Error}");
+        using var account = loaded.Value;
+
+        if (restores != 1 || restoredAt.Value != 5 || restoredState != expectedSnapshot)
+            return Fail($"{strategy} should restore the snapshot at 5 once, restored {restores}x at {restoredAt.Value}: {restoredState}");
+        if (account.State != expectedLoaded)
+            return Fail($"{strategy} state after snapshot plus tail expected {expectedLoaded}, got {account.State}");
+        if (account.State.LastValueDate is not { } date || date.Offset != TimeSpan.FromHours(2))
+            return Fail($"{strategy} LastValueDate lost its value or offset: {account.State.LastValueDate}");
+        if (account.Version.Value != 6 || account.OriginalVersion.Value != 6)
+            return Fail($"{strategy} versions expected 6/6, got {account.Version.Value}/{account.OriginalVersion.Value}");
+
+        // Restoring over events that are already applied is refused.
+        try
+        {
+            account.RestoreState(AccountState.Initial, new StreamPosition(1));
+            return Fail($"{strategy} RestoreState on a loaded aggregate should have thrown");
+        }
+        catch (InvalidOperationException)
+        {
+            // expected
+        }
+        if (account.State != expectedLoaded || account.Version.Value != 6)
+            return Fail($"{strategy} a refused RestoreState changed the aggregate: {account.State}, version {account.Version.Value}");
+
+        if (!appendAfterLoad) return 0;
+
+        // The restored OriginalVersion is the expected version of the next append.
+        account.ChangeOverdraftLimit(1000m);
+        var saved = await decorator.SaveAsync(account, id);
+        if (!saved.IsSuccess) return Fail($"{strategy} save after snapshot load failed: {saved.Error}");
+        if (saved.Value.NextExpectedVersion.Value != 7)
+            return Fail($"{strategy} save after snapshot load expected version 7, got {saved.Value.NextExpectedVersion.Value}");
+
+        var full = await repository.LoadAsync(id);
+        if (!full.IsSuccess) return Fail($"full replay after snapshot-load save failed: {full.Error}");
+        using var replayed = full.Value;
+        var expectedAtSeven = expectedLoaded with { OverdraftLimit = 1000m };
+        if (replayed.State != expectedAtSeven || replayed.Version.Value != 7)
+            return Fail($"full replay after snapshot-load save expected {expectedAtSeven} at 7, got {replayed.State} at {replayed.Version.Value}");
         return 0;
     }
 

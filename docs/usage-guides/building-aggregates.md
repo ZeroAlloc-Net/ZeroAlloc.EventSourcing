@@ -132,21 +132,24 @@ public abstract class Aggregate<TId, TState> : IAggregateRoot
     /// Called when loading from event store
     internal void ApplyHistoric(object @event, StreamPosition position) { ... }
     
-    /// Restore state from a snapshot
-    /// Called before replaying remaining events after snapshot
-    internal void RestoreState(TState state, StreamPosition position) { ... }
-    
+    /// Restore state from a snapshot: sets State, Version and OriginalVersion to the snapshot's
+    /// Called by the snapshot decorator's restoreState callback, before replaying the remaining events
+    /// Throws InvalidOperationException unless the aggregate is fresh
+    public void RestoreState(TState state, StreamPosition position) { ... }
+
     /// Get all uncommitted events raised since load/creation
-    /// Called after modification to get events to save
-    public object[] DequeueUncommitted() { ... }
+    /// Called by the repository on save to get the events to append
+    internal ReadOnlySpan<object> DequeueUncommitted() { ... }
 }
 ```
 
 **Key usage patterns:**
 - `Raise()` to emit events from commands
-- `ApplyHistoric()` when replaying from event store
-- `RestoreState()` when loading from snapshot
-- `DequeueUncommitted()` to get events before saving
+- `ApplyHistoric()` when the repository replays from the event store
+- `RestoreState()` in the `restoreState` callback of `SnapshotCachingRepositoryDecorator`:
+  `restoreState: (order, state, pos) => order.RestoreState(state, pos)`. Only a fresh aggregate
+  can be restored; one that has raised, replayed or restored anything throws `InvalidOperationException`
+- `DequeueUncommitted()` when the repository saves
 
 ### IAggregateState<TState>
 

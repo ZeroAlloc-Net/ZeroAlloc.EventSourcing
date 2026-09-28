@@ -17,6 +17,10 @@ public abstract class Aggregate<TId, TState> : IAggregate, IDisposable
     private readonly HeapPooledList<object> _uncommitted = new();
     private bool _disposed;
 
+    // Set once anything has put state on this aggregate: a raised, replayed or restored event.
+    // RestoreState is only legal while it is false.
+    private bool _hasHistory;
+
     /// <summary>The aggregate identifier.</summary>
     public TId Id { get; protected set; }
 
@@ -27,8 +31,8 @@ public abstract class Aggregate<TId, TState> : IAggregate, IDisposable
     public StreamPosition OriginalVersion { get; private set; } = StreamPosition.Start;
 
     /// <summary>
-    /// The current aggregate state. Read-only externally — mutation only occurs via <see cref="Raise{TEvent}"/>
-    /// and <see cref="ApplyHistoric"/>. Exposed publicly so consumers can read state for queries and projections
+    /// The current aggregate state. Read-only externally — mutation only occurs via <see cref="Raise{TEvent}"/>,
+    /// <see cref="ApplyHistoric"/> and <see cref="RestoreState"/>. Exposed publicly so consumers can read state for queries and projections
     /// without requiring a separate read model layer.
     /// </summary>
     public TState State { get; private set; } = TState.Initial;
@@ -42,6 +46,7 @@ public abstract class Aggregate<TId, TState> : IAggregate, IDisposable
         _uncommitted.Add(@event);
         State = ApplyEvent(State, @event);
         Version = Version.Next();
+        _hasHistory = true;
     }
 
     /// <summary>Applies a historic event during stream replay. Does NOT add to the uncommitted queue.</summary>
@@ -50,6 +55,46 @@ public abstract class Aggregate<TId, TState> : IAggregate, IDisposable
         State = ApplyEvent(State, @event);
         Version = position;
         OriginalVersion = position;
+        _hasHistory = true;
+    }
+
+    /// <summary>
+    /// Restores the aggregate from a snapshot: sets <see cref="State"/> to <paramref name="state"/>
+    /// and both <see cref="Version"/> and <see cref="OriginalVersion"/> to <paramref name="position"/>,
+    /// exactly as replaying the events up to <paramref name="position"/> would have left them.
+    /// No events are queued, so a following save appends only what is raised after the restore,
+    /// with <paramref name="position"/> (or the position of the last replayed event) as its expected version.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This is what the <c>restoreState</c> callback of
+    /// <see cref="SnapshotCachingRepositoryDecorator{TAggregate,TId,TState}"/> calls:
+    /// <c>restoreState: (order, state, pos) =&gt; order.RestoreState(state, pos)</c>.
+    /// It is public so that callback can be written outside the aggregate class.
+    /// </para>
+    /// <para>
+    /// Only a fresh aggregate can be restored: one that has not raised, replayed or restored anything.
+    /// Restoring any other aggregate would overwrite state that events already produced, so it throws.
+    /// </para>
+    /// </remarks>
+    /// <param name="state">The snapshot state.</param>
+    /// <param name="position">The stream position the snapshot was taken at.</param>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="position"/> is negative.</exception>
+    /// <exception cref="InvalidOperationException">
+    /// The aggregate has already raised or replayed events, or has already been restored.
+    /// </exception>
+    public void RestoreState(TState state, StreamPosition position)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(position.Value, nameof(position));
+        if (_hasHistory)
+            throw new InvalidOperationException(
+                $"{GetType().Name} can only be restored from a snapshot while it is fresh, before any event is raised, replayed or restored. " +
+                $"It is at version {Version.Value}.");
+
+        State = state;
+        Version = position;
+        OriginalVersion = position;
+        _hasHistory = true;
     }
 
     /// <summary>Returns the uncommitted events as a span and clears the queue. Snapshots to array before clear for pool safety.</summary>

@@ -231,7 +231,10 @@ var order = await cachedRepository.LoadAsync(orderId);
 **How it works:**
 
 1. Check if a snapshot exists
-2. If yes, restore state and replay recent events
+2. If yes, restore state and replay recent events. `restoreState` calls the public
+   `Aggregate<TId, TState>.RestoreState(state, position)`, which sets `State`, `Version` and
+   `OriginalVersion` as if the events up to `position` had been replayed, on the fresh aggregate
+   from `aggregateFactory`
 3. If no, replay from the beginning
 4. After loading, optionally save a snapshot
 

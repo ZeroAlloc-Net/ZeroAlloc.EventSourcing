@@ -34,15 +34,7 @@ public sealed class SnapshotCachingRepositoryDecoratorTests
     }
 
     private static void RestoreOrderState(Order aggregate, OrderState state, StreamPosition fromPosition)
-    {
-        // Restore the state directly onto the aggregate
-        // This simulates the state restoration that would happen before replaying newer events
-        aggregate.ApplyHistoric(new OrderPlacedEvent(state.OrderId!, state.Total), new StreamPosition(1));
-        if (state.IsShipped)
-        {
-            aggregate.ApplyHistoric(new OrderShippedEvent(state.TrackingNumber!), new StreamPosition(2));
-        }
-    }
+        => aggregate.RestoreState(state, fromPosition);
 
     [Fact]
     public async Task Decorator_LoadWithoutSnapshot_DelegatesToInnerRepository()
