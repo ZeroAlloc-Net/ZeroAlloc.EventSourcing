@@ -1,4 +1,5 @@
 using System.Text.Json;
+using AwesomeAssertions;
 using Npgsql;
 using ZeroAlloc.EventSourcing;
 using ZeroAlloc.EventSourcing.Sql;
@@ -29,6 +30,52 @@ public sealed class PostgreSqlDeadLetterStoreTests(PostgreSqlContainerFixture fi
     }
 
     protected override IDeadLetterStore CreateStore() => _store;
+
+    [Fact]
+    public async Task EnsureSchemaAsync_UpgradesTableFromBeforeMetadataColumns()
+    {
+        var failedAt = new DateTimeOffset(2026, 1, 2, 3, 4, 5, TimeSpan.Zero);
+        await using (var conn = await _dataSource.OpenConnectionAsync())
+        {
+            await using var cmd = conn.CreateCommand();
+            // The dead_letters schema as the store created it before it kept event metadata.
+            cmd.CommandText = """
+                DROP TABLE dead_letters;
+                CREATE TABLE dead_letters (
+                    id               BIGSERIAL       PRIMARY KEY,
+                    consumer_id      VARCHAR(256)    NOT NULL,
+                    stream_id        VARCHAR(255)    NOT NULL,
+                    position         BIGINT          NOT NULL,
+                    event_type       VARCHAR(500)    NOT NULL,
+                    payload          BYTEA           NOT NULL,
+                    exception_type   VARCHAR(500)    NOT NULL,
+                    exception_message TEXT           NOT NULL,
+                    failed_at        TIMESTAMPTZ     NOT NULL
+                );
+                INSERT INTO dead_letters
+                    (consumer_id, stream_id, position, event_type, payload, exception_type, exception_message, failed_at)
+                VALUES ('legacy', 's', 1, 'Old', '\x7b7d', 'Exception', 'old', @failed_at);
+                """;
+            cmd.Parameters.AddWithValue("@failed_at", failedAt);
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        await _store.EnsureSchemaAsync();
+        await _store.EnsureSchemaAsync();
+
+        var metadata = new EventMetadata(Guid.NewGuid(), "New", failedAt, Guid.NewGuid(), null);
+        var envelope = new EventEnvelope(new StreamId("s"), new StreamPosition(2), new object(), metadata);
+        await _store.WriteAsync("current", envelope, new InvalidOperationException("new"));
+
+        var results = new List<DeadLetterEntry>();
+        await foreach (var e in _store.ReadAllAsync())
+            results.Add(e);
+
+        results.Should().HaveCount(2);
+        results[0].Envelope.Metadata.EventId.Should().Be(Guid.Empty, "the row predates the event_id column");
+        results[0].Envelope.Metadata.OccurredAt.Should().Be(failedAt);
+        results[1].Envelope.Metadata.Should().Be(metadata);
+    }
 
     private sealed class JsonEventSerializer : IEventSerializer
     {

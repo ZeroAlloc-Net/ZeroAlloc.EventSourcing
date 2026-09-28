@@ -28,9 +28,15 @@ public sealed class SqlServerDeadLetterStore : IDeadLetterStore
     }
 
     /// <summary>
-    /// Creates the <c>dbo.dead_letters</c> table in SQL Server if it does not already exist.
+    /// Creates the <c>dbo.dead_letters</c> table in SQL Server if it does not already exist, and adds
+    /// the event metadata columns to a table created by an earlier version.
     /// This method is idempotent and safe to call multiple times.
     /// </summary>
+    /// <remarks>
+    /// The metadata columns are nullable because a migrated table already holds rows written without
+    /// them. <see cref="ReadAllAsync"/> returns <see cref="Guid.Empty"/> as the event id and the
+    /// failure time as the occurrence time for such rows.
+    /// </remarks>
     /// <param name="ct">A cancellation token.</param>
     public async ValueTask EnsureSchemaAsync(CancellationToken ct = default)
     {
@@ -55,9 +61,22 @@ public sealed class SqlServerDeadLetterStore : IDeadLetterStore
                     payload           VARBINARY(MAX)       NOT NULL,
                     exception_type    VARCHAR(500)         NOT NULL,
                     exception_message NVARCHAR(MAX)        NOT NULL,
-                    failed_at         DATETIMEOFFSET       NOT NULL
+                    failed_at         DATETIMEOFFSET       NOT NULL,
+                    event_id          UNIQUEIDENTIFIER     NULL,
+                    occurred_at       DATETIMEOFFSET       NULL,
+                    correlation_id    UNIQUEIDENTIFIER     NULL,
+                    causation_id      UNIQUEIDENTIFIER     NULL
                 )
             END
+
+            IF COL_LENGTH('dbo.dead_letters', 'event_id') IS NULL
+                ALTER TABLE dbo.dead_letters ADD event_id UNIQUEIDENTIFIER NULL;
+            IF COL_LENGTH('dbo.dead_letters', 'occurred_at') IS NULL
+                ALTER TABLE dbo.dead_letters ADD occurred_at DATETIMEOFFSET NULL;
+            IF COL_LENGTH('dbo.dead_letters', 'correlation_id') IS NULL
+                ALTER TABLE dbo.dead_letters ADD correlation_id UNIQUEIDENTIFIER NULL;
+            IF COL_LENGTH('dbo.dead_letters', 'causation_id') IS NULL
+                ALTER TABLE dbo.dead_letters ADD causation_id UNIQUEIDENTIFIER NULL;
             """;
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
@@ -75,9 +94,11 @@ public sealed class SqlServerDeadLetterStore : IDeadLetterStore
         #pragma warning restore MA0004
         cmd.CommandText = """
             INSERT INTO dbo.dead_letters
-                (consumer_id, stream_id, position, event_type, payload, exception_type, exception_message, failed_at)
+                (consumer_id, stream_id, position, event_type, payload, exception_type, exception_message, failed_at,
+                 event_id, occurred_at, correlation_id, causation_id)
             VALUES
-                (@consumer_id, @stream_id, @position, @event_type, @payload, @exception_type, @exception_message, @failed_at)
+                (@consumer_id, @stream_id, @position, @event_type, @payload, @exception_type, @exception_message, @failed_at,
+                 @event_id, @occurred_at, @correlation_id, @causation_id)
             """;
 
         cmd.Parameters.AddWithValue("@consumer_id", consumerId);
@@ -88,6 +109,12 @@ public sealed class SqlServerDeadLetterStore : IDeadLetterStore
         cmd.Parameters.AddWithValue("@exception_type", exception.GetType().Name);
         cmd.Parameters.AddWithValue("@exception_message", exception.Message);
         cmd.Parameters.AddWithValue("@failed_at", failedAt);
+        cmd.Parameters.Add("@event_id", System.Data.SqlDbType.UniqueIdentifier).Value = envelope.Metadata.EventId;
+        cmd.Parameters.Add("@occurred_at", System.Data.SqlDbType.DateTimeOffset).Value = envelope.Metadata.OccurredAt;
+        cmd.Parameters.Add("@correlation_id", System.Data.SqlDbType.UniqueIdentifier).Value =
+            (object?)envelope.Metadata.CorrelationId ?? DBNull.Value;
+        cmd.Parameters.Add("@causation_id", System.Data.SqlDbType.UniqueIdentifier).Value =
+            (object?)envelope.Metadata.CausationId ?? DBNull.Value;
 
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
@@ -101,7 +128,8 @@ public sealed class SqlServerDeadLetterStore : IDeadLetterStore
         using var cmd = conn.CreateCommand();
         #pragma warning restore MA0004
         cmd.CommandText = """
-            SELECT consumer_id, stream_id, position, event_type, payload, exception_type, exception_message, failed_at
+            SELECT consumer_id, stream_id, position, event_type, payload, exception_type, exception_message, failed_at,
+                   event_id, occurred_at, correlation_id, causation_id
             FROM dbo.dead_letters
             ORDER BY id
             """;
@@ -120,8 +148,14 @@ public sealed class SqlServerDeadLetterStore : IDeadLetterStore
             var exceptionType = reader.GetString(5);
             var exceptionMessage = reader.GetString(6);
             var failedAt = reader.GetFieldValue<DateTimeOffset>(7);
+            var eventId = await reader.IsDBNullAsync(8, ct).ConfigureAwait(false) ? Guid.Empty : reader.GetGuid(8);
+            var occurredAt = await reader.IsDBNullAsync(9, ct).ConfigureAwait(false)
+                ? failedAt
+                : reader.GetFieldValue<DateTimeOffset>(9);
+            Guid? correlationId = await reader.IsDBNullAsync(10, ct).ConfigureAwait(false) ? null : reader.GetGuid(10);
+            Guid? causationId = await reader.IsDBNullAsync(11, ct).ConfigureAwait(false) ? null : reader.GetGuid(11);
 
-            var metadata = new EventMetadata(Guid.NewGuid(), eventType, failedAt, null, null);
+            var metadata = new EventMetadata(eventId, eventType, occurredAt, correlationId, causationId);
             var envelope = new EventEnvelope(new StreamId(streamId), new StreamPosition(position), payload, metadata);
 
             yield return new DeadLetterEntry(envelope, consumerId, exceptionType, exceptionMessage, failedAt);
