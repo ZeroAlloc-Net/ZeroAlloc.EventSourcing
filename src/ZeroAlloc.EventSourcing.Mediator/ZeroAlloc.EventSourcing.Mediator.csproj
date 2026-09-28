@@ -43,12 +43,26 @@
                       ReferenceOutputAssembly="false" />
   </ItemGroup>
 
-  <ItemGroup>
-    <None Include="..\ZeroAlloc.EventSourcing.Mediator.Generator\bin\$(Configuration)\netstandard2.0\ZeroAlloc.EventSourcing.Mediator.Generator.dll"
-          Pack="true"
-          PackagePath="analyzers/dotnet/cs"
-          Visible="false" />
-  </ItemGroup>
+  <!--
+    Bundle the generator DLL the build actually produced. Asking the generator project for its
+    target path, instead of hardcoding bin\$(Configuration)\netstandard2.0, follows any output
+    redirection such as artifacts-path. The hardcoded path silently bundled whatever stale DLL
+    sat in the repository's bin folder, at whatever version that DLL had been built with.
+    See ZeroAlloc-Net/.github#43.
+  -->
+  <Target Name="IncludeGeneratorInPackage" BeforeTargets="_GetPackageFiles">
+    <MSBuild Projects="..\ZeroAlloc.EventSourcing.Mediator.Generator\ZeroAlloc.EventSourcing.Mediator.Generator.csproj"
+             Targets="GetTargetPath"
+             RemoveProperties="TargetFramework;RuntimeIdentifier;SelfContained">
+      <Output TaskParameter="TargetOutputs" ItemName="_ZeroAllocEventSourcingMediatorGeneratorAssembly" />
+    </MSBuild>
+    <ItemGroup>
+      <None Include="@(_ZeroAllocEventSourcingMediatorGeneratorAssembly)"
+            Pack="true"
+            PackagePath="analyzers/dotnet/cs"
+            Visible="false" />
+    </ItemGroup>
+  </Target>
 
   <ItemGroup>
     <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleTo">
