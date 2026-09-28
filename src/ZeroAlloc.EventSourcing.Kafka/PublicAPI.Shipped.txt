@@ -1,0 +1,57 @@
+#nullable enable
+abstract ZeroAlloc.EventSourcing.Kafka.KafkaConsumerBase.ConsumerId.get -> string!
+abstract ZeroAlloc.EventSourcing.Kafka.KafkaConsumerBase.GetAssignedPartitions() -> System.Collections.Generic.IReadOnlyList<int>!
+abstract ZeroAlloc.EventSourcing.Kafka.KafkaConsumerBase.InitializeAsync(System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task!
+override ZeroAlloc.EventSourcing.Kafka.KafkaConsumerGroupConsumer.ConsumerId.get -> string!
+override ZeroAlloc.EventSourcing.Kafka.KafkaConsumerGroupOptions.Validate() -> void
+override ZeroAlloc.EventSourcing.Kafka.KafkaManualPartitionConsumer.ConsumerId.get -> string!
+override ZeroAlloc.EventSourcing.Kafka.KafkaManualPartitionOptions.Validate() -> void
+readonly ZeroAlloc.EventSourcing.Kafka.KafkaConsumerBase._checkpointStore -> ZeroAlloc.EventSourcing.ICheckpointStore!
+readonly ZeroAlloc.EventSourcing.Kafka.KafkaConsumerBase._consumer -> Confluent.Kafka.IConsumer<string!, byte[]!>!
+readonly ZeroAlloc.EventSourcing.Kafka.KafkaConsumerBase.LastPositionPerPartition -> System.Collections.Concurrent.ConcurrentDictionary<int, ZeroAlloc.EventSourcing.StreamPosition>!
+static ZeroAlloc.EventSourcing.Kafka.EventSourcingBuilderExtensions.AddKafkaEventStore(this Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder! builder, string! bootstrapServers, string! name = "kafka-event-store", Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus? failureStatus = null, System.Collections.Generic.IEnumerable<string!>? tags = null) -> Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder!
+static ZeroAlloc.EventSourcing.Kafka.EventSourcingBuilderExtensions.UseKafkaConsumerGroup(this ZeroAlloc.EventSourcing.EventSourcingBuilder! builder, ZeroAlloc.EventSourcing.Kafka.KafkaConsumerGroupOptions! options) -> ZeroAlloc.EventSourcing.EventSourcingBuilder!
+static ZeroAlloc.EventSourcing.Kafka.EventSourcingBuilderExtensions.UseKafkaManualPartitions(this ZeroAlloc.EventSourcing.EventSourcingBuilder! builder, ZeroAlloc.EventSourcing.Kafka.KafkaManualPartitionOptions! options) -> ZeroAlloc.EventSourcing.EventSourcingBuilder!
+static ZeroAlloc.EventSourcing.Kafka.KafkaConsumerBase.CheckpointKey(string! consumerId, int partition) -> string!
+virtual ZeroAlloc.EventSourcing.Kafka.KafkaBaseOptions.Validate() -> void
+virtual ZeroAlloc.EventSourcing.Kafka.KafkaConsumerBase.DrainPendingSeeksAsync(System.Threading.CancellationToken ct) -> System.Threading.Tasks.Task!
+ZeroAlloc.EventSourcing.Kafka.EventSourcingBuilderExtensions
+ZeroAlloc.EventSourcing.Kafka.KafkaBaseOptions
+ZeroAlloc.EventSourcing.Kafka.KafkaBaseOptions.BootstrapServers.get -> string!
+ZeroAlloc.EventSourcing.Kafka.KafkaBaseOptions.BootstrapServers.set -> void
+ZeroAlloc.EventSourcing.Kafka.KafkaBaseOptions.ConsumerId.get -> string!
+ZeroAlloc.EventSourcing.Kafka.KafkaBaseOptions.ConsumerId.set -> void
+ZeroAlloc.EventSourcing.Kafka.KafkaBaseOptions.ConsumerOptions.get -> ZeroAlloc.EventSourcing.StreamConsumerOptions!
+ZeroAlloc.EventSourcing.Kafka.KafkaBaseOptions.ConsumerOptions.set -> void
+ZeroAlloc.EventSourcing.Kafka.KafkaBaseOptions.KafkaBaseOptions() -> void
+ZeroAlloc.EventSourcing.Kafka.KafkaBaseOptions.PollTimeout.get -> System.TimeSpan
+ZeroAlloc.EventSourcing.Kafka.KafkaBaseOptions.PollTimeout.set -> void
+ZeroAlloc.EventSourcing.Kafka.KafkaBaseOptions.Topic.get -> string!
+ZeroAlloc.EventSourcing.Kafka.KafkaBaseOptions.Topic.set -> void
+ZeroAlloc.EventSourcing.Kafka.KafkaConsumerBase
+ZeroAlloc.EventSourcing.Kafka.KafkaConsumerBase.CommitAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+ZeroAlloc.EventSourcing.Kafka.KafkaConsumerBase.ConsumeAsync(System.Func<ZeroAlloc.EventSourcing.EventEnvelope, System.Threading.CancellationToken, System.Threading.Tasks.Task!>! handler, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+ZeroAlloc.EventSourcing.Kafka.KafkaConsumerBase.Dispose() -> void
+ZeroAlloc.EventSourcing.Kafka.KafkaConsumerBase.GetPositionAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeroAlloc.EventSourcing.StreamPosition?>!
+ZeroAlloc.EventSourcing.Kafka.KafkaConsumerBase.KafkaConsumerBase(Confluent.Kafka.IConsumer<string!, byte[]!>! consumer, ZeroAlloc.EventSourcing.ICheckpointStore! checkpointStore, ZeroAlloc.EventSourcing.IEventSerializer! serializer, ZeroAlloc.EventSourcing.IEventTypeRegistry! registry, string! topic, System.TimeSpan pollTimeout, ZeroAlloc.EventSourcing.StreamConsumerOptions! options, ZeroAlloc.EventSourcing.IDeadLetterStore? deadLetterStore = null) -> void
+ZeroAlloc.EventSourcing.Kafka.KafkaConsumerBase.KafkaConsumerBase(Confluent.Kafka.IConsumer<string!, byte[]!>! consumer, ZeroAlloc.EventSourcing.ICheckpointStore! checkpointStore, ZeroAlloc.EventSourcing.IEventSerializer! serializer, ZeroAlloc.EventSourcing.IEventTypeRegistry! registry, string! topic, System.TimeSpan pollTimeout, ZeroAlloc.EventSourcing.StreamConsumerOptions! options, ZeroAlloc.EventSourcing.IDeadLetterStore? deadLetterStore, bool ownsConsumer) -> void
+ZeroAlloc.EventSourcing.Kafka.KafkaConsumerBase.KafkaConsumerBase(string! bootstrapServers, string? groupId, ZeroAlloc.EventSourcing.ICheckpointStore! checkpointStore, ZeroAlloc.EventSourcing.IEventSerializer! serializer, ZeroAlloc.EventSourcing.IEventTypeRegistry! registry, string! topic, System.TimeSpan pollTimeout, ZeroAlloc.EventSourcing.StreamConsumerOptions! options, ZeroAlloc.EventSourcing.IDeadLetterStore? deadLetterStore = null) -> void
+ZeroAlloc.EventSourcing.Kafka.KafkaConsumerBase.ResetPositionAsync(ZeroAlloc.EventSourcing.StreamPosition position, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+ZeroAlloc.EventSourcing.Kafka.KafkaConsumerGroupConsumer
+ZeroAlloc.EventSourcing.Kafka.KafkaConsumerGroupConsumer.KafkaConsumerGroupConsumer(ZeroAlloc.EventSourcing.Kafka.KafkaConsumerGroupOptions! options, ZeroAlloc.EventSourcing.ICheckpointStore! checkpointStore, ZeroAlloc.EventSourcing.IEventSerializer! serializer, ZeroAlloc.EventSourcing.IEventTypeRegistry! registry, ZeroAlloc.EventSourcing.IDeadLetterStore? deadLetterStore = null) -> void
+ZeroAlloc.EventSourcing.Kafka.KafkaConsumerGroupOptions
+ZeroAlloc.EventSourcing.Kafka.KafkaConsumerGroupOptions.GroupId.get -> string!
+ZeroAlloc.EventSourcing.Kafka.KafkaConsumerGroupOptions.GroupId.set -> void
+ZeroAlloc.EventSourcing.Kafka.KafkaConsumerGroupOptions.KafkaConsumerGroupOptions() -> void
+ZeroAlloc.EventSourcing.Kafka.KafkaEventStoreHealthCheck
+ZeroAlloc.EventSourcing.Kafka.KafkaEventStoreHealthCheck.CheckHealthAsync(Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckContext! context, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult>!
+ZeroAlloc.EventSourcing.Kafka.KafkaEventStoreHealthCheck.Dispose() -> void
+ZeroAlloc.EventSourcing.Kafka.KafkaEventStoreHealthCheck.KafkaEventStoreHealthCheck(string! bootstrapServers) -> void
+ZeroAlloc.EventSourcing.Kafka.KafkaManualPartitionConsumer
+ZeroAlloc.EventSourcing.Kafka.KafkaManualPartitionConsumer.KafkaManualPartitionConsumer(ZeroAlloc.EventSourcing.Kafka.KafkaManualPartitionOptions! options, ZeroAlloc.EventSourcing.ICheckpointStore! checkpointStore, ZeroAlloc.EventSourcing.IEventSerializer! serializer, ZeroAlloc.EventSourcing.IEventTypeRegistry! registry, ZeroAlloc.EventSourcing.IDeadLetterStore? deadLetterStore = null) -> void
+ZeroAlloc.EventSourcing.Kafka.KafkaManualPartitionOptions
+ZeroAlloc.EventSourcing.Kafka.KafkaManualPartitionOptions.GroupId.get -> string?
+ZeroAlloc.EventSourcing.Kafka.KafkaManualPartitionOptions.GroupId.set -> void
+ZeroAlloc.EventSourcing.Kafka.KafkaManualPartitionOptions.KafkaManualPartitionOptions() -> void
+ZeroAlloc.EventSourcing.Kafka.KafkaManualPartitionOptions.Partitions.get -> int[]!
+ZeroAlloc.EventSourcing.Kafka.KafkaManualPartitionOptions.Partitions.set -> void

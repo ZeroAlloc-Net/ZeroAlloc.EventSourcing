@@ -1,0 +1,28 @@
+#nullable enable
+static ZeroAlloc.EventSourcing.InMemory.EventSourcingBuilderExtensions.AddInMemoryEventStore(this Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder! builder, string! name = "inmemory-event-store", Microsoft.Extensions.Diagnostics.HealthChecks.HealthStatus? failureStatus = null, System.Collections.Generic.IEnumerable<string!>? tags = null) -> Microsoft.Extensions.DependencyInjection.IHealthChecksBuilder!
+static ZeroAlloc.EventSourcing.InMemory.EventSourcingBuilderExtensions.UseInMemoryDeadLetterStore(this ZeroAlloc.EventSourcing.EventSourcingBuilder! builder) -> ZeroAlloc.EventSourcing.EventSourcingBuilder!
+static ZeroAlloc.EventSourcing.InMemory.EventSourcingBuilderExtensions.UseInMemoryEventStore(this ZeroAlloc.EventSourcing.EventSourcingBuilder! builder) -> ZeroAlloc.EventSourcing.EventSourcingBuilder!
+static ZeroAlloc.EventSourcing.InMemory.EventSourcingBuilderExtensions.UseInMemoryProjectionStore(this ZeroAlloc.EventSourcing.EventSourcingBuilder! builder) -> ZeroAlloc.EventSourcing.EventSourcingBuilder!
+static ZeroAlloc.EventSourcing.InMemory.EventSourcingBuilderExtensions.UseInMemorySnapshotStore(this ZeroAlloc.EventSourcing.EventSourcingBuilder! builder) -> ZeroAlloc.EventSourcing.EventSourcingBuilder!
+ZeroAlloc.EventSourcing.InMemory.EventSourcingBuilderExtensions
+ZeroAlloc.EventSourcing.InMemory.InMemoryDeadLetterStore
+ZeroAlloc.EventSourcing.InMemory.InMemoryDeadLetterStore.InMemoryDeadLetterStore() -> void
+ZeroAlloc.EventSourcing.InMemory.InMemoryDeadLetterStore.ReadAllAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<ZeroAlloc.EventSourcing.DeadLetterEntry!>!
+ZeroAlloc.EventSourcing.InMemory.InMemoryDeadLetterStore.WriteAsync(string! consumerId, ZeroAlloc.EventSourcing.EventEnvelope envelope, System.Exception! exception, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+ZeroAlloc.EventSourcing.InMemory.InMemoryEventStoreAdapter
+ZeroAlloc.EventSourcing.InMemory.InMemoryEventStoreAdapter.AppendAsync(ZeroAlloc.EventSourcing.StreamId id, System.ReadOnlyMemory<ZeroAlloc.EventSourcing.RawEvent> events, ZeroAlloc.EventSourcing.StreamPosition expectedVersion, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeroAlloc.Results.Result<ZeroAlloc.EventSourcing.AppendResult, ZeroAlloc.EventSourcing.StoreError!>>
+ZeroAlloc.EventSourcing.InMemory.InMemoryEventStoreAdapter.InMemoryEventStoreAdapter() -> void
+ZeroAlloc.EventSourcing.InMemory.InMemoryEventStoreAdapter.ReadAsync(ZeroAlloc.EventSourcing.StreamId id, ZeroAlloc.EventSourcing.StreamPosition from, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<ZeroAlloc.EventSourcing.RawEvent>!
+ZeroAlloc.EventSourcing.InMemory.InMemoryEventStoreAdapter.SubscribeAsync(ZeroAlloc.EventSourcing.StreamId id, ZeroAlloc.EventSourcing.StreamPosition from, System.Func<ZeroAlloc.EventSourcing.RawEvent, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask>! handler, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeroAlloc.EventSourcing.IEventSubscription!>
+ZeroAlloc.EventSourcing.InMemory.InMemoryEventStoreHealthCheck
+ZeroAlloc.EventSourcing.InMemory.InMemoryEventStoreHealthCheck.CheckHealthAsync(Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckContext! context, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<Microsoft.Extensions.Diagnostics.HealthChecks.HealthCheckResult>!
+ZeroAlloc.EventSourcing.InMemory.InMemoryEventStoreHealthCheck.InMemoryEventStoreHealthCheck() -> void
+ZeroAlloc.EventSourcing.InMemory.InMemoryProjectionStore
+ZeroAlloc.EventSourcing.InMemory.InMemoryProjectionStore.ClearAsync(string! key, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+ZeroAlloc.EventSourcing.InMemory.InMemoryProjectionStore.InMemoryProjectionStore() -> void
+ZeroAlloc.EventSourcing.InMemory.InMemoryProjectionStore.LoadAsync(string! key, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<string?>
+ZeroAlloc.EventSourcing.InMemory.InMemoryProjectionStore.SaveAsync(string! key, string! state, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+ZeroAlloc.EventSourcing.InMemory.InMemorySnapshotStore<TState>
+ZeroAlloc.EventSourcing.InMemory.InMemorySnapshotStore<TState>.InMemorySnapshotStore() -> void
+ZeroAlloc.EventSourcing.InMemory.InMemorySnapshotStore<TState>.ReadAsync(ZeroAlloc.EventSourcing.StreamId streamId, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<(ZeroAlloc.EventSourcing.StreamPosition Position, TState State)?>
+ZeroAlloc.EventSourcing.InMemory.InMemorySnapshotStore<TState>.WriteAsync(ZeroAlloc.EventSourcing.StreamId streamId, ZeroAlloc.EventSourcing.StreamPosition position, TState state, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask

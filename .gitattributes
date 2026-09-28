@@ -1,0 +1,5 @@
+# SnapshotSchema's public const strings are multi-line raw literals, so their value takes the
+# line endings of the checkout. The published packages are built on Linux and carry LF. A
+# Windows checkout with core.autocrlf would compile CRLF instead: a different constant value
+# than the one shipped, and a PublicAPI.Shipped.txt entry that matches on only one platform.
+src/ZeroAlloc.EventSourcing.Sql/SnapshotSchema.cs text eol=lf

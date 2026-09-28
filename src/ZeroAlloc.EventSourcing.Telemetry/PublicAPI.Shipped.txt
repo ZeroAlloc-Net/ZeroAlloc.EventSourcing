@@ -1,0 +1,15 @@
+#nullable enable
+static ZeroAlloc.EventSourcing.Telemetry.EventSourcingBuilderExtensions.UseEventSourcingTelemetry(this ZeroAlloc.EventSourcing.EventSourcingBuilder! builder) -> ZeroAlloc.EventSourcing.EventSourcingBuilder!
+static ZeroAlloc.EventSourcing.Telemetry.EventSourcingBuilderExtensions.WithTelemetry(this ZeroAlloc.EventSourcing.EventSourcingBuilder! builder) -> ZeroAlloc.EventSourcing.EventSourcingBuilder!
+ZeroAlloc.EventSourcing.Telemetry.EventSourcingBuilderExtensions
+ZeroAlloc.EventSourcing.Telemetry.InstrumentedAggregateRepository<TAggregate, TId>
+ZeroAlloc.EventSourcing.Telemetry.InstrumentedAggregateRepository<TAggregate, TId>.InstrumentedAggregateRepository(ZeroAlloc.EventSourcing.Aggregates.IAggregateRepository<TAggregate, TId>! inner) -> void
+ZeroAlloc.EventSourcing.Telemetry.InstrumentedAggregateRepository<TAggregate, TId>.LoadAsync(TId id, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeroAlloc.Results.Result<TAggregate, ZeroAlloc.EventSourcing.StoreError!>>
+ZeroAlloc.EventSourcing.Telemetry.InstrumentedAggregateRepository<TAggregate, TId>.SaveAsync(TAggregate aggregate, TId id, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeroAlloc.Results.Result<ZeroAlloc.EventSourcing.AppendResult, ZeroAlloc.EventSourcing.StoreError!>>
+ZeroAlloc.EventSourcing.Telemetry.InstrumentedStreamConsumer
+ZeroAlloc.EventSourcing.Telemetry.InstrumentedStreamConsumer.CommitAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+ZeroAlloc.EventSourcing.Telemetry.InstrumentedStreamConsumer.ConsumeAsync(System.Func<ZeroAlloc.EventSourcing.EventEnvelope, System.Threading.CancellationToken, System.Threading.Tasks.Task!>! handler, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
+ZeroAlloc.EventSourcing.Telemetry.InstrumentedStreamConsumer.ConsumerId.get -> string!
+ZeroAlloc.EventSourcing.Telemetry.InstrumentedStreamConsumer.GetPositionAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<ZeroAlloc.EventSourcing.StreamPosition?>!
+ZeroAlloc.EventSourcing.Telemetry.InstrumentedStreamConsumer.InstrumentedStreamConsumer(ZeroAlloc.EventSourcing.IStreamConsumer! inner) -> void
+ZeroAlloc.EventSourcing.Telemetry.InstrumentedStreamConsumer.ResetPositionAsync(ZeroAlloc.EventSourcing.StreamPosition position, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
