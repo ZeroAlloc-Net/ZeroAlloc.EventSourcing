@@ -319,7 +319,12 @@ public class EventStoreTests
     [TestInitialize]
     public void Setup()
     {
-        _store = new InMemoryEventStore();
+        // TestEventTypeRegistry and JsonEventSerializer are test-local
+        // IEventTypeRegistry and IEventSerializer implementations.
+        _store = new EventStore(
+            new InMemoryEventStoreAdapter(),
+            new JsonEventSerializer(),
+            new TestEventTypeRegistry());
         _streamId = new StreamId("test-stream");
     }
 
@@ -330,11 +335,11 @@ public class EventStoreTests
         var @event = new TestEvent();
 
         // Act
-        var result = await _store.AppendAsync(_streamId, new[] { @event }, StreamPosition.Start);
+        var result = await _store.AppendAsync(_streamId, new object[] { @event }, StreamPosition.Start);
 
-        // Assert
+        // Assert: positions are 1-based, so one event appended to an empty stream sits at 1
         Assert.IsTrue(result.IsSuccess);
-        Assert.AreEqual(new StreamPosition(0), result.Value.FirstPosition);
+        Assert.AreEqual(new StreamPosition(1), result.Value.NextExpectedVersion);
     }
 }
 ```

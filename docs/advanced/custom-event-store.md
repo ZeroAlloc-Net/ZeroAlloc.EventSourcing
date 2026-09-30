@@ -301,7 +301,9 @@ public class SqlServerEventStoreAdapter : IEventStoreAdapter
 var adapter = new SqlServerEventStoreAdapter("Server=.;Database=EventStore;Integrated Security=true");
 await adapter.InitializeAsync();
 
-var eventStore = new EventStore(adapter, new JsonEventSerializer());
+// JsonEventSerializer is your IEventSerializer; OrderEventTypeRegistry is the
+// IEventTypeRegistry the source generator emits for your Order aggregate.
+var eventStore = new EventStore(adapter, new JsonEventSerializer(), new OrderEventTypeRegistry());
 ```
 
 ## Example: PostgreSQL Implementation
@@ -545,8 +547,9 @@ public class SqlServerEventStoreAdapterTests
             StreamPosition.Start
         );
 
+        // Positions are 1-based: one event appended to an empty stream sits at 1
         Assert.IsTrue(result.IsSuccess);
-        Assert.AreEqual(0, result.Value.FirstPosition.Value);
+        Assert.AreEqual(1, result.Value.NextExpectedVersion.Value);
     }
 
     [TestMethod]
@@ -566,7 +569,7 @@ public class SqlServerEventStoreAdapterTests
         );
 
         Assert.IsFalse(result.IsSuccess);
-        Assert.AreEqual(StoreError.Type.Conflict, result.Error.Type);
+        Assert.AreEqual("CONFLICT", result.Error.Code);
     }
 
     [TestMethod]
@@ -628,7 +631,7 @@ var nextPosition = currentPosition;
 for (int i = 0; i < events.Length; i++)
 {
     var result = await AppendAsync(streamId, events[i], nextPosition);
-    nextPosition = result.Value.LastPosition.Next();
+    nextPosition = result.Value.NextExpectedVersion;
 }
 ```
 

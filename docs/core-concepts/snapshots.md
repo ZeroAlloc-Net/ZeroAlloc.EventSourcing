@@ -7,14 +7,14 @@ Snapshots are a performance optimization for event sourcing. They reduce the cos
 In event sourcing, loading an aggregate requires replaying all events:
 
 ```csharp
-var order = new Order();
-order.SetId(orderId);
+var repository = new AggregateRepository<Order, OrderId>(
+    eventStore,
+    () => new Order(),
+    id => new StreamId($"order-{id.Value}"));
 
-// Replay ALL events from the beginning
-await foreach (var envelope in eventStore.ReadAsync(streamId, StreamPosition.Start))
-{
-    order.ApplyHistoric(envelope.Event, envelope.Position);
-}
+// Replays ALL events from the beginning of the stream
+var loaded = await repository.LoadAsync(orderId);
+using var order = loaded.Value;
 ```
 
 For young aggregates (10-100 events), this is fast. But for long-lived aggregates with thousands of events, replay becomes expensive:
@@ -97,12 +97,15 @@ Returns `null` if no snapshot exists. This allows graceful fallback to full repl
 ### WriteAsync: Saving Snapshots
 
 ```csharp
-// After loading and modifying an aggregate
+// After loading an aggregate, or after saving it successfully:
+// State and Version then both describe the events in the store
 var finalState = order.State;
 var finalPosition = order.Version;
 
 await snapshotStore.WriteAsync(streamId, finalPosition, finalState);
 ```
+
+Don't snapshot an aggregate with unsaved events: its `Version` counts events that are not in the store yet. `SnapshotCachingRepositoryDecorator` can write snapshots for you after each successful save; see [Snapshot Caching Patterns](#snapshot-caching-patterns).
 
 Snapshots are typically written:
 - After processing a command (keep the latest state)
@@ -126,7 +129,8 @@ var snapshotRepo = new SnapshotCachingRepositoryDecorator<Order, OrderId, OrderS
 );
 
 // Usage:
-var order = await snapshotRepo.LoadAsync(orderId);
+var result = await snapshotRepo.LoadAsync(orderId);
+using var order = result.Value;
 ```
 
 **Advantages:**
@@ -225,7 +229,7 @@ var cachedRepository = new SnapshotCachingRepositoryDecorator<Order, OrderId, Or
     aggregateFactory: () => new Order());
 
 // Load (uses snapshot if available)
-var order = await cachedRepository.LoadAsync(orderId);
+using var order = (await cachedRepository.LoadAsync(orderId)).Value;
 ```
 
 **How it works:**
@@ -236,7 +240,8 @@ var order = await cachedRepository.LoadAsync(orderId);
    `OriginalVersion` as if the events up to `position` had been replayed, on the fresh aggregate
    from `aggregateFactory`
 3. If no, replay from the beginning
-4. After loading, optionally save a snapshot
+4. After each successful save, write a snapshot if `snapshotPolicy` says so (pass `snapshotPolicy`
+   and `extractState` to enable this)
 
 ## Built-in Implementations
 
@@ -264,9 +269,8 @@ For production with PostgreSQL:
 
 ```csharp
 var snapshotStore = new PostgreSqlSnapshotStore<OrderState>(
-    connectionString: "Server=localhost;Database=snapshots;...",
-    tableName: "snapshots",
-    serializer: new OrderSnapshotSerializer()
+    dataSource: NpgsqlDataSource.Create("Host=localhost;Database=snapshots;..."),
+    serializer: mySerializer  // optional IEventSerializer for the state
 );
 ```
 
@@ -283,8 +287,7 @@ For production with SQL Server:
 ```csharp
 var snapshotStore = new SqlServerSnapshotStore<OrderState>(
     connectionString: "Server=localhost;Database=snapshots;...",
-    tableName: "snapshots",
-    serializer: new OrderSnapshotSerializer()
+    serializer: mySerializer  // optional IEventSerializer for the state
 );
 ```
 
@@ -326,19 +329,28 @@ When should you create snapshots? Common strategies:
 
 ### By Event Count
 
-Create a snapshot every N events:
+Create a snapshot every N events. `SnapshotPolicy.EveryNEvents` does this on save when passed to the decorator:
 
 ```csharp
-long eventCount = 0;
-await foreach (var envelope in eventStore.ReadAsync(streamId, StreamPosition.Start))
+var snapshotRepo = new SnapshotCachingRepositoryDecorator<Order, OrderId, OrderState>(
+    innerRepository: baseRepo,
+    snapshotStore: snapshotStore,
+    strategy: SnapshotLoadingStrategy.ValidateAndReplay,
+    restoreState: (order, state, pos) => order.RestoreState(state, pos),
+    eventStore: eventStore,
+    streamIdFactory: id => new StreamId($"order-{id.Value}"),
+    aggregateFactory: () => new Order(),
+    snapshotPolicy: SnapshotPolicy.EveryNEvents(100),  // 100+ events since the last snapshot
+    extractState: order => order.State);
+```
+
+For any other rule, implement `ISnapshotPolicy`:
+
+```csharp
+public sealed class LargeGapPolicy : ISnapshotPolicy
 {
-    order.ApplyHistoric(envelope.Event, envelope.Position);
-    eventCount++;
-    
-    if (eventCount % 100 == 0)  // Every 100 events
-    {
-        await snapshotStore.WriteAsync(streamId, envelope.Position, order.State);
-    }
+    public bool ShouldSnapshot(StreamPosition currentPosition, StreamPosition? lastSnapshotPosition)
+        => currentPosition.Value - (lastSnapshotPosition?.Value ?? 0) >= 250;
 }
 ```
 
@@ -347,10 +359,12 @@ await foreach (var envelope in eventStore.ReadAsync(streamId, StreamPosition.Sta
 Create a snapshot periodically:
 
 ```csharp
-var lastSnapshot = await snapshotStore.ReadAsync(streamId);
-if (lastSnapshot == null || DateTime.UtcNow - lastSnapshot.Timestamp > TimeSpan.FromHours(1))
+// A snapshot holds only a position and a state, no timestamp, so track the time yourself.
+// order was just loaded or saved, so its Version and State match the store.
+if (DateTime.UtcNow - lastSnapshotAt > TimeSpan.FromHours(1))
 {
-    await snapshotStore.WriteAsync(streamId, stream.Position, state);
+    await snapshotStore.WriteAsync(streamId, order.Version, order.State);
+    lastSnapshotAt = DateTime.UtcNow;
 }
 ```
 
@@ -359,10 +373,10 @@ if (lastSnapshot == null || DateTime.UtcNow - lastSnapshot.Timestamp > TimeSpan.
 Create a snapshot if the state object exceeds a size threshold:
 
 ```csharp
-int stateSize = JsonSerializer.Serialize(state).Length;
+int stateSize = JsonSerializer.Serialize(order.State).Length;
 if (stateSize > 10_000)  // Larger than 10KB
 {
-    await snapshotStore.WriteAsync(streamId, stream.Position, state);
+    await snapshotStore.WriteAsync(streamId, order.Version, order.State);
 }
 ```
 

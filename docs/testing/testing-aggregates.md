@@ -7,8 +7,8 @@ Testing aggregates in ZeroAlloc.EventSourcing is about verifying that your domai
 ## Key Principles
 
 1. **Arrange-Act-Assert**: Structure tests with clear setup, action, and verification phases
-2. **Test Events, Not State**: Verify the events raised, not just the final state
-3. **Purity**: ApplyEvent methods must be deterministic and side-effect free
+2. **Test Events, Not Just State**: Verify the events raised, not just the final state
+3. **Purity**: The state's `Apply` methods must be deterministic and side-effect free
 4. **State Verification**: Ensure final aggregate state matches expectations
 5. **Command Validation**: Test both happy paths and sad paths (validation failures)
 
@@ -18,29 +18,40 @@ Testing aggregates in ZeroAlloc.EventSourcing is about verifying that your domai
 
 - **Command processing**: Does the aggregate correctly handle commands?
 - **Event raising**: Are the right events raised for a given command?
-- **State application**: Does ApplyEvent correctly update state?
+- **State application**: Do the state's `Apply` methods correctly update state?
 - **Validation**: Are invalid inputs rejected appropriately?
 - **State transitions**: Does the aggregate enforce valid state flows?
 
 ### Testing Pattern
 
+Tests use only the public API of the aggregate: its command methods, `State`, `Version` and
+`OriginalVersion`. The queue of uncommitted events is internal; the repository drains it when it
+saves. To see which events a command raised, save the aggregate through an
+`AggregateRepository` over the in-memory event store and read the stream back. The
+[`OrderTestHarness`](#test-harness) below does exactly that.
+
 ```csharp
 [Fact]
-public void CommandName_Condition_ExpectedBehavior()
+public async Task CommandName_Condition_ExpectedBehavior()
 {
-    // Arrange: Set up the aggregate
-    var aggregate = new Order();
+    // Arrange: Set up the aggregate and a repository over an in-memory store
+    var harness = new OrderTestHarness();
+    using var order = new Order();
     
     // Act: Execute the command
-    aggregate.PlaceOrder("ORD-001", 99.99m);
+    order.PlaceOrder("ORD-001", 99.99m);
     
     // Assert: Verify the results
-    var events = aggregate.DequeueUncommitted();
-    events.Should().HaveLength(1);
-    events[0].Should().BeOfType<OrderPlacedEvent>();
-    aggregate.State.IsPlaced.Should().BeTrue();
+    var events = await harness.SaveAndReadNewEventsAsync(order);
+    events.Should().ContainSingle().Which.Should().BeOfType<OrderPlacedEvent>();
+    order.State.IsPlaced.Should().BeTrue();
 }
 ```
+
+A test that only checks state or validation does not need the harness at all. `Version` counts
+every event applied to the aggregate, raised or loaded, and `OriginalVersion` is the version it
+was loaded or last saved at. So `order.Version.Value - order.OriginalVersion.Value` is the number
+of events waiting to be saved, and `order.Version == order.OriginalVersion` means none are.
 
 ## Complete Order Aggregate Test Suite
 
@@ -116,6 +127,9 @@ public sealed partial class Order : Aggregate<OrderId, OrderState>
     
     public void Cancel(string reason)
     {
+        if (!State.IsPlaced)
+            throw new InvalidOperationException("Order must be placed before it can be cancelled");
+        
         if (State.IsCancelled)
             throw new InvalidOperationException("Order is already cancelled");
         
@@ -124,19 +138,65 @@ public sealed partial class Order : Aggregate<OrderId, OrderState>
         
         Raise(new OrderCancelledEvent(reason));
     }
-    
-    public void SetId(OrderId id) => Id = id;
-    
-    protected override OrderState ApplyEvent(OrderState state, object @event) => @event switch
-    {
-        OrderPlacedEvent e => state.Apply(e),
-        OrderConfirmedEvent e => state.Apply(e),
-        OrderShippedEvent e => state.Apply(e),
-        OrderCancelledEvent e => state.Apply(e),
-        _ => state
-    };
 }
 ```
+
+`Order` is `partial` and has no hand-written `ApplyEvent`: the source generator emits the
+`ApplyEvent` switch from the state's internal `Apply` methods, plus an `OrderEventTypeRegistry`
+that the event store uses to read the events back.
+
+### Test Harness
+
+The library ships no test helpers, and you need none beyond a repository over the in-memory
+event store. Create one harness per test so tests share no state.
+
+```csharp
+public sealed class OrderTestHarness
+{
+    public OrderTestHarness()
+    {
+        EventStore = new EventStore(
+            new InMemoryEventStoreAdapter(),
+            new JsonEventSerializer(),          // any IEventSerializer
+            new OrderEventTypeRegistry());      // source-generated for Order
+        Repository = new AggregateRepository<Order, OrderId>(
+            EventStore, () => new Order(), StreamIdFor);
+    }
+
+    public IEventStore EventStore { get; }
+    public IAggregateRepository<Order, OrderId> Repository { get; }
+    public OrderId OrderId { get; } = new(Guid.NewGuid());
+
+    public static StreamId StreamIdFor(OrderId id) => new($"order-{id.Value}");
+
+    /// <summary>Saves the order and returns the events that save appended, in order.</summary>
+    public async Task<List<object>> SaveAndReadNewEventsAsync(Order order)
+    {
+        var from = order.OriginalVersion;
+        var saved = await Repository.SaveAsync(order, OrderId);
+        saved.IsSuccess.Should().BeTrue();
+
+        // A read yields the events after `from`, so these are only the ones this save appended
+        var events = new List<object>();
+        await foreach (var envelope in EventStore.ReadAsync(StreamIdFor(OrderId), from))
+            events.Add(envelope.Event);
+        return events;
+    }
+
+    /// <summary>"Given these events happened": appends them, then loads the order.</summary>
+    public async Task<Order> GivenAsync(params object[] history)
+    {
+        var appended = await EventStore.AppendAsync(StreamIdFor(OrderId), history, StreamPosition.Start);
+        appended.IsSuccess.Should().BeTrue();
+
+        var loaded = await Repository.LoadAsync(OrderId);
+        return loaded.Value;
+    }
+}
+```
+
+A complete version of this harness, compiled and run by the library's own test suite, is in
+[`docs/examples/03-testing/TestingAggregates.cs`](../examples/03-testing/TestingAggregates.cs).
 
 ### Test Class
 
@@ -149,7 +209,7 @@ public class OrderAggregateTests
     public void NewOrder_HasInitialState()
     {
         // Arrange & Act
-        var order = new Order();
+        using var order = new Order();
         
         // Assert
         order.Version.Should().Be(StreamPosition.Start);
@@ -158,16 +218,16 @@ public class OrderAggregateTests
         order.State.IsConfirmed.Should().BeFalse();
         order.State.IsShipped.Should().BeFalse();
         order.State.Total.Should().Be(0m);
-        order.DequeueUncommitted().Should().BeEmpty();
     }
     
     // --- Happy Path Tests ---
     
     [Fact]
-    public void PlaceOrder_WithValidInput_RaisesOrderPlacedEvent()
+    public async Task PlaceOrder_WithValidInput_RaisesOrderPlacedEvent()
     {
         // Arrange
-        var order = new Order();
+        var harness = new OrderTestHarness();
+        using var order = new Order();
         var orderId = "ORD-001";
         var total = 99.99m;
         
@@ -175,11 +235,8 @@ public class OrderAggregateTests
         order.PlaceOrder(orderId, total);
         
         // Assert
-        var events = order.DequeueUncommitted();
-        events.Should().HaveLength(1);
-        events[0].Should().BeOfType<OrderPlacedEvent>();
-        
-        var e = (OrderPlacedEvent)events[0];
+        var events = await harness.SaveAndReadNewEventsAsync(order);
+        var e = events.Should().ContainSingle().Which.Should().BeOfType<OrderPlacedEvent>().Subject;
         e.OrderId.Should().Be(orderId);
         e.Total.Should().Be(total);
         
@@ -188,32 +245,30 @@ public class OrderAggregateTests
     }
     
     [Fact]
-    public void ConfirmOrder_AfterPlaced_RaisesOrderConfirmedEvent()
+    public async Task ConfirmOrder_AfterPlaced_RaisesOrderConfirmedEvent()
     {
-        // Arrange
-        var order = new Order();
-        order.PlaceOrder("ORD-001", 50m);
-        order.DequeueUncommitted(); // Clear pending
+        // Arrange: the order was placed earlier
+        var harness = new OrderTestHarness();
+        using var order = await harness.GivenAsync(new OrderPlacedEvent("ORD-001", 50m));
         
         // Act
         order.ConfirmOrder();
         
         // Assert
-        var events = order.DequeueUncommitted();
-        events.Should().HaveLength(1);
-        events[0].Should().BeOfType<OrderConfirmedEvent>();
+        var events = await harness.SaveAndReadNewEventsAsync(order);
+        events.Should().ContainSingle().Which.Should().BeOfType<OrderConfirmedEvent>();
         
         order.State.IsConfirmed.Should().BeTrue();
     }
     
     [Fact]
-    public void ShipOrder_WithValidTracking_RaisesOrderShippedEvent()
+    public async Task ShipOrder_WithValidTracking_RaisesOrderShippedEvent()
     {
         // Arrange
-        var order = new Order();
-        order.PlaceOrder("ORD-001", 50m);
-        order.ConfirmOrder();
-        order.DequeueUncommitted(); // Clear pending
+        var harness = new OrderTestHarness();
+        using var order = await harness.GivenAsync(
+            new OrderPlacedEvent("ORD-001", 50m),
+            new OrderConfirmedEvent());
         
         var tracking = "TRACK-123456";
         
@@ -221,11 +276,8 @@ public class OrderAggregateTests
         order.ShipOrder(tracking);
         
         // Assert
-        var events = order.DequeueUncommitted();
-        events.Should().HaveLength(1);
-        events[0].Should().BeOfType<OrderShippedEvent>();
-        
-        var e = (OrderShippedEvent)events[0];
+        var events = await harness.SaveAndReadNewEventsAsync(order);
+        var e = events.Should().ContainSingle().Which.Should().BeOfType<OrderShippedEvent>().Subject;
         e.TrackingNumber.Should().Be(tracking);
         
         order.State.IsShipped.Should().BeTrue();
@@ -233,10 +285,11 @@ public class OrderAggregateTests
     }
     
     [Fact]
-    public void CompleteOrderFlow_PlaceConfirmShip_AllEventsRaised()
+    public async Task CompleteOrderFlow_PlaceConfirmShip_AllEventsRaised()
     {
         // Arrange
-        var order = new Order();
+        var harness = new OrderTestHarness();
+        using var order = new Order();
         
         // Act
         order.PlaceOrder("ORD-001", 100m);
@@ -244,8 +297,8 @@ public class OrderAggregateTests
         order.ShipOrder("TRACK-789");
         
         // Assert
-        var events = order.DequeueUncommitted();
-        events.Should().HaveLength(3);
+        var events = await harness.SaveAndReadNewEventsAsync(order);
+        events.Should().HaveCount(3);
         events[0].Should().BeOfType<OrderPlacedEvent>();
         events[1].Should().BeOfType<OrderConfirmedEvent>();
         events[2].Should().BeOfType<OrderShippedEvent>();
@@ -264,7 +317,7 @@ public class OrderAggregateTests
     public void PlaceOrder_WithInvalidTotal_ThrowsArgumentException(decimal invalidTotal)
     {
         // Arrange
-        var order = new Order();
+        using var order = new Order();
         
         // Act & Assert
         var exception = Assert.Throws<ArgumentException>(() =>
@@ -273,14 +326,14 @@ public class OrderAggregateTests
         
         exception.Message.Should().Contain("positive");
         order.State.IsPlaced.Should().BeFalse();
-        order.DequeueUncommitted().Should().BeEmpty();
+        order.Version.Should().Be(StreamPosition.Start); // no event was raised
     }
     
     [Fact]
     public void ConfirmOrder_WhenNotPlaced_ThrowsInvalidOperationException()
     {
         // Arrange
-        var order = new Order();
+        using var order = new Order();
         
         // Act & Assert
         var exception = Assert.Throws<InvalidOperationException>(() =>
@@ -295,7 +348,7 @@ public class OrderAggregateTests
     public void ConfirmOrder_WhenAlreadyConfirmed_ThrowsInvalidOperationException()
     {
         // Arrange
-        var order = new Order();
+        using var order = new Order();
         order.PlaceOrder("ORD-001", 50m);
         order.ConfirmOrder();
         
@@ -311,7 +364,7 @@ public class OrderAggregateTests
     public void ShipOrder_WhenNotConfirmed_ThrowsInvalidOperationException()
     {
         // Arrange
-        var order = new Order();
+        using var order = new Order();
         order.PlaceOrder("ORD-001", 50m);
         
         // Act & Assert
@@ -326,16 +379,16 @@ public class OrderAggregateTests
     [InlineData(null)]
     [InlineData("")]
     [InlineData("   ")]
-    public void ShipOrder_WithInvalidTracking_ThrowsArgumentException(string invalidTracking)
+    public void ShipOrder_WithInvalidTracking_ThrowsArgumentException(string? invalidTracking)
     {
         // Arrange
-        var order = new Order();
+        using var order = new Order();
         order.PlaceOrder("ORD-001", 50m);
         order.ConfirmOrder();
         
         // Act & Assert
         var exception = Assert.Throws<ArgumentException>(() =>
-            order.ShipOrder(invalidTracking)
+            order.ShipOrder(invalidTracking!)
         );
         
         exception.Message.Should().Contain("Tracking");
@@ -348,7 +401,7 @@ public class OrderAggregateTests
     public void CancelOrder_BeforePlaced_ThrowsInvalidOperationException()
     {
         // Arrange
-        var order = new Order();
+        using var order = new Order();
         
         // Act & Assert
         var exception = Assert.Throws<InvalidOperationException>(() =>
@@ -362,7 +415,7 @@ public class OrderAggregateTests
     public void CancelOrder_AfterShipped_ThrowsInvalidOperationException()
     {
         // Arrange
-        var order = new Order();
+        using var order = new Order();
         order.PlaceOrder("ORD-001", 50m);
         order.ConfirmOrder();
         order.ShipOrder("TRACK-123");
@@ -379,7 +432,7 @@ public class OrderAggregateTests
     public void CancelOrder_WhenAlreadyCancelled_ThrowsInvalidOperationException()
     {
         // Arrange
-        var order = new Order();
+        using var order = new Order();
         order.PlaceOrder("ORD-001", 50m);
         order.Cancel("Changed mind");
         
@@ -392,112 +445,96 @@ public class OrderAggregateTests
     }
     
     [Fact]
-    public void CancelOrder_BeforeShipping_Succeeds()
+    public async Task CancelOrder_BeforeShipping_Succeeds()
     {
         // Arrange
-        var order = new Order();
-        order.PlaceOrder("ORD-001", 50m);
-        order.ConfirmOrder();
-        order.DequeueUncommitted(); // Clear pending
+        var harness = new OrderTestHarness();
+        using var order = await harness.GivenAsync(
+            new OrderPlacedEvent("ORD-001", 50m),
+            new OrderConfirmedEvent());
         
         // Act
         order.Cancel("Customer requested");
         
         // Assert
-        var events = order.DequeueUncommitted();
-        events.Should().HaveLength(1);
-        events[0].Should().BeOfType<OrderCancelledEvent>();
+        var events = await harness.SaveAndReadNewEventsAsync(order);
+        events.Should().ContainSingle().Which.Should().BeOfType<OrderCancelledEvent>();
         
         order.State.IsCancelled.Should().BeTrue();
     }
     
-    // --- ApplyEvent Purity Tests ---
+    // --- Replay Tests ---
     
     [Fact]
-    public void ApplyHistoric_DesNotAddToUncommitted()
+    public async Task LoadedEvents_AreNotSavedAgain()
     {
-        // Arrange
-        var order = new Order();
+        // Arrange & Act: load an order whose history is already in the store
+        var harness = new OrderTestHarness();
+        using var order = await harness.GivenAsync(new OrderPlacedEvent("ORD-001", 99.99m));
         
-        // Act
-        order.ApplyHistoric(new OrderPlacedEvent("ORD-001", 99.99m), new StreamPosition(1));
-        
-        // Assert
+        // Assert: replayed events update state and version, but nothing is pending
         order.State.IsPlaced.Should().BeTrue();
         order.Version.Value.Should().Be(1);
-        order.DequeueUncommitted().Should().BeEmpty();
+        order.OriginalVersion.Should().Be(order.Version);
+        (await harness.SaveAndReadNewEventsAsync(order)).Should().BeEmpty();
     }
     
     [Fact]
-    public void ApplyEvent_IsDeterministic_SameInputProducesSameOutput()
+    public async Task Replay_IsDeterministic_SameHistoryProducesSameState()
     {
         // Arrange
-        var order1 = new Order();
-        var order2 = new Order();
         var placedEvent = new OrderPlacedEvent("ORD-001", 100m);
         
-        // Act
-        order1.ApplyHistoric(placedEvent, new StreamPosition(1));
-        order2.ApplyHistoric(placedEvent, new StreamPosition(1));
+        // Act: the same history, replayed onto two fresh aggregates
+        using var order1 = await new OrderTestHarness().GivenAsync(placedEvent);
+        using var order2 = await new OrderTestHarness().GivenAsync(placedEvent);
         
         // Assert
         order1.State.Should().Be(order2.State);
     }
     
     [Fact]
-    public void UnknownEvent_DoesNotChangeState()
+    public async Task UnknownEventType_IsSkippedOnLoad()
     {
-        // Arrange
-        var order = new Order();
-        var unknownEvent = new { Message = "Unknown" };
+        // Arrange & Act: a stream that also holds an event type Order does not handle
+        var harness = new OrderTestHarness();
+        using var order = await harness.GivenAsync(
+            new OrderPlacedEvent("ORD-001", 50m),
+            new SomeOtherContextEvent("not an order event"));
         
-        // Act
-        order.ApplyHistoric(unknownEvent, new StreamPosition(1));
-        
-        // Assert
-        order.State.IsPlaced.Should().BeFalse();
+        // Assert: the event store skips types its registry cannot resolve,
+        // for forward compatibility, so state reflects only the known events
+        order.State.IsPlaced.Should().BeTrue();
         order.State.IsConfirmed.Should().BeFalse();
-        order.State.IsShipped.Should().BeFalse();
     }
     
-    // --- Idempotency Tests ---
+    // --- Save Tests ---
     
     [Fact]
-    public void DequeueUncommitted_CalledTwice_SecondReturnsEmpty()
+    public async Task Save_AppendsOnlyEventsRaisedSinceTheLastSave()
     {
         // Arrange
-        var order = new Order();
-        order.PlaceOrder("ORD-001", 50m);
-        
-        // Act
-        var firstDequeue = order.DequeueUncommitted();
-        var secondDequeue = order.DequeueUncommitted();
-        
-        // Assert
-        firstDequeue.Should().HaveLength(1);
-        secondDequeue.Should().BeEmpty();
-    }
-    
-    [Fact]
-    public void MultipleCommands_AllEventsQueuedThenCleared()
-    {
-        // Arrange
-        var order = new Order();
+        var harness = new OrderTestHarness();
+        using var order = new Order();
         
         // Act
         order.PlaceOrder("ORD-001", 100m);
         order.ConfirmOrder();
-        
-        var firstDequeue = order.DequeueUncommitted();
+        var firstSave = await harness.SaveAndReadNewEventsAsync(order);
         
         order.ShipOrder("TRACK-123");
-        var secondDequeue = order.DequeueUncommitted();
+        var secondSave = await harness.SaveAndReadNewEventsAsync(order);
+        var thirdSave = await harness.SaveAndReadNewEventsAsync(order);
         
         // Assert
-        firstDequeue.Should().HaveLength(2);
-        secondDequeue.Should().HaveLength(1);
+        firstSave.Should().HaveCount(2);
+        secondSave.Should().ContainSingle().Which.Should().BeOfType<OrderShippedEvent>();
+        thirdSave.Should().BeEmpty();
     }
 }
+
+// Not an Order event: OrderState has no Apply for it, so OrderEventTypeRegistry does not know it
+public record SomeOtherContextEvent(string Note);
 ```
 
 ## xUnit Testing Patterns
@@ -509,7 +546,7 @@ public class OrderAggregateTests
 [Fact]
 public void PlaceOrder_ValidInput_Succeeds()
 {
-    var order = new Order();
+    using var order = new Order();
     order.PlaceOrder("ORD-001", 50m);
     order.State.IsPlaced.Should().BeTrue();
 }
@@ -521,7 +558,7 @@ public void PlaceOrder_ValidInput_Succeeds()
 [InlineData(-1)]
 public void PlaceOrder_InvalidTotal_Throws(decimal invalidTotal)
 {
-    var order = new Order();
+    using var order = new Order();
     Assert.Throws<ArgumentException>(() => 
         order.PlaceOrder("ORD-001", invalidTotal)
     );
@@ -565,7 +602,7 @@ public class OrderAggregateWithFixtureTests : IClassFixture<OrderTestFixture>
     [Fact]
     public void PlaceOrder_WithFixture_Works()
     {
-        var order = _fixture.CreatePlacedOrder(75m);
+        using var order = _fixture.CreatePlacedOrder(75m);
         order.State.Total.Should().Be(75m);
     }
 }
@@ -580,7 +617,7 @@ State transition testing ensures the aggregate enforces valid state flows:
 public void ValidStateTransitions_Succeed()
 {
     // Initial -> Placed
-    var order = new Order();
+    using var order = new Order();
     order.PlaceOrder("ORD-001", 50m);
     order.State.IsPlaced.Should().BeTrue();
     
@@ -597,11 +634,11 @@ public void ValidStateTransitions_Succeed()
 public void InvalidStateTransition_Throws()
 {
     // Cannot confirm without placing
-    var order = new Order();
+    using var order = new Order();
     Assert.Throws<InvalidOperationException>(() => order.ConfirmOrder());
     
     // Cannot ship without confirming
-    var order2 = new Order();
+    using var order2 = new Order();
     order2.PlaceOrder("ORD-001", 50m);
     Assert.Throws<InvalidOperationException>(() => order2.ShipOrder("TRACK-123"));
 }
@@ -618,28 +655,28 @@ Commands should validate inputs and enforce business rules:
 [InlineData(-100)]
 public void PlaceOrder_WithNegativeOrZeroTotal_Throws(decimal invalidTotal)
 {
-    var order = new Order();
+    using var order = new Order();
     var ex = Assert.Throws<ArgumentException>(() =>
         order.PlaceOrder("ORD-001", invalidTotal)
     );
     
     ex.Message.Should().Contain("positive");
     order.State.IsPlaced.Should().BeFalse();
-    order.DequeueUncommitted().Should().BeEmpty();
+    order.Version.Should().Be(StreamPosition.Start); // no event was raised
 }
 
 [Theory]
 [InlineData("")]
 [InlineData(null)]
 [InlineData("   ")]
-public void ShipOrder_WithInvalidTracking_Throws(string invalidTracking)
+public void ShipOrder_WithInvalidTracking_Throws(string? invalidTracking)
 {
-    var order = new Order();
+    using var order = new Order();
     order.PlaceOrder("ORD-001", 50m);
     order.ConfirmOrder();
     
     var ex = Assert.Throws<ArgumentException>(() =>
-        order.ShipOrder(invalidTracking)
+        order.ShipOrder(invalidTracking!)
     );
     
     ex.Message.Should().Contain("Tracking");
@@ -648,10 +685,11 @@ public void ShipOrder_WithInvalidTracking_Throws(string invalidTracking)
 
 ## Testing Event Versioning
 
-When events evolve, test backward compatibility:
+When events evolve, old versions stay in the stream, so the state keeps an internal `Apply` for
+each version it can meet. Test that both versions load, by appending them with the harness:
 
 ```csharp
-// Old event version
+// Old event version, still in existing streams
 public record OrderPlacedEventV1(string OrderId, decimal Total);
 
 // New event version with additional field
@@ -661,13 +699,16 @@ public record OrderPlacedEventV2(
     string Currency = "USD"
 );
 
+// In OrderState: one Apply per version
+//   internal OrderState Apply(OrderPlacedEventV1 e) => this with { IsPlaced = true, Total = e.Total };
+//   internal OrderState Apply(OrderPlacedEventV2 e) => this with { IsPlaced = true, Total = e.Total };
+
 [Fact]
-public void ApplyEvent_HandlesOldEventVersion()
+public async Task Load_HandlesOldEventVersion()
 {
-    var order = new Order();
-    var oldEvent = new OrderPlacedEventV1("ORD-001", 50m);
+    var harness = new OrderTestHarness();
     
-    order.ApplyHistoric(oldEvent, new StreamPosition(1));
+    using var order = await harness.GivenAsync(new OrderPlacedEventV1("ORD-001", 50m));
     
     // Aggregate should still apply the event
     order.State.IsPlaced.Should().BeTrue();
@@ -675,12 +716,11 @@ public void ApplyEvent_HandlesOldEventVersion()
 }
 
 [Fact]
-public void ApplyEvent_HandlesNewEventVersion()
+public async Task Load_HandlesNewEventVersion()
 {
-    var order = new Order();
-    var newEvent = new OrderPlacedEventV2("ORD-001", 50m, "EUR");
+    var harness = new OrderTestHarness();
     
-    order.ApplyHistoric(newEvent, new StreamPosition(1));
+    using var order = await harness.GivenAsync(new OrderPlacedEventV2("ORD-001", 50m, "EUR"));
     
     // Aggregate should apply the event with new data
     order.State.IsPlaced.Should().BeTrue();
@@ -688,16 +728,19 @@ public void ApplyEvent_HandlesNewEventVersion()
 }
 ```
 
+To convert old events to the new shape on read instead, register an upcaster; see
+[Event Versioning and Evolution](../core-concepts/events.md#event-versioning-and-evolution).
+
 ## Best Practices
 
 1. **Test One Thing**: Each test should verify a single behavior
 2. **Clear Names**: Use test names that describe the scenario and expected outcome
 3. **Arrange-Act-Assert**: Organize tests into clear phases
-4. **No Test Interdependencies**: Tests should be runnable in any order
+4. **No Test Interdependencies**: Tests should be runnable in any order; create a harness per test
 5. **Use Assertions**: Prefer FluentAssertions for readability
 6. **Test Happy and Sad Paths**: Include both valid and invalid scenarios
 7. **Avoid Test Fixtures for State**: Keep fixtures minimal and focused
-8. **DequeueUncommitted is Key**: Use it to verify events raised by commands
+8. **Save and Read Back**: Save through a repository over the in-memory store to verify the events a command raised
 9. **Test Event Ordering**: Ensure events are raised in the correct order
 10. **Use Theories for Variations**: Use [Theory] and [InlineData] for multiple scenarios
 
@@ -705,11 +748,11 @@ public void ApplyEvent_HandlesNewEventVersion()
 
 Testing aggregates in ZeroAlloc.EventSourcing focuses on:
 - Verifying that commands raise the correct events
-- Ensuring ApplyEvent is deterministic and pure
+- Ensuring state transitions are deterministic and pure
 - Testing command validation and state transitions
 - Using xUnit Facts and Theories effectively
 - Following the arrange-act-assert pattern
 - Testing both happy and sad paths
-- Verifying idempotency where applicable
+- Verifying that loaded events are not saved again
 
 With these patterns, you can build comprehensive test suites that ensure your event-sourced domain logic is correct and maintainable.

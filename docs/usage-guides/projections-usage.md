@@ -550,7 +550,7 @@ public async Task RebuildOrderProjection(OrderId orderId)
     }
     
     var details = projection.Current;
-    await _repository.SaveAsync(details);
+    _detailsRepository.Save(details);  // your read-model repository, IOrderDetailsRepository above
 }
 ```
 
@@ -851,15 +851,15 @@ public class ResilientProjectionProcessor<TState>
             {
                 _logger.LogError("Max retries exceeded for {Position}", envelope.Position.Value);
                 // Dead letter: save failed event for manual review
-                await DeadLetterEvent(envelope);
+                await DeadLetterEvent(envelope, ex);
             }
         }
     }
     
-    private async Task DeadLetterEvent(EventEnvelope envelope)
+    private async Task DeadLetterEvent(EventEnvelope envelope, Exception exception)
     {
-        // Save to database for manual review
-        await _deadLetterStore.SaveAsync(envelope);
+        // Save to the IDeadLetterStore for manual review
+        await _deadLetterStore.WriteAsync("order-projection", envelope, exception);
     }
 }
 ```

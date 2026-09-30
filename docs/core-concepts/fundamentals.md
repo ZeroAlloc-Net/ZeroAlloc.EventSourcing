@@ -146,15 +146,10 @@ When you load an order from an event store, you don't retrieve a serialized Orde
 
 ```csharp
 // Loading an order from events
-var order = new Order();
-order.SetId(orderId);
-
-// Read all events from the stream
-await foreach (var envelope in eventStore.ReadAsync(streamId, StreamPosition.Start))
-{
-    // Apply each event to rebuild state
-    order.ApplyHistoric(envelope.Event, envelope.Position);
-}
+// The repository reads all events from the stream and applies each one
+// to a new Order, starting from OrderState.Initial
+var loaded = await repository.LoadAsync(orderId);
+using var order = loaded.Value;
 
 // Now order.State is fully reconstructed
 Console.WriteLine($"Order Total: {order.State.Total}");        // 1500
@@ -204,18 +199,31 @@ One of the most powerful capabilities of event sourcing is the ability to replay
 Replay means: take a sequence of events and apply them to an empty state to reconstruct a past state.
 
 ```csharp
-// Reconstruct the order's state before shipping
-var order = new Order();
-order.SetId(orderId);
+// Reconstruct the order's state before shipping:
+// fold the events up to position 1 onto the initial state
+var state = OrderState.Initial;
+var upTo = new StreamPosition(1);
 
-// Read only the first event (OrderPlacedEvent)
-var envelope = await eventStore.ReadSingleAsync(streamId, StreamPosition.Start);
-order.ApplyHistoric(envelope.Event, envelope.Position);
+await foreach (var envelope in eventStore.ReadAsync(streamId, StreamPosition.Start))
+{
+    if (envelope.Position.Value > upTo.Value)
+        break;
 
-// Now order.State reflects the state after OrderPlaced, before OrderShipped
-Console.WriteLine($"Order Status: {order.State.IsPlaced}");        // true
-Console.WriteLine($"Tracking: {order.State.TrackingNumber}");      // null (not shipped yet)
+    // The Apply methods are internal to your own assembly, so your code can call them
+    state = envelope.Event switch
+    {
+        OrderPlacedEvent e => state.Apply(e),
+        OrderShippedEvent e => state.Apply(e),
+        _ => state
+    };
+}
+
+// Now state reflects the state after OrderPlaced, before OrderShipped
+Console.WriteLine($"Order Status: {state.IsPlaced}");        // true
+Console.WriteLine($"Tracking: {state.TrackingNumber}");      // null (not shipped yet)
 ```
+
+The repository always loads the latest state; a point-in-time view like this is read-only.
 
 ### Rebuilding State Models
 

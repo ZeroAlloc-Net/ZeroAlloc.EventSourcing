@@ -157,4 +157,54 @@ public sealed class DocsExamplesTests
             scope.ServiceProvider.GetRequiredService<IAggregateRepository<Order, OrderId>>(),
             orderId);
     }
+
+    /// <summary>
+    /// docs/usage-guides/snapshots-usage.md, "Position-Based Validation": the hand-written check that
+    /// replaced the non-existent ReadSingleAsync and EventNotFoundException. See issue #390.
+    /// </summary>
+    [Theory]
+    [InlineData(0, true)]
+    [InlineData(1, true)]
+    [InlineData(3, true)]
+    [InlineData(4, false)]
+    [InlineData(9999, false)]
+    public async Task SnapshotsUsage_ValidateSnapshot(long position, bool expected)
+    {
+        var validator = new SnapshotPositionValidator(NewEventStore());
+        var streamId = new StreamId($"order-{Guid.NewGuid()}");
+        var appended = await validator.EventStore.AppendAsync(
+            streamId,
+            new object[] { new OrderPlaced("alice"), new ItemAdded(3m), new ItemAdded(4m) },
+            StreamPosition.Start);
+        appended.IsSuccess.Should().BeTrue();
+
+        (await validator.ValidateSnapshot(streamId, new StreamPosition(position))).Should().Be(expected);
+    }
+
+    private sealed class SnapshotPositionValidator(IEventStore eventStore)
+    {
+        private readonly IEventStore _eventStore = eventStore;
+
+        public IEventStore EventStore => _eventStore;
+
+        // --- snippet ---
+        public async Task<bool> ValidateSnapshot(
+            StreamId streamId, StreamPosition snapshotPosition, CancellationToken ct = default)
+        {
+            // A snapshot at Start covers no events, so there is nothing to check
+            if (snapshotPosition == StreamPosition.Start)
+                return true;
+
+            // Reads exclude their start position, so reading from the position before the
+            // snapshot yields the event AT the snapshot position first, if it exists
+            var before = new StreamPosition(snapshotPosition.Value - 1);
+            await foreach (var envelope in _eventStore.ReadAsync(streamId, before, ct))
+            {
+                return envelope.Position == snapshotPosition;  // Position exists
+            }
+
+            return false;  // Position doesn't exist (snapshot is stale)
+        }
+        // --- end snippet ---
+    }
 }

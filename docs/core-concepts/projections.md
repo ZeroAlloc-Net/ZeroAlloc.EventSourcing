@@ -208,20 +208,27 @@ public record OrderProjectionResult(OrderDetails Details, StreamPosition Positio
 Store the projection in a database for efficient querying:
 
 ```csharp
-public class OrdersDataStore  // Database table
+public record OrdersDataStore  // One row of the database table
 {
-    public string OrderId { get; set; }
-    public decimal Total { get; set; }
-    public string Status { get; set; }
+    public string OrderId { get; init; } = "";
+    public decimal Total { get; init; }
+    public string Status { get; init; } = "";
+}
+
+// Your data-access code for the table: not part of the library
+public interface IOrdersTable
+{
+    ValueTask UpsertAsync(OrdersDataStore row, CancellationToken ct);
 }
 
 public class OrdersMaterializationProjection : Projection<Dictionary<string, OrdersDataStore>>
 {
-    private readonly IOrderRepository _repository;
+    private readonly IOrdersTable _table;
 
-    public OrdersMaterializationProjection(IOrderRepository repository)
+    public OrdersMaterializationProjection(IOrdersTable table)
     {
-        _repository = repository;
+        _table = table;
+        Current = new Dictionary<string, OrdersDataStore>();
     }
 
     protected override Dictionary<string, OrdersDataStore> Apply(
@@ -259,9 +266,9 @@ public class OrdersMaterializationProjection : Projection<Dictionary<string, Ord
     {
         await base.HandleAsync(@event, ct);
         // Persist to database after each event
-        foreach (var order in Current.Values)
+        foreach (var row in Current.Values)
         {
-            await _repository.SaveAsync(order, ct);
+            await _table.UpsertAsync(row, ct);
         }
     }
 }
@@ -445,12 +452,13 @@ public override OrderData Apply(OrderData current, EventEnvelope @event)
 // If exactly-once is critical, track processed event positions
 public class TrackingProjection : Projection<(OrderData Data, StreamPosition LastPosition)>
 {
-    protected override (OrderData, StreamPosition) Apply(
-        (OrderData, StreamPosition) current,
+    protected override (OrderData Data, StreamPosition LastPosition) Apply(
+        (OrderData Data, StreamPosition LastPosition) current,
         EventEnvelope @event)
     {
         // Skip if we've already processed this position
-        if (current.LastPosition >= @event.Position)
+        // (StreamPosition has no ordering operators; compare the values)
+        if (current.LastPosition.Value >= @event.Position.Value)
             return current;
 
         var newData = ApplyEvent(current.Data, @event.Event);
@@ -467,9 +475,9 @@ public class TrackingProjection : Projection<(OrderData Data, StreamPosition Las
 // Project real-time order metrics
 var dashboardProjection = new OrderMetricsProjection();
 
-// Subscribe to new events
-var subscription = await eventStore.SubscribeAsync(
-    streamId: new StreamId("$all"),
+// Subscribe to new events on a stream
+await using var subscription = await eventStore.SubscribeAsync(
+    id: streamId,
     from: StreamPosition.Start,
     handler: async (envelope, ct) =>
     {
@@ -477,6 +485,7 @@ var subscription = await eventStore.SubscribeAsync(
         // Dashboard updates in real-time
     }
 );
+await subscription.StartAsync();  // events are delivered once the subscription is started
 ```
 
 ### API Query Layer
@@ -547,9 +556,9 @@ Projections complement aggregates:
 
 ```csharp
 // Aggregate: Single order details and behavior
-var order = await repository.LoadAsync(orderId);
+using var order = (await repository.LoadAsync(orderId)).Value;
 order.Ship("TRACK-123");
-await repository.SaveAsync(order);
+await repository.SaveAsync(order, orderId);
 
 // Projection: List all orders, search, filter
 var allOrders = orderProjection.Current;

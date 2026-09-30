@@ -512,7 +512,7 @@ public class Program
         // Create event store using plugin
         var eventStorePlugins = pluginManager.GetPlugins<IEventStorePlugin>();
         var adapter = eventStorePlugins.First().CreateAdapter();
-        var eventStore = new EventStore(adapter, new JsonEventSerializer());
+        var eventStore = new EventStore(adapter, new JsonEventSerializer(), new OrderEventTypeRegistry());
 
         // Create middleware chain
         var middlewares = pluginManager.GetPlugins<IMiddlewarePlugin>()

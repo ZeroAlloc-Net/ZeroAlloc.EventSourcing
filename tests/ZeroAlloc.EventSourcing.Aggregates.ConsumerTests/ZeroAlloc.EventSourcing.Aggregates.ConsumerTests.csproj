@@ -28,6 +28,16 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
+  <!--
+    The runnable examples under docs/examples are compiled here, against the public API only, so
+    they cannot call internal members or drift from the real signatures. See issue #390.
+  -->
+  <ItemGroup>
+    <Compile Include="..\..\docs\examples\01-getting-started\*.cs" Link="DocsExamples\01-getting-started\%(Filename)%(Extension)" />
+    <Compile Include="..\..\docs\examples\03-testing\TestingAggregates.cs" Link="DocsExamples\03-testing\%(Filename)%(Extension)" />
+    <Compile Include="..\..\docs\examples\04-advanced\CustomSnapshotStore.cs" Link="DocsExamples\04-advanced\%(Filename)%(Extension)" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\..\src\ZeroAlloc.EventSourcing.Aggregates\ZeroAlloc.EventSourcing.Aggregates.csproj" />
     <ProjectReference Include="..\..\src\ZeroAlloc.EventSourcing.InMemory\ZeroAlloc.EventSourcing.InMemory.csproj" />

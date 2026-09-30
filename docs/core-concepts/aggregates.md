@@ -96,14 +96,22 @@ Using `readonly record struct` is recommended because it:
 **Using aggregate IDs:**
 
 ```csharp
+// The repository maps an aggregate ID to its stream
+var repository = new AggregateRepository<Order, OrderId>(
+    eventStore,
+    () => new Order(),
+    id => new StreamId($"order-{id.Value}"));
+
 var orderId = new OrderId(Guid.NewGuid());
-var order = new Order();
-order.SetId(orderId);  // Set the ID once during creation
+using var order = new Order();
+order.Place("ORD-001", 1500m);
+await repository.SaveAsync(order, orderId);   // Appends to stream "order-<guid>"
 
 // Later, use the ID to load the order from the store
-var streamId = new StreamId($"order-{orderId.Value}");
-await eventStore.ReadAsync(streamId, ...);
+var loaded = await repository.LoadAsync(orderId);
 ```
+
+The repository takes the ID as an argument on every `LoadAsync` and `SaveAsync`; it does not set the aggregate's `Id` property. If your aggregate needs its own ID, set it from a command method, for example from the event that creates it.
 
 ## Aggregate Roots vs. Entities
 
@@ -141,7 +149,7 @@ Aggregates track two version concepts:
 - **OriginalVersion** — The version when the aggregate was loaded from the event store. This is used for optimistic locking when saving changes.
 - **Version** — The current version after any new events are raised. As you call command methods and raise events, this version increments.
 
-When you load an aggregate, OriginalVersion is set to its stream position. When you save it, you pass OriginalVersion to AppendAsync for optimistic locking. The returned NextExpectedVersion becomes the new OriginalVersion if you load the same aggregate again.
+When you load an aggregate, OriginalVersion is set to the position of the last event in its stream. When you save it, the repository passes OriginalVersion to `AppendAsync` as the expected version for optimistic locking. On success, the returned `NextExpectedVersion` becomes the aggregate's new OriginalVersion, so the same instance can be modified and saved again.
 
 ## State Definition
 
@@ -255,12 +263,12 @@ An aggregate goes through distinct phases:
 ### 1. Creation
 
 ```csharp
-var order = new Order();
-order.SetId(new OrderId(Guid.NewGuid()));
+var orderId = new OrderId(Guid.NewGuid());
+using var order = new Order();
 order.Place("ORD-001", 1500m);  // First command
 
-var events = order.DequeueUncommitted();  // Get the events
-await eventStore.AppendAsync(streamId, events, StreamPosition.Start);
+// Appends the pending events at OriginalVersion, which is Start for a new aggregate
+var created = await repository.SaveAsync(order, orderId);
 ```
 
 ### 2. In-Memory Modification
@@ -268,37 +276,38 @@ await eventStore.AppendAsync(streamId, events, StreamPosition.Start);
 ```csharp
 order.Confirm();    // State is updated in memory
 order.Ship("TRACK-123");
-var newEvents = order.DequeueUncommitted();
+
+// Two events are pending: Version is ahead of OriginalVersion by 2
+var pending = order.Version.Value - order.OriginalVersion.Value;
 ```
 
 ### 3. Persistence
 
 ```csharp
 // Save new events to the store
-var result = await eventStore.AppendAsync(
-    streamId,
-    newEvents,
-    order.OriginalVersion  // For optimistic locking
-);
+// The repository appends them with order.OriginalVersion as the expected version
+var result = await repository.SaveAsync(order, orderId);
 
 if (result.IsSuccess)
-    order.AcceptVersion(result.Value.Position);  // Update version tracking
+{
+    // OriginalVersion now equals result.Value.NextExpectedVersion
+}
+else if (result.Error.Code == "CONFLICT")
+{
+    // Another writer appended to the stream since this order was loaded
+}
 ```
 
 ### 4. Loading from History
 
 ```csharp
-var loadedOrder = new Order();
-loadedOrder.SetId(orderId);
-
-// Replay all events to reconstruct state
-await foreach (var envelope in eventStore.ReadAsync(streamId, StreamPosition.Start))
-{
-    loadedOrder.ApplyHistoric(envelope.Event, envelope.Position);
-}
+// Replays all events in the stream onto a new Order to reconstruct state
+var loaded = await repository.LoadAsync(orderId);
+using var loadedOrder = loaded.Value;
 
 // loadedOrder is now fully reconstructed
 loadedOrder.Ship("TRACK-456");  // Can continue modifying
+await repository.SaveAsync(loadedOrder, orderId);
 ```
 
 ## Consistency Boundaries
@@ -310,28 +319,23 @@ A consistency boundary defines what must always be true. In event sourcing, you 
 ```csharp
 public sealed partial class Order : Aggregate<OrderId, OrderState>
 {
-    // Rule 1: Order must be placed before shipping
-    public void Ship(string trackingNumber)
-    {
-        if (!State.IsPlaced)
-            throw new InvalidOperationException("Cannot ship unplaced order");
-        Raise(new OrderShippedEvent(trackingNumber));
-    }
-
-    // Rule 2: Order must be confirmed before shipping
+    // Rule 1: Order must be placed before it can be confirmed
+    // Rule 2: Cannot confirm twice
     public void Confirm()
     {
         if (!State.IsPlaced)
             throw new InvalidOperationException("Cannot confirm unplaced order");
-        Raise(new OrderConfirmedEvent());
-    }
-
-    // Rule 3: Cannot confirm twice
-    public void Confirm()
-    {
         if (State.IsConfirmed)
             throw new InvalidOperationException("Order already confirmed");
         Raise(new OrderConfirmedEvent());
+    }
+
+    // Rule 3: Order must be confirmed before shipping
+    public void Ship(string trackingNumber)
+    {
+        if (!State.IsConfirmed)
+            throw new InvalidOperationException("Cannot ship unconfirmed order");
+        Raise(new OrderShippedEvent(trackingNumber));
     }
 }
 ```
@@ -394,9 +398,9 @@ public sealed partial class Order : Aggregate<OrderId, OrderState>
     }
 }
 
-var order = await repository.LoadAsync(orderId);
+using var order = (await repository.LoadAsync(orderId)).Value;
 order.Ship("TRACK-123");
-await repository.SaveAsync(order);  // Appends events to store
+await repository.SaveAsync(order, orderId);  // Appends events to store
 ```
 
 **Benefits:**

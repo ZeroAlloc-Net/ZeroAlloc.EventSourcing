@@ -6,57 +6,47 @@ Event replay is fundamental to event sourcing. This guide covers loading aggrega
 
 ## Loading from History: The Complete Cycle
 
-Loading an aggregate from an event store requires three steps. See [building-aggregates.md](./building-aggregates.md) for the repository interface definition and aggregate base class documentation:
+Loading an aggregate goes through a repository. `AggregateRepository` performs the three steps for you: it creates an empty aggregate with your factory, reads every event in the stream, and applies each one to rebuild state. See [building-aggregates.md](./building-aggregates.md) for the repository interface definition and aggregate base class documentation:
 
 ```csharp
-// Step 1: Create an empty aggregate
-var order = new Order();
-order.SetId(orderId);
+var repository = new AggregateRepository<Order, OrderId>(
+    eventStore,
+    () => new Order(),                         // Step 1: create an empty aggregate
+    id => new StreamId($"order-{id.Value}"));  // which stream to read
 
-// Step 2: Read all events from the stream
-var eventCount = 0;
-await foreach (var envelope in eventStore.ReadAsync(streamId, StreamPosition.Start))
-{
-    // Step 3: Apply each event to rebuild state
-    order.ApplyHistoric(envelope.Event, envelope.Position);
-    eventCount++;
-}
+// Steps 2 and 3: read all events from the stream and apply each one
+var loaded = await repository.LoadAsync(orderId);
+using var order = loaded.Value;
 
 // Now order.State is fully reconstructed
-Console.WriteLine($"Loaded {eventCount} events");
 Console.WriteLine($"Order status: {order.State.IsPlaced}");
-Console.WriteLine($"Final version: {order.Version}");
+Console.WriteLine($"Final version: {order.Version.Value}");  // position of the last event
 ```
+
+A stream with no events loads as a fresh aggregate at `StreamPosition.Start`; `LoadAsync` does not fail for it.
 
 ### Event Envelope
 
 Events are returned wrapped in `EventEnvelope`:
 
 ```csharp
-public record EventEnvelope
-{
-    public object Event { get; set; }           // The event payload
-    public StreamId StreamId { get; set; }      // Which stream
-    public StreamPosition Position { get; set; } // Position in stream
-    public EventMetadata? Metadata { get; set; } // Optional metadata
-}
+public readonly record struct EventEnvelope(
+    StreamId StreamId,        // Which stream
+    StreamPosition Position,  // Position in stream (1-based)
+    object Event,             // The event payload
+    EventMetadata Metadata);  // Event id, type, timestamps, correlation
 ```
 
 The `Position` is critical—it identifies where the event sits in the stream's ordering and is needed for optimistic concurrency control.
 
-### ApplyHistoric vs. ApplyEvent
+### Replayed Events vs. Raised Events
 
-Two methods apply events to state:
+An event reaches the aggregate's state in one of two ways, and both end in the same `ApplyEvent` dispatch:
 
-```csharp
-// Internal: Used when loading from store (sets Version)
-order.ApplyHistoric(envelope.Event, envelope.Position);
+- **Replayed by the repository.** `LoadAsync` applies each stored event and sets both `Version` and `OriginalVersion` to its position. Nothing is queued for saving. The member the repository uses for this is internal: application code loads through a repository, not by replaying events itself.
+- **Raised by a command.** `Raise(...)` inside a command method applies the event, increments `Version` and queues the event for the next save. `OriginalVersion` stays at the loaded version.
 
-// Internal: Used when raising new events (in Raise())
-order.ApplyEvent(state, @event);  // Doesn't update Version
-```
-
-`ApplyHistoric` updates the aggregate's internal `Version` tracking, which is essential for detecting concurrent modifications at save time.
+`OriginalVersion` is what the repository passes as the expected version on `SaveAsync`, which is how concurrent modifications are detected at save time.
 
 ## Event Replay Process and Guarantees
 
@@ -80,22 +70,24 @@ This means replaying events is **idempotent**—replaying the same events multip
 
 ### Starting Position
 
-Start replaying from a specific position:
+`ReadAsync` takes the position to read after. Reads exclude their start position, so reading from position `n` yields the events at `n + 1` onwards:
 
 ```csharp
-// From the beginning
+// From the beginning: every event, positions 1, 2, 3, ...
 await foreach (var envelope in eventStore.ReadAsync(streamId, StreamPosition.Start))
 {
-    order.ApplyHistoric(envelope.Event, envelope.Position);
+    Console.WriteLine($"{envelope.Position.Value}: {envelope.Event.GetType().Name}");
 }
 
-// Or from a specific position (useful with snapshots)
-var startPosition = new StreamPosition(500);
-await foreach (var envelope in eventStore.ReadAsync(streamId, startPosition))
+// Or after a specific position: events 501 onwards
+var after = new StreamPosition(500);
+await foreach (var envelope in eventStore.ReadAsync(streamId, after))
 {
-    order.ApplyHistoric(envelope.Event, envelope.Position);
+    Console.WriteLine($"{envelope.Position.Value}: {envelope.Event.GetType().Name}");
 }
 ```
+
+To rebuild an aggregate without replaying from the start, restore it from a snapshot: `SnapshotCachingRepositoryDecorator` restores the snapshot and replays only the events after it. See [Snapshot Optimization](#snapshot-optimization).
 
 ## Performance Considerations: Event Count Impact
 
@@ -127,64 +119,63 @@ For 10,000 events, that's 10,000 deserializations, 10,000 dispatches, 10,000 sta
 When you change aggregate behavior, rebuild all aggregates by replaying events:
 
 ```csharp
-public class AggregateRebuilder<TId, TState>
+public class AggregateRebuilder<TAggregate, TId, TState>
+    where TAggregate : Aggregate<TId, TState>
     where TId : struct
     where TState : struct, IAggregateState<TState>
 {
-    private readonly IEventStore _eventStore;
-    private readonly IAggregateRepository<TId, TState> _repository;
-    private readonly Func<StreamId, TId> _extractId;
-    
+    private readonly IAggregateRepository<TAggregate, TId> _repository;
+    private readonly ISnapshotStore<TState> _snapshotStore;
+    private readonly Func<TId, StreamId> _streamIdFactory;
+
     public AggregateRebuilder(
-        IEventStore eventStore,
-        IAggregateRepository<TId, TState> repository,
-        Func<StreamId, TId> extractId)
+        IAggregateRepository<TAggregate, TId> repository,  // a plain AggregateRepository: full replay
+        ISnapshotStore<TState> snapshotStore,
+        Func<TId, StreamId> streamIdFactory)
     {
-        _eventStore = eventStore;
         _repository = repository;
-        _extractId = extractId;  // Helper to extract TId from StreamId
+        _snapshotStore = snapshotStore;
+        _streamIdFactory = streamIdFactory;
     }
-    
-    public async Task RebuildAll(StreamId filter, CancellationToken ct = default)
+
+    public async Task RebuildAll(IEnumerable<TId> aggregateIds, CancellationToken ct = default)
     {
-        // Read all streams matching filter
-        await foreach (var envelope in _eventStore.ReadAllAsync(filter, ct))
+        // IEventStore reads one stream at a time, so the ids come from your own
+        // index or read model of existing aggregates.
+        foreach (var aggregateId in aggregateIds)
         {
-            // Extract stream ID from envelope
-            var streamId = envelope.StreamId;
-            
-            // Extract aggregate ID from stream ID
-            // This is domain-specific; example: streamId "order-{guid}" -> OrderId
-            var aggregateId = _extractId(streamId);
-            
-            // Load aggregate (which replays all events)
+            // Load aggregate (which replays all events with the new logic)
             var result = await _repository.LoadAsync(aggregateId, ct);
             if (!result.IsSuccess)
             {
-                Console.WriteLine($"Failed to load {streamId}: {result.Error}");
+                Console.WriteLine($"Failed to load {aggregateId}: {result.Error}");
                 continue;
             }
-            
-            // Aggregate is now fully reconstructed with new logic
-            Console.WriteLine($"Rebuilt {streamId}");
+
+            using var aggregate = result.Value;
+            if (aggregate.Version == StreamPosition.Start)
+                continue;  // empty stream
+
+            // Replace the old snapshot with one built by the new logic
+            await _snapshotStore.WriteAsync(_streamIdFactory(aggregateId), aggregate.Version, aggregate.State, ct);
+            Console.WriteLine($"Rebuilt {aggregateId} at version {aggregate.Version.Value}");
         }
     }
 }
 
 // Usage example:
-// For Order aggregates with stream ID format "order-{guid}":
-var rebuilder = new AggregateRebuilder<OrderId, OrderState>(
-    eventStore,
-    repository,
-    extractId: streamId =>
-    {
-        // Extract GUID from stream ID "order-{guid}"
-        var guidPart = streamId.Value.Substring("order-".Length);
-        return new OrderId(Guid.Parse(guidPart));
-    });
+var rebuilder = new AggregateRebuilder<Order, OrderId, OrderState>(
+    new AggregateRepository<Order, OrderId>(
+        eventStore,
+        () => new Order(),
+        id => new StreamId($"order-{id.Value}")),
+    snapshotStore,
+    id => new StreamId($"order-{id.Value}"));
 
-await rebuilder.RebuildAll(new StreamId("order-*"));
+await rebuilder.RebuildAll(orderIds);
 ```
+
+[`CustomSnapshotStore.cs`](../examples/04-advanced/CustomSnapshotStore.cs) shows the same rebuild for a single aggregate (`SnapshotRebuilder`).
 
 ### Snapshot Optimization
 
@@ -255,11 +246,21 @@ Most effective for long-lived aggregates:
 ```csharp
 var snapshotStore = new InMemorySnapshotStore<OrderState>();
 
-// After loading, save a snapshot every N events
-if (order.Version.Value % 100 == 0)  // Every 100 events
-{
-    await snapshotStore.WriteAsync(streamId, order.Version, order.State);
-}
+// Write a snapshot on save once 100 events have been appended since the last one,
+// and load from the latest snapshot plus the events after it
+var repository = new SnapshotCachingRepositoryDecorator<Order, OrderId, OrderState>(
+    innerRepository: new AggregateRepository<Order, OrderId>(
+        eventStore,
+        () => new Order(),
+        id => new StreamId($"order-{id.Value}")),
+    snapshotStore: snapshotStore,
+    strategy: SnapshotLoadingStrategy.ValidateAndReplay,
+    restoreState: (order, state, pos) => order.RestoreState(state, pos),
+    eventStore: eventStore,
+    streamIdFactory: id => new StreamId($"order-{id.Value}"),
+    aggregateFactory: () => new Order(),
+    snapshotPolicy: SnapshotPolicy.EveryNEvents(100),
+    extractState: order => order.State);
 ```
 
 See [Snapshots Usage](./snapshots-usage.md) for details.
@@ -273,52 +274,76 @@ public class EventArchiver
 {
     private readonly IEventStore _live;
     private readonly IEventStore _archive;
-    
-    public async Task Archive(StreamId streamId, StreamPosition before)
+
+    public EventArchiver(IEventStore live, IEventStore archive)
     {
-        // Copy old events to archive
-        await foreach (var envelope in _live.ReadAsync(streamId, StreamPosition.Start))
+        _live = live;
+        _archive = archive;
+    }
+
+    public async Task Archive(StreamId streamId, StreamPosition before, CancellationToken ct = default)
+    {
+        // Copy the events before `before` to the archive, as one append to a new stream
+        var old = new List<object>();
+        await foreach (var envelope in _live.ReadAsync(streamId, StreamPosition.Start, ct))
         {
             if (envelope.Position.Value >= before.Value)
                 break;
-            
-            await _archive.AppendAsync(streamId, new[] { envelope.Event }, envelope.Position);
+            old.Add(envelope.Event);
         }
-        
-        // Delete from live store (keep recent events)
-        await _live.DeleteAsync(streamId, before);
+
+        var archived = await _archive.AppendAsync(streamId, old.ToArray(), StreamPosition.Start, ct);
+        if (archived.IsFailure)
+            throw new InvalidOperationException($"Archive failed: {archived.Error}");
+
+        // IEventStore is append-only and has no delete. Removing the archived events from
+        // the live store is specific to your database, for example a DELETE on its events table.
     }
 }
 ```
 
 ### Solution 3: Event Compaction
 
-Periodically create a new stream with compacted events:
+Periodically start a new stream whose first event carries the current state. The aggregate
+needs an `Apply` for that event, so it can load from the compacted stream:
 
 ```csharp
+// The compacted stream starts with this event
+public sealed record OrderCompactedEvent(OrderState State, long EventCount);
+
+// In OrderState:
+//   internal OrderState Apply(OrderCompactedEvent e) => e.State;
+
 public class EventCompactor
 {
-    public async Task CompactStream(StreamId streamId)
+    private readonly IEventStore _eventStore;
+    private readonly IAggregateRepository<Order, OrderId> _repository;
+
+    public EventCompactor(IEventStore eventStore, IAggregateRepository<Order, OrderId> repository)
     {
-        // Read entire stream
-        var aggregates = new List<object>();
-        await foreach (var envelope in eventStore.ReadAsync(streamId, StreamPosition.Start))
-        {
-            aggregates.Add(envelope.Event);
-        }
-        
+        _eventStore = eventStore;
+        _repository = repository;
+    }
+
+    public async Task CompactStream(OrderId orderId, CancellationToken ct = default)
+    {
+        // Load the current state by replaying the entire stream
+        using var order = (await _repository.LoadAsync(orderId, ct)).Value;
+
         // Create "snapshot event" with all current state
-        var compactEvent = new StreamCompactedEvent(
-            FinalState: order.State,
-            EventCount: aggregates.Count
-        );
-        
+        var compactEvent = new OrderCompactedEvent(order.State, order.Version.Value);
+
         // Create new stream starting with compact event
-        var compactStreamId = new StreamId($"{streamId.Value}_compact");
-        await eventStore.AppendAsync(compactStreamId, new[] { compactEvent }, StreamPosition.Start);
+        var compactStreamId = new StreamId($"order-{orderId.Value}_compact");
+        await _eventStore.AppendAsync(compactStreamId, new object[] { compactEvent }, StreamPosition.Start, ct);
+
+        // Switching readers to the compacted stream, and retiring the old one,
+        // is up to your application and database.
     }
 }
 ```
+
+For most aggregates, [snapshots](#snapshot-optimization) solve the same problem without a new stream.
 
 ## Replay Safety and Idempotency
 
@@ -328,17 +353,11 @@ Replaying the same events multiple times always produces the same state:
 
 ```csharp
 // First load
-var order1 = new Order();
-order1.SetId(orderId);
-await foreach (var envelope in eventStore.ReadAsync(streamId, StreamPosition.Start))
-    order1.ApplyHistoric(envelope.Event, envelope.Position);
+using var order1 = (await repository.LoadAsync(orderId)).Value;
 var state1 = order1.State;
 
 // Second load (identical)
-var order2 = new Order();
-order2.SetId(orderId);
-await foreach (var envelope in eventStore.ReadAsync(streamId, StreamPosition.Start))
-    order2.ApplyHistoric(envelope.Event, envelope.Position);
+using var order2 = (await repository.LoadAsync(orderId)).Value;
 var state2 = order2.State;
 
 // state1 == state2 (always)
@@ -361,10 +380,8 @@ public class ProjectionProcessor
     
     public async Task ProcessNew()
     {
-        // Resume from last processed position
-        var startPosition = _lastProcessedPosition.Next();
-        
-        await foreach (var envelope in eventStore.ReadAsync(streamId, startPosition))
+        // Resume after the last processed position: reads exclude their start position
+        await foreach (var envelope in eventStore.ReadAsync(streamId, _lastProcessedPosition))
         {
             // Process event
             await ProcessEvent(envelope.Event);
@@ -382,139 +399,123 @@ When multiple clients load the same aggregate, conflicts are detected at save ti
 
 ```csharp
 // Client 1 loads
-var order1 = new Order();
-order1.SetId(orderId);
-await foreach (var envelope in eventStore.ReadAsync(streamId, StreamPosition.Start))
-    order1.ApplyHistoric(envelope.Event, envelope.Position);
+using var order1 = (await repository.LoadAsync(orderId)).Value;
 // order1.OriginalVersion == 5 (stream has 5 events)
 
 // Client 2 loads
-var order2 = new Order();
-order2.SetId(orderId);
-await foreach (var envelope in eventStore.ReadAsync(streamId, StreamPosition.Start))
-    order2.ApplyHistoric(envelope.Event, envelope.Position);
+using var order2 = (await repository.LoadAsync(orderId)).Value;
 // order2.OriginalVersion == 5
 
 // Client 1 modifies and saves
 order1.Ship("TRACK-1");
-await repository.SaveAsync(order1);  // Success, saves at position 6
+await repository.SaveAsync(order1, orderId);  // Success, stream is now at version 6
 
 // Client 2 tries to modify and save (conflict!)
 order2.Confirm();
-var result = await repository.SaveAsync(order2);
-// result.Error == StoreError.Conflict
+var result = await repository.SaveAsync(order2, orderId);
+// result.IsFailure and result.Error.Code == "CONFLICT"
 // order2.OriginalVersion (5) != stream version (6)
 
-// Client 2 must retry
-var order3 = new Order();
-order3.SetId(orderId);
-await foreach (var envelope in eventStore.ReadAsync(streamId, StreamPosition.Start))
-    order3.ApplyHistoric(envelope.Event, envelope.Position);
+// Client 2 must retry with a fresh load
+using var order3 = (await repository.LoadAsync(orderId)).Value;
 // Now includes order1's Ship event
 order3.Confirm();
-await repository.SaveAsync(order3);  // Success
+await repository.SaveAsync(order3, orderId);  // Success
 ```
 
 ## Testing Replay Logic
 
-Test that aggregates load correctly from events:
+Test that aggregates load correctly from events. Save through a repository over the in-memory event store, then load through the same repository:
 
 ```csharp
-[Fact]
-public async Task LoadAggregate_ReconstructsStateFromEvents()
+public class ReplayTests
 {
-    // Arrange
-    var orderId = new OrderId(Guid.NewGuid());
-    var streamId = new StreamId($"order-{orderId.Value}");
-    
-    var order = new Order();
-    order.SetId(orderId);
-    order.Place("ORD-001", 1500m);
-    order.Confirm();
-    order.Ship("TRACK-123");
-    
-    var events = order.DequeueUncommitted();
-    await eventStore.AppendAsync(streamId, events, StreamPosition.Start);
-    
-    // Act: Load from store
-    var loadedOrder = new Order();
-    loadedOrder.SetId(orderId);
-    
-    int eventCount = 0;
-    await foreach (var envelope in eventStore.ReadAsync(streamId, StreamPosition.Start))
-    {
-        loadedOrder.ApplyHistoric(envelope.Event, envelope.Position);
-        eventCount++;
-    }
-    
-    // Assert
-    Assert.Equal(3, eventCount);
-    Assert.True(loadedOrder.State.IsPlaced);
-    Assert.True(loadedOrder.State.IsConfirmed);
-    Assert.True(loadedOrder.State.IsShipped);
-    Assert.Equal("TRACK-123", loadedOrder.State.TrackingNumber);
-    Assert.Equal(1500m, loadedOrder.State.Total);
-}
+    private readonly IEventStore eventStore = new EventStore(
+        new InMemoryEventStoreAdapter(),
+        new JsonEventSerializer(),       // any IEventSerializer
+        new OrderEventTypeRegistry());   // source-generated for Order
+    private readonly AggregateRepository<Order, OrderId> repository;
 
-[Fact]
-public async Task LoadPartialStream_ReplaysSincePosition()
-{
-    // Arrange
-    var orderId = new OrderId(Guid.NewGuid());
-    var streamId = new StreamId($"order-{orderId.Value}");
-    
-    // Create order with 5 events
-    var order = new Order();
-    order.SetId(orderId);
-    order.Place("ORD-001", 1500m);
-    order.Confirm();
-    order.Ship("TRACK-123");
-    order.Deliver();
-    // (5th event would be delivered)
-    
-    var events = order.DequeueUncommitted();
-    await eventStore.AppendAsync(streamId, events, StreamPosition.Start);
-    
-    // Act: Load from position 3 (after Ship)
-    var loadedOrder = new Order();
-    loadedOrder.SetId(orderId);
-    
-    var startPosition = new StreamPosition(3);
-    await foreach (var envelope in eventStore.ReadAsync(streamId, startPosition))
-    {
-        loadedOrder.ApplyHistoric(envelope.Event, envelope.Position);
-    }
-    
-    // Assert: Only has state after position 3
-    // (Missing IsPlaced, IsConfirmed, IsShipped would be false
-    // but they depend on previous events)
-    Assert.Equal(new StreamPosition(4), loadedOrder.Version);
-}
+    public ReplayTests() =>
+        repository = new AggregateRepository<Order, OrderId>(
+            eventStore, () => new Order(), id => new StreamId($"order-{id.Value}"));
 
-[Fact]
-public async Task MultipleLoads_ProduceIdenticalState()
-{
-    // Arrange & Act
-    var state1 = await LoadAggregateState();
-    var state2 = await LoadAggregateState();
-    var state3 = await LoadAggregateState();
-    
-    // Assert
-    Assert.Equal(state1, state2);
-    Assert.Equal(state2, state3);
-}
-
-private async Task<OrderState> LoadAggregateState()
-{
-    var order = new Order();
-    order.SetId(new OrderId(Guid.NewGuid()));
-    
-    await foreach (var envelope in eventStore.ReadAsync(streamId, StreamPosition.Start))
+    [Fact]
+    public async Task LoadAggregate_ReconstructsStateFromEvents()
     {
-        order.ApplyHistoric(envelope.Event, envelope.Position);
+        // Arrange
+        var orderId = new OrderId(Guid.NewGuid());
+
+        using var order = new Order();
+        order.Place("ORD-001", 1500m);
+        order.Confirm();
+        order.Ship("TRACK-123");
+        await repository.SaveAsync(order, orderId);
+
+        // Act: Load from store
+        using var loadedOrder = (await repository.LoadAsync(orderId)).Value;
+
+        // Assert
+        Assert.Equal(new StreamPosition(3), loadedOrder.Version);  // 3 events replayed
+        Assert.True(loadedOrder.State.IsPlaced);
+        Assert.True(loadedOrder.State.IsConfirmed);
+        Assert.True(loadedOrder.State.IsShipped);
+        Assert.Equal("TRACK-123", loadedOrder.State.TrackingNumber);
+        Assert.Equal(1500m, loadedOrder.State.Total);
     }
-    
-    return order.State;
+
+    [Fact]
+    public async Task ReadAfterPosition_ReturnsOnlyLaterEvents()
+    {
+        // Arrange: an order with 4 events
+        var orderId = new OrderId(Guid.NewGuid());
+        var streamId = new StreamId($"order-{orderId.Value}");
+
+        using var order = new Order();
+        order.Place("ORD-001", 1500m);
+        order.Confirm();
+        order.Ship("TRACK-123");
+        order.Deliver();
+        await repository.SaveAsync(order, orderId);
+
+        // Act: read after position 3 (after Ship)
+        var positions = new List<StreamPosition>();
+        await foreach (var envelope in eventStore.ReadAsync(streamId, new StreamPosition(3)))
+        {
+            positions.Add(envelope.Position);
+        }
+
+        // Assert: only the Deliver event, at position 4
+        Assert.Equal(new[] { new StreamPosition(4) }, positions);
+    }
+
+    [Fact]
+    public async Task MultipleLoads_ProduceIdenticalState()
+    {
+        // Arrange
+        var orderId = new OrderId(Guid.NewGuid());
+        using (var order = new Order())
+        {
+            order.Place("ORD-001", 1500m);
+            order.Confirm();
+            await repository.SaveAsync(order, orderId);
+        }
+
+        // Act
+        var state1 = await LoadAggregateState(orderId);
+        var state2 = await LoadAggregateState(orderId);
+        var state3 = await LoadAggregateState(orderId);
+
+        // Assert
+        Assert.Equal(state1, state2);
+        Assert.Equal(state2, state3);
+    }
+
+    private async Task<OrderState> LoadAggregateState(OrderId orderId)
+    {
+        using var order = (await repository.LoadAsync(orderId)).Value;
+        return order.State;
+    }
 }
 ```
 
