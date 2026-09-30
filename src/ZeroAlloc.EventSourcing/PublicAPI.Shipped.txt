@@ -237,6 +237,8 @@ ZeroAlloc.EventSourcing.RawEvent.RawEvent(ZeroAlloc.EventSourcing.StreamPosition
 ZeroAlloc.EventSourcing.ReplayableProjection<TReadModel>
 ZeroAlloc.EventSourcing.ReplayableProjection<TReadModel>.RebuildAsync(ZeroAlloc.EventSourcing.IProjectionStore! store, ZeroAlloc.EventSourcing.StreamId streamId, ZeroAlloc.EventSourcing.IEventStore! eventStore, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
 ZeroAlloc.EventSourcing.ReplayableProjection<TReadModel>.ReplayableProjection() -> void
+ZeroAlloc.EventSourcing.ReplayableProjection<TReadModel>.ReplayableProjection(TReadModel initialState) -> void
+ZeroAlloc.EventSourcing.ReplayableProjection<TReadModel>.ReplayableProjection(TReadModel initialState, ZeroAlloc.Serialisation.ISerializer<TReadModel>! serializer) -> void
 ZeroAlloc.EventSourcing.ServiceCollectionExtensions
 ZeroAlloc.EventSourcing.SnapshotLoadingStrategy
 ZeroAlloc.EventSourcing.SnapshotLoadingStrategy.IgnoreSnapshot = 2 -> ZeroAlloc.EventSourcing.SnapshotLoadingStrategy

@@ -1,3 +1,1 @@
 #nullable enable
-ZeroAlloc.EventSourcing.ReplayableProjection<TReadModel>.ReplayableProjection(TReadModel initialState) -> void
-ZeroAlloc.EventSourcing.ReplayableProjection<TReadModel>.ReplayableProjection(TReadModel initialState, ZeroAlloc.Serialisation.ISerializer<TReadModel>! serializer) -> void
