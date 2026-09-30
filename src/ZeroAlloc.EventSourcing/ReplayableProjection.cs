@@ -1,3 +1,9 @@
+using System.Buffers;
+using System.Diagnostics.CodeAnalysis;
+using System.Text;
+using System.Text.Json;
+using ZeroAlloc.Serialisation;
+
 namespace ZeroAlloc.EventSourcing;
 
 /// <summary>
@@ -26,8 +32,12 @@ namespace ZeroAlloc.EventSourcing;
 /// {
 ///     private readonly StreamId _streamId;
 ///
+///     // SystemTextJsonSerializer comes from ZeroAlloc.Serialisation.SystemTextJson; AppJsonContext is the
+///     // application's JsonSerializerContext, so the rebuild stays NativeAOT-safe
 ///     public OrderProjection(StreamId streamId)
-///         : base(new OrderSummary(string.Empty, 0m, null))
+///         : base(
+///             new OrderSummary(string.Empty, 0m, null),
+///             new SystemTextJsonSerializer&lt;OrderSummary&gt;(AppJsonContext.Default.OrderSummary))
 ///     {
 ///         _streamId = streamId;
 ///     }
@@ -53,17 +63,29 @@ namespace ZeroAlloc.EventSourcing;
 /// </example>
 public abstract class ReplayableProjection<TReadModel> : Projection<TReadModel>
 {
+    private const string ReflectionSerializationMessage =
+        "RebuildAsync saves the read model with reflection-based System.Text.Json, which is not trim- or "
+        + "NativeAOT-safe. Use the constructor that takes an ISerializer<TReadModel> instead.";
+
+    private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
+
     private readonly TReadModel _initialState;
+    private readonly Func<TReadModel, string> _serializeState;
 
     /// <summary>
     /// Initializes the projection with <see cref="Projection{TReadModel}.Current"/> at <c>default(TReadModel)</c>.
-    /// <see cref="RebuildAsync"/> resets to <c>default(TReadModel)</c> as well.
+    /// <see cref="RebuildAsync"/> resets to <c>default(TReadModel)</c> as well, and saves the read model with
+    /// reflection-based System.Text.Json.
     /// </summary>
     /// <remarks>
     /// <c>default</c> is a valid empty state for a struct, but <see langword="null"/> for a record, class or
     /// collection. Use <see cref="ReplayableProjection{TReadModel}(TReadModel)"/> when <c>Apply</c> needs a
-    /// non-null starting value.
+    /// non-null starting value, and
+    /// <see cref="ReplayableProjection{TReadModel}(TReadModel, ISerializer{TReadModel})"/> for trimmed or
+    /// NativeAOT applications.
     /// </remarks>
+    [RequiresUnreferencedCode(ReflectionSerializationMessage)]
+    [RequiresDynamicCode(ReflectionSerializationMessage)]
     protected ReplayableProjection()
         : this(default!)
     {
@@ -72,15 +94,53 @@ public abstract class ReplayableProjection<TReadModel> : Projection<TReadModel>
     /// <summary>
     /// Initializes the projection with <see cref="Projection{TReadModel}.Current"/> at
     /// <paramref name="initialState"/>. <see cref="RebuildAsync"/> resets to the same value before it replays
-    /// the stream.
+    /// the stream, and saves the read model with reflection-based System.Text.Json.
     /// </summary>
+    /// <remarks>
+    /// Use <see cref="ReplayableProjection{TReadModel}(TReadModel, ISerializer{TReadModel})"/> for trimmed or
+    /// NativeAOT applications.
+    /// </remarks>
     /// <param name="initialState">
     /// The read model before any event is applied, for example <c>ImmutableDictionary&lt;string, decimal&gt;.Empty</c>.
     /// The same instance is reused on every rebuild, so it should be immutable.
     /// </param>
+    [RequiresUnreferencedCode(ReflectionSerializationMessage)]
+    [RequiresDynamicCode(ReflectionSerializationMessage)]
     protected ReplayableProjection(TReadModel initialState)
     {
         _initialState = initialState;
+        _serializeState = static state => JsonSerializer.Serialize(state);
+        Current = initialState;
+    }
+
+    /// <summary>
+    /// Initializes the projection with <see cref="Projection{TReadModel}.Current"/> at
+    /// <paramref name="initialState"/>. <see cref="RebuildAsync"/> resets to the same value before it replays
+    /// the stream, and saves the read model with <paramref name="serializer"/>. Trim- and NativeAOT-safe.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="IProjectionStore"/> stores text, so <paramref name="serializer"/> must write UTF-8 text, for
+    /// example ZeroAlloc.Serialisation.SystemTextJson's <c>SystemTextJsonSerializer&lt;T&gt;</c> over a
+    /// <c>JsonTypeInfo&lt;T&gt;</c> from a <c>JsonSerializerContext</c>. <see cref="RebuildAsync"/> throws a
+    /// <see cref="DecoderFallbackException"/> when the output is not valid UTF-8, as the output of a binary
+    /// serializer such as MemoryPack or MessagePack generally is not.
+    /// </remarks>
+    /// <param name="initialState">
+    /// The read model before any event is applied, for example <c>ImmutableDictionary&lt;string, decimal&gt;.Empty</c>.
+    /// The same instance is reused on every rebuild, so it should be immutable.
+    /// </param>
+    /// <param name="serializer">The serializer that writes the rebuilt read model as UTF-8 text.</param>
+    /// <exception cref="ArgumentNullException"><paramref name="serializer"/> is <see langword="null"/>.</exception>
+    protected ReplayableProjection(TReadModel initialState, ISerializer<TReadModel> serializer)
+    {
+        ArgumentNullException.ThrowIfNull(serializer);
+        _initialState = initialState;
+        _serializeState = state =>
+        {
+            var buffer = new ArrayBufferWriter<byte>();
+            serializer.Serialize(buffer, state);
+            return StrictUtf8.GetString(buffer.WrittenSpan);
+        };
         Current = initialState;
     }
 
@@ -102,7 +162,7 @@ public abstract class ReplayableProjection<TReadModel> : Projection<TReadModel>
     /// <list type="number">
     /// <item><description>Resets <see cref="Projection{TReadModel}.Current"/> to the initial state passed to the constructor, or <c>default(TReadModel)</c></description></item>
     /// <item><description>Replays all events from the event store via the provided eventStore</description></item>
-    /// <item><description>Saves the rebuilt state to the projection store</description></item>
+    /// <item><description>Saves the rebuilt state to the projection store, with the <see cref="ISerializer{T}"/> passed to the constructor, or reflection-based System.Text.Json</description></item>
     /// </list>
     /// </para>
     /// <para>
@@ -114,6 +174,9 @@ public abstract class ReplayableProjection<TReadModel> : Projection<TReadModel>
     /// <param name="eventStore">The event store containing the events to replay.</param>
     /// <param name="ct">Cancellation token for graceful shutdown (default: <see cref="CancellationToken.None"/>).</param>
     /// <returns>A completed <see cref="ValueTask"/>.</returns>
+    /// <exception cref="DecoderFallbackException">
+    /// The <see cref="ISerializer{T}"/> passed to the constructor did not write valid UTF-8 text.
+    /// </exception>
     public async ValueTask RebuildAsync(IProjectionStore store, StreamId streamId, IEventStore eventStore, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
@@ -130,7 +193,7 @@ public abstract class ReplayableProjection<TReadModel> : Projection<TReadModel>
 
         // Serialize and save the rebuilt state
         var key = GetProjectionKey();
-        var serialized = System.Text.Json.JsonSerializer.Serialize(Current);
+        var serialized = _serializeState(Current);
         await store.SaveAsync(key, serialized, ct).ConfigureAwait(false);
     }
 }

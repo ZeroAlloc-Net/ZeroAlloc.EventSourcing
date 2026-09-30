@@ -67,5 +67,10 @@ var valueTypes = await ValueTypeSmoke.RunAsync();
 if (valueTypes != 0)
     return valueTypes;
 
+// Path 4: ReplayableProjection.RebuildAsync through an ISerializer, issue #415.
+var rebuild = await ProjectionRebuildSmoke.RunAsync();
+if (rebuild != 0)
+    return rebuild;
+
 Console.WriteLine("AOT smoke: PASS");
 return 0;

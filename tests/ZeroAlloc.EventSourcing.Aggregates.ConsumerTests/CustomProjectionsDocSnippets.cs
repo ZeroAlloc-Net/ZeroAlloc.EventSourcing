@@ -1,7 +1,9 @@
 using System.Collections.Immutable;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using ZeroAlloc.EventSourcing;
+using ZeroAlloc.Serialisation.SystemTextJson;
 
 // The C# in docs/advanced/custom-projections.md, copied as it appears there between
 // "--- snippet ---" markers and compiled against the public API. CustomProjectionsDocTests runs
@@ -424,11 +426,17 @@ public class ResilientOrderTotalsProjection : Projection<ImmutableDictionary<str
 // --- end snippet ---
 
 // --- snippet: "Pattern 11: Rebuilding a Projection in Place" ---
+[JsonSerializable(typeof(ImmutableDictionary<string, decimal>))]
+internal partial class ProjectionJsonContext : JsonSerializerContext { }
+
 public class RebuildableOrderTotalsProjection : ReplayableProjection<ImmutableDictionary<string, decimal>>
 {
     // Current starts at the empty dictionary, and each rebuild resets to it
     public RebuildableOrderTotalsProjection()
-        : base(ImmutableDictionary<string, decimal>.Empty)
+        : base(
+            ImmutableDictionary<string, decimal>.Empty,
+            new SystemTextJsonSerializer<ImmutableDictionary<string, decimal>>(
+                ProjectionJsonContext.Default.ImmutableDictionaryStringDecimal))
     {
     }
 

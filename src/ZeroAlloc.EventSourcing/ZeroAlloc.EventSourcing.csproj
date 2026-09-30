@@ -5,6 +5,8 @@
   <PropertyGroup>
     <PackageId>ZeroAlloc.EventSourcing</PackageId>
     <Description>Source-generated event-sourced aggregates for .NET. Zero-allocation event dispatch, AOT-safe.</Description>
+    <!-- Runs the trim and AOT analyzers on the library, so a reflection-based path cannot ship unmarked. See #415. -->
+    <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
 
   <ItemGroup>
