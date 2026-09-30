@@ -15,7 +15,19 @@ namespace ZeroAlloc.EventSourcing.Tests;
 // System.Text.Json, which would write PascalCase property names.
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
 [JsonSerializable(typeof(CustomerTotals))]
+[JsonSerializable(typeof(OrderReadModel))]
+[JsonSerializable(typeof(System.Collections.Immutable.ImmutableDictionary<string, decimal>))]
 internal sealed partial class ReplayableProjectionJsonContext : JsonSerializerContext;
+
+/// <summary>The serializers the test projections pass to the <see cref="ReplayableProjection{TReadModel}"/> constructor.</summary>
+internal static class TestProjectionSerializers
+{
+    public static SystemTextJsonSerializer<OrderReadModel> OrderReadModel { get; }
+        = new(ReplayableProjectionJsonContext.Default.OrderReadModel);
+
+    public static SystemTextJsonSerializer<System.Collections.Immutable.ImmutableDictionary<string, decimal>> OrderAmounts { get; }
+        = new(ReplayableProjectionJsonContext.Default.ImmutableDictionaryStringDecimal);
+}
 
 public sealed class SerializedCustomerTotalsProjection : ReplayableProjection<CustomerTotals>
 {

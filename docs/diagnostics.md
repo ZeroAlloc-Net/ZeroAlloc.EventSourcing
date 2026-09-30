@@ -9,8 +9,8 @@ means that nothing is generated for the aggregate or projection it points at.
 | [ZAES006](#zaes006) | Warning | Generic aggregate or projection is not generated |
 | [ZAES007](#zaes007) | Error | File-local aggregate or projection is not generated |
 
-`ZAES001` to `ZAES004` are the diagnostic IDs of obsolete APIs, reported by the compiler through
-`[Obsolete]`; they are not generator diagnostics.
+`ZAES001` to `ZAES004` and `ZAES008` are the diagnostic IDs of obsolete APIs, reported by the compiler
+through `[Obsolete]`; they are not generator diagnostics. See [Obsolete APIs](#obsolete-apis).
 
 ## ZAES005
 
@@ -92,3 +92,57 @@ internal sealed partial class Order : Aggregate<OrderId, OrderState> { }
 
 To keep the type file-local, declare it without `partial` and write its dispatch by hand, as for
 [ZAES006](#zaes006): the generators only look at partial classes.
+
+## Obsolete APIs
+
+The compiler reports these as warnings where an obsolete API is used. Each API is removed in the next
+major version, tracked in [#381](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/issues/381).
+
+| ID | Obsolete API | Use instead |
+|----|--------------|-------------|
+| ZAES001 | `UseEventSourcingTelemetry()` | `WithTelemetry()` |
+| ZAES002 | The `AddPostgreSqlEventStore` and `AddPostgreSqlCheckpointStore` health-check overloads with optional `name`, `failureStatus` and `tags`; the `KafkaConsumerBase` injected-consumer constructor without `ownsConsumer` | The overload without the optional parameters, or the one taking `Action<PostgreSqlHealthCheckOptions>`; the constructor that takes `ownsConsumer`, passing `false` |
+| ZAES003 | The open-generic `UseInMemorySnapshotStore()` and `UsePostgreSqlSnapshotStore(connectionString)` | `UseInMemorySnapshotStore<TState>()` or `UsePostgreSqlSnapshotStore<TState>(connectionString)`, once per aggregate state type |
+| ZAES004 | The `PostgreSqlDeadLetterStore` and `SqlServerDeadLetterStore` constructors without an `IEventTypeRegistry` | The constructor that also takes an `IEventTypeRegistry` |
+| [ZAES008](#zaes008) | The `ReplayableProjection<TReadModel>` constructors without a serializer | `ReplayableProjection(TReadModel initialState, ISerializer<TReadModel> serializer)` |
+
+## ZAES008
+
+**ReplayableProjection constructor without a serializer is obsolete.**
+
+`protected ReplayableProjection()` and `protected ReplayableProjection(TReadModel initialState)` make
+`RebuildAsync` save the read model with reflection-based `System.Text.Json`, which is not trim- or
+NativeAOT-safe. They also carry `[RequiresUnreferencedCode]` and `[RequiresDynamicCode]`, so a trimmed or
+NativeAOT application gets IL2026 and IL3050 as well.
+
+```csharp
+public sealed class OrderTotalsProjection : ReplayableProjection<ImmutableDictionary<string, decimal>>
+{
+    public OrderTotalsProjection()
+        : base(ImmutableDictionary<string, decimal>.Empty)   // ZAES008
+    {
+    }
+}
+```
+
+Fix it by passing an `ISerializer<TReadModel>` from ZeroAlloc.Serialisation, for example
+`SystemTextJsonSerializer<T>` from ZeroAlloc.Serialisation.SystemTextJson over a `JsonSerializerContext`:
+
+```csharp
+[JsonSerializable(typeof(ImmutableDictionary<string, decimal>))]
+internal partial class ProjectionJsonContext : JsonSerializerContext { }
+
+public sealed class OrderTotalsProjection : ReplayableProjection<ImmutableDictionary<string, decimal>>
+{
+    public OrderTotalsProjection()
+        : base(
+            ImmutableDictionary<string, decimal>.Empty,
+            new SystemTextJsonSerializer<ImmutableDictionary<string, decimal>>(
+                ProjectionJsonContext.Default.ImmutableDictionaryStringDecimal))
+    {
+    }
+}
+```
+
+A projection on the parameterless constructor passes `default` as the initial state. The serializer must
+write UTF-8 text; see [Pattern 11](advanced/custom-projections.md#pattern-11-rebuilding-a-projection-in-place).

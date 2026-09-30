@@ -51,9 +51,9 @@ public sealed class ReplayableOrderProjection : ReplayableProjection<OrderReadMo
     private readonly StreamId _streamId;
 
     public ReplayableOrderProjection(StreamId streamId)
+        : base(new OrderReadModel(string.Empty, 0m, null, false), TestProjectionSerializers.OrderReadModel)
     {
         _streamId = streamId;
-        Current = new OrderReadModel(string.Empty, 0m, null, false);
     }
 
     public override string GetProjectionKey() => $"ReplayableOrderProjection-{_streamId.Value}";
@@ -158,10 +158,13 @@ public sealed record CustomerTotals(string CustomerId, decimal Total, int OrderC
 /// <summary>A record read model whose first event updates the starting value with <c>with</c>.</summary>
 public sealed class CustomerTotalsProjection : ReplayableProjection<CustomerTotals>
 {
+    // Pins the obsolete reflection-based constructor, ZAES008, until the next major removes it: #381.
+#pragma warning disable ZAES008
     public CustomerTotalsProjection()
         : base(CustomerTotals.Empty)
     {
     }
+#pragma warning restore ZAES008
 
     public override string GetProjectionKey() => "customer-totals";
 
@@ -178,7 +181,7 @@ public sealed class CustomerTotalsProjection : ReplayableProjection<CustomerTota
 public sealed class OrderAmountsProjection : ReplayableProjection<System.Collections.Immutable.ImmutableDictionary<string, decimal>>
 {
     public OrderAmountsProjection()
-        : base(System.Collections.Immutable.ImmutableDictionary<string, decimal>.Empty)
+        : base(System.Collections.Immutable.ImmutableDictionary<string, decimal>.Empty, TestProjectionSerializers.OrderAmounts)
     {
     }
 
@@ -198,6 +201,13 @@ public sealed class OrderAmountsProjection : ReplayableProjection<System.Collect
 /// <summary>A value-type read model that uses the parameterless constructor.</summary>
 public sealed class OrderCountProjection : ReplayableProjection<int>
 {
+    // Pins the obsolete reflection-based constructor, ZAES008, until the next major removes it: #381.
+#pragma warning disable ZAES008
+    public OrderCountProjection()
+    {
+    }
+#pragma warning restore ZAES008
+
     public override string GetProjectionKey() => "order-count";
 
     protected override int Apply(int current, EventEnvelope @event)
@@ -212,7 +222,10 @@ public sealed class OrderCountProjection : ReplayableProjection<int>
 /// </summary>
 public sealed class LegacyStartingValueProjection : ReplayableProjection<int>
 {
+    // Pins the obsolete reflection-based constructor, ZAES008, until the next major removes it: #381.
+#pragma warning disable ZAES008
     public LegacyStartingValueProjection() => Current = 50;
+#pragma warning restore ZAES008
 
     public override string GetProjectionKey() => "legacy";
 
