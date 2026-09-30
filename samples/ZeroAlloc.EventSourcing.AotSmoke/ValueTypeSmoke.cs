@@ -80,6 +80,8 @@ internal static class ValueTypeSmoke
             var s = account.State;
             if (!s.IsOpen || s.OverdraftLimit != 250.75m || s.Tier != 3 || account.Version.Value != 1)
                 return Fail($"state after replay of AccountOpened is wrong: {s}, version {account.Version.Value}");
+            if (account.Id != id)
+                return Fail($"loaded account Id expected {id}, got {account.Id}");
 
             account.Deposit(100.10m, FirstValueDate);
             account.ChangeOverdraftLimit(null);
@@ -228,6 +230,8 @@ internal static class ValueTypeSmoke
             return Fail($"{strategy} LastValueDate lost its value or offset: {account.State.LastValueDate}");
         if (account.Version.Value != 6 || account.OriginalVersion.Value != 6)
             return Fail($"{strategy} versions expected 6/6, got {account.Version.Value}/{account.OriginalVersion.Value}");
+        if (account.Id != id)
+            return Fail($"{strategy} loaded account Id expected {id}, got {account.Id}");
 
         // Restoring over events that are already applied is refused.
         try
