@@ -42,6 +42,26 @@ public sealed class SqlServerEventStoreAdapter : IEventStoreAdapter
     /// </remarks>
     public async ValueTask EnsureSchemaAsync(CancellationToken ct = default)
     {
+        try
+        {
+            await EnsureSchemaCoreAsync(ct).ConfigureAwait(false);
+        }
+        catch (SqlException ex) when (ct.IsCancellationRequested)
+        {
+            throw Cancelled(ex, ct);
+        }
+    }
+
+    // SqlClient can abort a command it cancels with a SqlException, such as "A severe error
+    // occurred on the current command", instead of an OperationCanceledException: whether it does
+    // depends on where the cancellation lands in the exchange with the server. Every public method
+    // turns a SqlException thrown once ct is cancelled into the OperationCanceledException that
+    // callers of a cancelled operation expect, as the PostgreSQL and SQLite providers throw.
+    private static OperationCanceledException Cancelled(SqlException ex, CancellationToken ct)
+        => new("The SQL Server command was cancelled.", ex, ct);
+
+    private async ValueTask EnsureSchemaCoreAsync(CancellationToken ct)
+    {
         using var conn = new SqlConnection(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
 
@@ -181,6 +201,22 @@ public sealed class SqlServerEventStoreAdapter : IEventStoreAdapter
         StreamPosition expectedVersion,
         CancellationToken ct = default)
     {
+        try
+        {
+            return await AppendCoreAsync(id, events, expectedVersion, ct).ConfigureAwait(false);
+        }
+        catch (SqlException ex) when (ct.IsCancellationRequested)
+        {
+            throw Cancelled(ex, ct);
+        }
+    }
+
+    private async ValueTask<Result<AppendResult, StoreError>> AppendCoreAsync(
+        StreamId id,
+        ReadOnlyMemory<RawEvent> events,
+        StreamPosition expectedVersion,
+        CancellationToken ct)
+    {
         if (events.Length == 0)
             return Result<AppendResult, StoreError>.Success(new AppendResult(id, expectedVersion));
 
@@ -268,8 +304,31 @@ public sealed class SqlServerEventStoreAdapter : IEventStoreAdapter
         [EnumeratorCancellation] CancellationToken ct = default)
     {
         using var conn = new SqlConnection(_connectionString);
-        await conn.OpenAsync(ct).ConfigureAwait(false);
-        using var cmd = conn.CreateCommand();
+        using var cmd = CreateReadCommand(conn, id, from);
+
+        // SequentialAccess is required for efficient VARBINARY(MAX) streaming.
+        // Columns MUST be read in index order when using SequentialAccess.
+        // An iterator cannot yield inside a try with a catch, so only the awaits that talk to the
+        // server are wrapped; see Cancelled.
+        SqlDataReader reader;
+        try
+        {
+            await conn.OpenAsync(ct).ConfigureAwait(false);
+            reader = await cmd.ExecuteReaderAsync(CommandBehavior.SequentialAccess, ct).ConfigureAwait(false);
+        }
+        catch (SqlException ex) when (ct.IsCancellationRequested)
+        {
+            throw Cancelled(ex, ct);
+        }
+
+        using var _ = reader;
+        while (await ReadNextRowAsync(reader, ct).ConfigureAwait(false))
+            yield return ReadEvent(reader, id.IsGlobal);
+    }
+
+    private static SqlCommand CreateReadCommand(SqlConnection conn, StreamId id, StreamPosition from)
+    {
+        var cmd = conn.CreateCommand();
         if (id.IsGlobal)
         {
             // EXCLUSIVE `> @from` semantics: required by StreamConsumer, which checkpoints to the
@@ -296,30 +355,40 @@ public sealed class SqlServerEventStoreAdapter : IEventStoreAdapter
             cmd.Parameters.AddWithValue("@from", from.Value);
         }
 
-        // SequentialAccess is required for efficient VARBINARY(MAX) streaming.
-        // Columns MUST be read in index order when using SequentialAccess.
-        var readerTask = cmd.ExecuteReaderAsync(CommandBehavior.SequentialAccess, ct).ConfigureAwait(false);
-        using var reader = await readerTask;
-        while (await reader.ReadAsync(ct).ConfigureAwait(false))
+        return cmd;
+    }
+
+    private static async ValueTask<bool> ReadNextRowAsync(SqlDataReader reader, CancellationToken ct)
+    {
+        try
         {
-            var perStreamPos  = reader.GetInt64(0);
-            var eventType     = reader.GetString(1);
-            var eventId       = reader.GetGuid(2);
-            var occurredAt    = reader.GetDateTimeOffset(3);
-            var correlationId = reader.IsDBNull(4) ? (Guid?)null : reader.GetGuid(4);
-            var causationId   = reader.IsDBNull(5) ? (Guid?)null : reader.GetGuid(5);
-
-            // Read VARBINARY(MAX) payload: first call returns the length, second reads the bytes.
-            var payloadLength = (int)reader.GetBytes(6, 0, null, 0, 0);
-            var payloadBytes  = new byte[payloadLength];
-            reader.GetBytes(6, 0, payloadBytes, 0, payloadLength);
-
-            var globalPos = reader.GetInt64(7);
-
-            var metadata = new EventMetadata(eventId, eventType, occurredAt, correlationId, causationId);
-            var position = id.IsGlobal ? new StreamPosition(globalPos) : new StreamPosition(perStreamPos);
-            yield return new RawEvent(position, eventType, payloadBytes.AsMemory(), metadata);
+            return await reader.ReadAsync(ct).ConfigureAwait(false);
         }
+        catch (SqlException ex) when (ct.IsCancellationRequested)
+        {
+            throw Cancelled(ex, ct);
+        }
+    }
+
+    private static RawEvent ReadEvent(SqlDataReader reader, bool isGlobal)
+    {
+        var perStreamPos  = reader.GetInt64(0);
+        var eventType     = reader.GetString(1);
+        var eventId       = reader.GetGuid(2);
+        var occurredAt    = reader.GetDateTimeOffset(3);
+        var correlationId = reader.IsDBNull(4) ? (Guid?)null : reader.GetGuid(4);
+        var causationId   = reader.IsDBNull(5) ? (Guid?)null : reader.GetGuid(5);
+
+        // Read VARBINARY(MAX) payload: first call returns the length, second reads the bytes.
+        var payloadLength = (int)reader.GetBytes(6, 0, null, 0, 0);
+        var payloadBytes  = new byte[payloadLength];
+        reader.GetBytes(6, 0, payloadBytes, 0, payloadLength);
+
+        var globalPos = reader.GetInt64(7);
+
+        var metadata = new EventMetadata(eventId, eventType, occurredAt, correlationId, causationId);
+        var position = isGlobal ? new StreamPosition(globalPos) : new StreamPosition(perStreamPos);
+        return new RawEvent(position, eventType, payloadBytes.AsMemory(), metadata);
     }
 
     /// <inheritdoc/>

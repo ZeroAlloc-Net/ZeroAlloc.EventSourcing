@@ -150,4 +150,115 @@ public class OutboxDispatcherTests
         var checkpointAfterSecondRun = await checkpoints.ReadAsync("test-6");
         checkpointAfterSecondRun.Should().Be(checkpointAfterFirstRun);
     }
+
+    // Issue 421: stopping while a read is in flight made SqlClient throw a SqlException, which the
+    // loop logged as a crash and rethrew out of StopAsync, because only OperationCanceledException
+    // counted as shutdown. The adapter throws a non-cancellation exception the same way.
+    [Fact]
+    public async Task StopAsync_WhileReadInFlight_AdapterThrowsNonCancellationException_StopsCleanly()
+    {
+        var adapter = new ThrowsOnCancelAdapter();
+        var store = TestHarness.NewEventStoreWithAdapter(adapter);
+        var sut = new OutboxDispatcher(store, new InMemoryCheckpointStore(), new RecordingDispatcher(), null,
+            new OutboxOptions { ConsumerId = "test-421", PollInterval = TimeSpan.FromMilliseconds(50) },
+            NullLogger<OutboxDispatcher>.Instance);
+
+        await sut.StartAsync(default);
+        await adapter.ReadInFlight.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+        var act = async () => await sut.StopAsync(default);
+        await act.Should().NotThrowAsync();
+        await sut.DisposeAsync();
+    }
+
+    // A failure while the dispatcher is not stopping still halts it and surfaces from StopAsync.
+    [Fact]
+    public async Task StopAsync_AfterReadFailedWhileRunning_Rethrows()
+    {
+        var adapter = new ThrowsOnCancelAdapter { FailWith = new InvalidOperationException("store unavailable") };
+        var store = TestHarness.NewEventStoreWithAdapter(adapter);
+        var logger = new CrashSignallingLogger();
+        var sut = new OutboxDispatcher(store, new InMemoryCheckpointStore(), new RecordingDispatcher(), null,
+            new OutboxOptions { ConsumerId = "test-421-fail", PollInterval = TimeSpan.FromMilliseconds(50) },
+            logger);
+
+        await sut.StartAsync(default);
+        // The loop logs the crash only after deciding it is not shutdown, so StopAsync cannot race it.
+        await logger.Crashed.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+        var act = async () => await sut.StopAsync(default);
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("store unavailable");
+    }
+
+    // An OperationCanceledException the dispatcher did not cause, such as a store timeout, is a
+    // crash like any other; StopAsync used to swallow it as if it were shutdown.
+    [Fact]
+    public async Task StopAsync_AfterForeignCancellationWhileRunning_Rethrows()
+    {
+        using var foreign = new CancellationTokenSource();
+        await foreign.CancelAsync();
+        var adapter = new ThrowsOnCancelAdapter
+        {
+            FailWith = new OperationCanceledException("store timed out", foreign.Token),
+        };
+        var store = TestHarness.NewEventStoreWithAdapter(adapter);
+        var logger = new CrashSignallingLogger();
+        var sut = new OutboxDispatcher(store, new InMemoryCheckpointStore(), new RecordingDispatcher(), null,
+            new OutboxOptions { ConsumerId = "test-421-foreign", PollInterval = TimeSpan.FromMilliseconds(50) },
+            logger);
+
+        await sut.StartAsync(default);
+        await logger.Crashed.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+        var act = async () => await sut.StopAsync(default);
+        await act.Should().ThrowAsync<OperationCanceledException>().WithMessage("store timed out");
+    }
+
+    private sealed class CrashSignallingLogger : Microsoft.Extensions.Logging.ILogger<OutboxDispatcher>
+    {
+        public TaskCompletionSource Crashed { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+
+        public void Log<TState>(
+            Microsoft.Extensions.Logging.LogLevel logLevel, Microsoft.Extensions.Logging.EventId eventId,
+            TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            if (logLevel == Microsoft.Extensions.Logging.LogLevel.Error)
+                Crashed.TrySetResult();
+        }
+    }
+
+    private sealed class ThrowsOnCancelAdapter : IEventStoreAdapter
+    {
+        public TaskCompletionSource ReadInFlight { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Exception? FailWith { get; init; }
+
+        public async IAsyncEnumerable<RawEvent> ReadAsync(
+            StreamId id,
+            StreamPosition from,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+        {
+            if (FailWith is not null)
+                throw FailWith;
+            ReadInFlight.TrySetResult();
+            var cancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            await using (ct.Register(() => cancelled.TrySetResult()))
+                await cancelled.Task.ConfigureAwait(false);
+            if (ct.IsCancellationRequested)
+                throw new InvalidOperationException("A severe error occurred on the current command.");
+            yield break;
+        }
+
+        public ValueTask<ZeroAlloc.Results.Result<AppendResult, StoreError>> AppendAsync(
+            StreamId id, ReadOnlyMemory<RawEvent> events, StreamPosition expectedVersion, CancellationToken ct = default)
+            => throw new NotSupportedException();
+
+        public ValueTask<IEventSubscription> SubscribeAsync(
+            StreamId id, StreamPosition from, Func<RawEvent, CancellationToken, ValueTask> handler, CancellationToken ct = default)
+            => throw new NotSupportedException();
+    }
 }
