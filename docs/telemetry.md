@@ -24,7 +24,7 @@ Call `.WithTelemetry()` **after** registering the aggregate repository and **bef
 services
     .AddEventSourcing()
     .UseInMemoryEventStore()          // or UsePostgreSqlEventStore(), etc.
-    .AddAggregate<OrderAggregate, Guid>()
+    .UseAggregateRepository<Order, OrderId>(() => new Order(), id => new StreamId($"order-{id.Value}"))
     .WithTelemetry();                 // wraps each IAggregateRepository<,> with InstrumentedAggregateRepository<,>
 ```
 

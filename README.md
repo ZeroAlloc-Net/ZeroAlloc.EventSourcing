@@ -30,27 +30,31 @@ dotnet add package ZeroAlloc.EventSourcing
 ### Basic Event Sourcing
 
 ```csharp
-var adapter = new SqlEventStoreAdapter(connectionString);
-var serializer = new JsonEventSerializer();
-var typeRegistry = new EventTypeRegistry();
+// The adapter is the storage: InMemoryEventStoreAdapter for tests; SqlServerEventStoreAdapter,
+// PostgreSqlEventStoreAdapter or SqliteEventStoreAdapter from their packages in production.
+var adapter = new InMemoryEventStoreAdapter();
 
-var eventStore = new EventStore(adapter, serializer, typeRegistry);
+// serializer is your IEventSerializer; AddEventSourcing() registers the AOT-safe
+// ZeroAllocEventSerializer. OrderEventTypeRegistry maps event names to types: the source
+// generator emits it for an Order aggregate.
+var eventStore = new EventStore(adapter, serializer, new OrderEventTypeRegistry());
 
 // Append events
 var streamId = new StreamId("order-123");
-await eventStore.AppendAsync(
+var appended = await eventStore.AppendAsync(
     streamId,
-    new[] { (object)new OrderPlacedEvent { Id = "123", Amount = 100m } },
-    StreamPosition.Start
-);
+    new object[] { new OrderPlaced("alice"), new ItemAdded(100m) },
+    StreamPosition.Start);
 
 // Read events
-var envelope = await eventStore.ReadAsync(streamId);
-foreach (var evt in envelope.Events)
+await foreach (var envelope in eventStore.ReadAsync(streamId))
 {
-    Console.WriteLine($"Event: {evt.Event}");
+    Console.WriteLine($"Event {envelope.Position.Value}: {envelope.Event}");
 }
 ```
+
+Most applications work with aggregates instead of raw events: see
+[Your First Aggregate](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/blob/main/docs/getting-started/first-aggregate.md).
 
 ## Packages
 
@@ -96,9 +100,11 @@ ZeroAlloc.EventSourcing includes production-grade stream consumers for reliable 
 
 ```csharp
 var consumer = new StreamConsumer(eventStore, checkpointStore, "my-consumer");
-await consumer.ConsumeAsync(async (envelope, ct) => {
+await consumer.ConsumeAsync((envelope, ct) =>
+{
     // Process event
     Console.WriteLine(envelope.Event);
+    return Task.CompletedTask;
 });
 ```
 
@@ -109,15 +115,17 @@ See [Stream Consumers Documentation](https://github.com/ZeroAlloc-Net/ZeroAlloc.
 Consume events directly from Kafka topics with the same reliability features:
 
 ```csharp
-var options = new KafkaConsumerOptions
+var options = new KafkaConsumerGroupOptions
 {
     BootstrapServers = "localhost:9092",
     Topic = "my-events",
-    GroupId = "my-service"
+    GroupId = "my-service",
+    ConsumerId = "my-service-1"
 };
 
-var consumer = new KafkaStreamConsumer(options, checkpointStore, serializer, registry);
-await consumer.ConsumeAsync(async (envelope, ct) => {
+using var consumer = new KafkaConsumerGroupConsumer(options, checkpointStore, serializer, registry);
+await consumer.ConsumeAsync(async (envelope, ct) =>
+{
     // Process event from Kafka
     await handler.ProcessAsync(envelope, ct);
 });
@@ -127,31 +135,61 @@ See [Kafka Consumer Documentation](https://github.com/ZeroAlloc-Net/ZeroAlloc.Ev
 
 ## Projections
 
-Build denormalized views of your event data with multiple projection types:
+Build denormalized views of your event data by deriving from `Projection<TReadModel>`:
 
 ```csharp
-var projection = new Projection(eventStore, "order-summaries");
-await projection.ProjectAsync(async (envelope, state, ct) => {
-    if (envelope.Event is OrderPlacedEvent ope)
+public sealed record OrderTotals(int Orders, decimal Revenue);
+
+public sealed class OrderTotalsProjection : Projection<OrderTotals>
+{
+    public OrderTotalsProjection() => Current = new OrderTotals(0, 0m);
+
+    protected override OrderTotals Apply(OrderTotals current, EventEnvelope @event) => @event.Event switch
     {
-        state["total"] = (decimal)(state["total"] ?? 0m) + ope.Amount;
-    }
-    return state;
-});
+        OrderPlaced => current with { Orders = current.Orders + 1 },
+        ItemAdded e => current with { Revenue = current.Revenue + e.Price },
+        _ => current
+    };
+}
+
+// Feed it every stream's events, in append order
+var projection = new OrderTotalsProjection();
+await foreach (var envelope in eventStore.ReadAsync(StreamId.Global))
+{
+    await projection.HandleAsync(envelope);
+}
 ```
+
+`FilteredProjection<TReadModel>`, `BatchedProjection<TReadModel>` and
+`ReplayableProjection<TReadModel>` add filtering, batching and rebuilds; see the
+[Projections Usage Guide](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/blob/main/docs/usage-guides/projections-usage.md).
 
 ## Snapshots
 
 Optimize aggregate loading with snapshots:
 
 ```csharp
-var options = new SnapshotOptions
-{
-    Strategy = SnapshotStrategy.EveryNEvents(100)
-};
+// Loads start from the latest snapshot and replay only the newer events; saves write a new
+// snapshot every 100 events
+var repository = new SnapshotCachingRepositoryDecorator<Order, OrderId, OrderState>(
+    innerRepository: new AggregateRepository<Order, OrderId>(
+        eventStore,
+        () => new Order(),
+        id => new StreamId($"order-{id.Value}")),
+    snapshotStore: new InMemorySnapshotStore<OrderState>(),
+    strategy: SnapshotLoadingStrategy.ValidateAndReplay,
+    restoreState: (order, state, position) => order.RestoreState(state, position),
+    eventStore: eventStore,
+    streamIdFactory: id => new StreamId($"order-{id.Value}"),
+    aggregateFactory: () => new Order(),
+    snapshotPolicy: SnapshotPolicy.EveryNEvents(100),
+    extractState: order => order.State);
 
-var snapshot = await eventStore.GetSnapshotAsync(streamId, options);
+var loaded = await repository.LoadAsync(orderId);
 ```
+
+The SQL packages provide snapshot stores for PostgreSQL and SQL Server; see the
+[Snapshots Usage Guide](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/blob/main/docs/usage-guides/snapshots-usage.md).
 
 ## OpenTelemetry Instrumentation
 
@@ -165,8 +203,8 @@ dotnet add package ZeroAlloc.EventSourcing.Telemetry
 services
     .AddEventSourcing()
     .UseInMemoryEventStore()
-    .AddAggregate<OrderAggregate, Guid>()
-    .WithTelemetry();   // call after each aggregate registration, before Build()
+    .UseAggregateRepository<Order, OrderId>(() => new Order(), id => new StreamId($"order-{id.Value}"))
+    .WithTelemetry();   // call after the aggregate repository registrations, before BuildServiceProvider()
 ```
 
 The decorator emits, under the `ZeroAlloc.EventSourcing` activity-source/meter name:
