@@ -23,6 +23,8 @@
     <PackageReference Include="AwesomeAssertions" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <PackageReference Include="NSubstitute" />
+    <!-- For the serializer setup snippets in docs/core-concepts/events.md and installation.md. -->
+    <PackageReference Include="ZeroAlloc.Serialisation.SystemTextJson" />
   </ItemGroup>
 
   <ItemGroup>

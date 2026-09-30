@@ -41,23 +41,25 @@ dotnet add package ZeroAlloc.Serialisation.SystemTextJson
 
 ### With ZeroAlloc.Serialisation (recommended)
 
-Mark each event type with `[ZeroAllocSerializable(SerializationFormat.SystemTextJson)]`, create a
-`JsonSerializerContext` for the type, then register in DI:
+Mark each event type with `[ZeroAllocSerializable(SerializationFormat.SystemTextJson)]`, list it in
+a `JsonSerializerContext`, then register in DI with the methods the source generator emits:
 
 ```csharp
-// Annotate your event types
+// 1. Mark your event types with the chosen serialization format
 [ZeroAllocSerializable(SerializationFormat.SystemTextJson)]
 public record OrderPlacedEvent(string OrderId, decimal Total);
 
-// Provide AOT-safe type metadata
+// 2. Provide a JsonSerializerContext so System.Text.Json can serialize without reflection.
+//    The generator reports ZASZ004 for a SystemTextJson type that no context lists.
 [JsonSerializable(typeof(OrderPlacedEvent))]
 internal partial class DomainJsonContext : JsonSerializerContext { }
 
-// Wire up services
+// 3. In your composition root. The generator emits Add{EventType}Serializer() for each
+//    annotated type and AddSerializerDispatcher() for the assembly.
 services
-    .AddJsonSerializer<OrderPlacedEvent>(DomainJsonContext.Default.OrderPlacedEvent)
-    .AddSerializerDispatcher()  // emitted by ZeroAlloc.Serialisation source generator
-    .AddEventSourcing()         // registers IEventSerializer → ZeroAllocEventSerializer; returns EventSourcingBuilder
+    .AddOrderPlacedEventSerializer()
+    .AddSerializerDispatcher()  // generated at compile time — no reflection
+    .AddEventSourcing()         // registers IEventSerializer → ZeroAllocEventSerializer
     .UseInMemoryEventStore();   // swap for .UsePostgreSqlEventStore(cs) or .UseSqlServerEventStore(cs) in production
 ```
 
