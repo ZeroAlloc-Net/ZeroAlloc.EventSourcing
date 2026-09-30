@@ -11,7 +11,8 @@ Every projection derives from `Projection<TReadModel>`: it overrides the protect
 takes the current read model and an event and returns the new read model, and it is fed events
 through `HandleAsync`. The read models below are immutable, so `Apply` stays a pure function and a
 replay always rebuilds the same state. `Current` starts at `default(TReadModel)`, so each projection
-sets a starting value in its constructor.
+sets a starting value in its constructor. A `ReplayableProjection` passes it to the base
+constructor instead; see [Pattern 11](#pattern-11-rebuilding-a-projection-in-place).
 
 The examples share these events:
 
@@ -550,6 +551,53 @@ A skipped event is lost to this projection. When a projection is driven by a `St
 `ErrorHandlingStrategy.DeadLetter` keeps the failed event in an `IDeadLetterStore` for review
 instead.
 
+## Pattern 11: Rebuilding a Projection in Place
+
+`ReplayableProjection<TReadModel>` rebuilds itself: `RebuildAsync` resets `Current`, replays a
+stream and saves the result to an `IProjectionStore` under `GetProjectionKey()`. Pass the starting
+value to the base constructor, so every rebuild starts from it again:
+
+```csharp
+public class RebuildableOrderTotalsProjection : ReplayableProjection<ImmutableDictionary<string, decimal>>
+{
+    // Current starts at the empty dictionary, and each rebuild resets to it
+    public RebuildableOrderTotalsProjection()
+        : base(ImmutableDictionary<string, decimal>.Empty)
+    {
+    }
+
+    public override string GetProjectionKey() => "rebuilt-order-totals";
+
+    protected override ImmutableDictionary<string, decimal> Apply(
+        ImmutableDictionary<string, decimal> current,
+        EventEnvelope @event) => @event.Event switch
+    {
+        OrderPlacedEvent e => current.SetItem(e.OrderId, e.Total),
+        OrderCancelledEvent e => current.Remove(e.OrderId),
+        _ => current
+    };
+}
+```
+
+Usage:
+
+```csharp
+var projection = new RebuildableOrderTotalsProjection();
+
+// Replays the stream from the start and saves the result as JSON under "rebuilt-order-totals"
+await projection.RebuildAsync(projectionStore, new StreamId("orders"), eventStore);
+```
+
+Do not set `Current` in the constructor of a `ReplayableProjection` instead: the parameterless
+base constructor resets to `default(TReadModel)` on a rebuild, which is `null` for a record or a
+collection. Pass an immutable value, since every rebuild reuses the same instance.
+
+The projection answers queries from the partial state while it rebuilds. To keep serving the old
+state until the rebuild is done, rebuild a new instance and switch over, as
+[Core Concepts: Projections](../core-concepts/projections.md) shows. `RebuildAsync` serializes the
+read model with reflection-based `System.Text.Json`, which is not NativeAOT-safe yet; see
+[#415](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/issues/415).
+
 ## Comparison: Patterns for Different Scenarios
 
 | Pattern | Use Case | Complexity | Performance |
@@ -564,6 +612,7 @@ instead.
 | Time-Windowed | Time-based analysis | Medium | Medium |
 | Persistent | Resume from checkpoint | High | Medium |
 | Resilient | Fault tolerance needed | High | Medium |
+| Replayable | Rebuild from the stream into a store | Low | Medium |
 
 ## Testing Projections
 
@@ -602,6 +651,7 @@ Advanced projection patterns enable:
 8. **Time-windowed** — Temporal analysis
 9. **Persistent** — Survive restarts
 10. **Resilient** — Handle errors gracefully
+11. **Replayable** — Rebuild in place from the event stream
 
 Choose patterns based on your query patterns and performance requirements.
 

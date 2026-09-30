@@ -24,16 +24,12 @@ namespace ZeroAlloc.EventSourcing;
 /// <code>
 /// public sealed class OrderProjection : ReplayableProjection&lt;OrderSummary&gt;
 /// {
-///     private readonly IProjectionStore _store;
-///     private readonly IEventStore _eventStore;
 ///     private readonly StreamId _streamId;
 ///
-///     public OrderProjection(IProjectionStore store, IEventStore eventStore, StreamId streamId)
+///     public OrderProjection(StreamId streamId)
+///         : base(new OrderSummary(string.Empty, 0m, null))
 ///     {
-///         _store = store;
-///         _eventStore = eventStore;
 ///         _streamId = streamId;
-///         Current = new OrderSummary(string.Empty, 0m, null);
 ///     }
 ///
 ///     public override string GetProjectionKey() => $"OrderProjection-{_streamId}";
@@ -50,13 +46,44 @@ namespace ZeroAlloc.EventSourcing;
 /// }
 ///
 /// // Usage: Rebuild state from events
-/// var projection = new OrderProjection(store, eventStore, streamId);
-/// await projection.RebuildAsync();
+/// var projection = new OrderProjection(streamId);
+/// await projection.RebuildAsync(projectionStore, streamId, eventStore);
 /// // projection.Current now contains the full reconstructed state
 /// </code>
 /// </example>
 public abstract class ReplayableProjection<TReadModel> : Projection<TReadModel>
 {
+    private readonly TReadModel _initialState;
+
+    /// <summary>
+    /// Initializes the projection with <see cref="Projection{TReadModel}.Current"/> at <c>default(TReadModel)</c>.
+    /// <see cref="RebuildAsync"/> resets to <c>default(TReadModel)</c> as well.
+    /// </summary>
+    /// <remarks>
+    /// <c>default</c> is a valid empty state for a struct, but <see langword="null"/> for a record, class or
+    /// collection. Use <see cref="ReplayableProjection{TReadModel}(TReadModel)"/> when <c>Apply</c> needs a
+    /// non-null starting value.
+    /// </remarks>
+    protected ReplayableProjection()
+        : this(default!)
+    {
+    }
+
+    /// <summary>
+    /// Initializes the projection with <see cref="Projection{TReadModel}.Current"/> at
+    /// <paramref name="initialState"/>. <see cref="RebuildAsync"/> resets to the same value before it replays
+    /// the stream.
+    /// </summary>
+    /// <param name="initialState">
+    /// The read model before any event is applied, for example <c>ImmutableDictionary&lt;string, decimal&gt;.Empty</c>.
+    /// The same instance is reused on every rebuild, so it should be immutable.
+    /// </param>
+    protected ReplayableProjection(TReadModel initialState)
+    {
+        _initialState = initialState;
+        Current = initialState;
+    }
+
     /// <summary>
     /// Gets the unique key for this projection used to store/retrieve state from <see cref="IProjectionStore"/>.
     /// </summary>
@@ -73,7 +100,7 @@ public abstract class ReplayableProjection<TReadModel> : Projection<TReadModel>
     /// <para>
     /// This method:
     /// <list type="number">
-    /// <item><description>Resets <see cref="Projection{TReadModel}.Current"/> to its default value</description></item>
+    /// <item><description>Resets <see cref="Projection{TReadModel}.Current"/> to the initial state passed to the constructor, or <c>default(TReadModel)</c></description></item>
     /// <item><description>Replays all events from the event store via the provided eventStore</description></item>
     /// <item><description>Saves the rebuilt state to the projection store</description></item>
     /// </list>
@@ -91,8 +118,8 @@ public abstract class ReplayableProjection<TReadModel> : Projection<TReadModel>
     {
         ct.ThrowIfCancellationRequested();
 
-        // Clear the current state
-        Current = default!;
+        // Start again from the initial state
+        Current = _initialState;
 
         // Replay all events from the store
         await foreach (var @event in eventStore.ReadAsync(streamId, StreamPosition.Start, ct).ConfigureAwait(false))
