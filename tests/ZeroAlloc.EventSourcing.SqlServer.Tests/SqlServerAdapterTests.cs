@@ -1,5 +1,6 @@
 using System.Text;
 using AwesomeAssertions;
+using Microsoft.Data.SqlClient;
 using ZeroAlloc.EventSourcing.Testing;
 using ZeroAlloc.EventSourcing;
 using ZeroAlloc.EventSourcing.SqlServer;
@@ -212,5 +213,54 @@ public sealed class SqlServerAdapterTests(SqlServerContainerFixture fixture) : I
         // IF NOT EXISTS guard must be idempotent
         var act = async () => await _adapter.EnsureSchemaAsync();
         await act.Should().NotThrowAsync();
+    }
+
+    // Issue 421: a read cancelled while its command runs on the server surfaces as an
+    // OperationCanceledException. When the cancellation races the server's reply, SqlClient throws
+    // a SqlException instead, which the adapter turns into an OperationCanceledException; that race
+    // cannot be forced from a test. The read is held behind an exclusive table lock, so it is
+    // certainly in flight when the token is cancelled.
+    [Fact]
+    public async Task ReadAsync_CancelledWhileCommandInFlight_ThrowsOperationCanceledException()
+    {
+        var id = new StreamId($"orders-{Guid.NewGuid()}");
+        await _adapter.AppendAsync(id, new[] { MakeRaw("OrderPlaced") }.AsMemory(), StreamPosition.Start);
+
+        var connectionString = _database.GetConnectionString();
+        await using var locker = new SqlConnection(connectionString);
+        await locker.OpenAsync();
+        await using var lockTx = (SqlTransaction)await locker.BeginTransactionAsync();
+        await using var lockCmd = locker.CreateCommand();
+        lockCmd.Transaction = lockTx;
+        lockCmd.CommandText = "SELECT TOP 0 1 FROM dbo.event_store WITH (TABLOCKX, HOLDLOCK); SELECT @@SPID;";
+        var lockerSpid = Convert.ToInt32(await lockCmd.ExecuteScalarAsync());
+
+        using var cts = new CancellationTokenSource();
+        var read = Task.Run(async () =>
+        {
+            await foreach (var _ in _adapter.ReadAsync(id, StreamPosition.Start, cts.Token)) { }
+        });
+
+        await WaitUntilBlockedByAsync(connectionString, lockerSpid, read);
+        await cts.CancelAsync();
+
+        var act = async () => await read;
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    private static async Task WaitUntilBlockedByAsync(string connectionString, int blockingSpid, Task read)
+    {
+        await using var monitor = new SqlConnection(connectionString);
+        await monitor.OpenAsync();
+        await using var cmd = monitor.CreateCommand();
+        cmd.CommandText = "SELECT COUNT(*) FROM sys.dm_exec_requests WHERE blocking_session_id = @spid";
+        cmd.Parameters.AddWithValue("@spid", blockingSpid);
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(30);
+        while ((int)(await cmd.ExecuteScalarAsync())! == 0)
+        {
+            if (read.IsCompleted) await read; // surfaces an unexpected failure
+            if (DateTime.UtcNow > deadline) throw new TimeoutException("The read never blocked on the table lock.");
+            await Task.Delay(20);
+        }
     }
 }

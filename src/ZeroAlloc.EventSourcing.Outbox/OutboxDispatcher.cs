@@ -56,7 +56,10 @@ public sealed class OutboxDispatcher : IHostedService, IAsyncDisposable
     public Task StartAsync(CancellationToken cancellationToken)
     {
         _loopCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        _loopTask = Task.Run(() => RunAsync(_loopCts.Token), _loopCts.Token);
+        // CancellationToken.None: with the loop token, a cancellation before the delegate started
+        // would leave the task cancelled, indistinguishable from a loop that crashed with an
+        // OperationCanceledException. RunAsync checks the token itself before its first poll.
+        _loopTask = Task.Run(() => RunAsync(_loopCts.Token), CancellationToken.None);
         return Task.CompletedTask;
     }
 
@@ -68,16 +71,23 @@ public sealed class OutboxDispatcher : IHostedService, IAsyncDisposable
 
         if (_loopTask is not null)
         {
-            try { await _loopTask.ConfigureAwait(false); }
-            catch (OperationCanceledException) { /* expected */ }
+            // RunAsync returns normally on shutdown whatever the cancellation made the store throw,
+            // so an exception here is a crash that halted the loop while it was running.
+            await _loopTask.ConfigureAwait(false);
         }
     }
 
     /// <summary>Stops the loop and disposes the internal cancellation source.</summary>
     public async ValueTask DisposeAsync()
     {
-        await StopAsync(default).ConfigureAwait(false);
-        _loopCts?.Dispose();
+        try
+        {
+            await StopAsync(default).ConfigureAwait(false);
+        }
+        finally
+        {
+            _loopCts?.Dispose();
+        }
     }
 
     /// <summary>
@@ -120,7 +130,10 @@ public sealed class OutboxDispatcher : IHostedService, IAsyncDisposable
                 // ConsumeAsync returns when the current batch is empty. Poll-sleep, then resume.
                 await Task.Delay(_options.PollInterval, ct).ConfigureAwait(false);
             }
-            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            // Only StopAsync or the host cancels ct, so any exception seen once it is cancelled comes
+            // from that shutdown, whatever its type: SqlClient, for one, aborts an in-flight command
+            // with a SqlException rather than an OperationCanceledException.
+            catch (Exception) when (ct.IsCancellationRequested)
             {
                 _logger.LogInformation("OutboxDispatcher stopped cleanly.");
                 return;

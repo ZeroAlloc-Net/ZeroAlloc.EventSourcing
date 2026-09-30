@@ -217,4 +217,46 @@ public sealed class PostgreSqlAdapterTests(PostgreSqlContainerFixture fixture) :
         var act = async () => await _adapter.EnsureSchemaAsync();
         await act.Should().NotThrowAsync();
     }
+
+    // Issue 421: a read cancelled while its command runs on the server surfaces as an
+    // OperationCanceledException: Npgsql wraps the server's cancellation error in one. The read is
+    // held behind an exclusive table lock, so it is certainly in flight when the token is cancelled.
+    [Fact]
+    public async Task ReadAsync_CancelledWhileCommandInFlight_ThrowsOperationCanceledException()
+    {
+        var id = new StreamId($"orders-{Guid.NewGuid()}");
+        await _adapter.AppendAsync(id, new[] { MakeRaw("OrderPlaced") }.AsMemory(), StreamPosition.Start);
+
+        await using var locker = await _dataSource.OpenConnectionAsync();
+        await using var lockTx = await locker.BeginTransactionAsync();
+        await using (var lockCmd = new NpgsqlCommand("LOCK TABLE event_store IN ACCESS EXCLUSIVE MODE", locker, lockTx))
+            await lockCmd.ExecuteNonQueryAsync();
+
+        using var cts = new CancellationTokenSource();
+        var read = Task.Run(async () =>
+        {
+            await foreach (var _ in _adapter.ReadAsync(id, StreamPosition.Start, cts.Token)) { }
+        });
+
+        await WaitUntilBlockedByAsync(locker.ProcessID, read);
+        await cts.CancelAsync();
+
+        var act = async () => await read;
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    private async Task WaitUntilBlockedByAsync(int blockingPid, Task read)
+    {
+        await using var monitor = await _dataSource.OpenConnectionAsync();
+        await using var cmd = new NpgsqlCommand(
+            "SELECT COUNT(*) FROM pg_stat_activity WHERE @pid = ANY(pg_blocking_pids(pid))", monitor);
+        cmd.Parameters.AddWithValue("pid", blockingPid);
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(30);
+        while ((long)(await cmd.ExecuteScalarAsync())! == 0)
+        {
+            if (read.IsCompleted) await read; // surfaces an unexpected failure
+            if (DateTime.UtcNow > deadline) throw new TimeoutException("The read never blocked on the table lock.");
+            await Task.Delay(20);
+        }
+    }
 }

@@ -71,9 +71,12 @@ public sealed class PollingEventSubscription : IEventSubscription
             while (await timer.WaitForNextTickAsync(ct).ConfigureAwait(false))
                 await DeliverNewEventsAsync(ct).ConfigureAwait(false);
         }
-        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        catch (Exception) when (ct.IsCancellationRequested)
         {
-            // Normal shutdown — swallow.
+            // Normal shutdown — swallow. Only DisposeAsync cancels ct, so any exception seen once it
+            // is cancelled comes from that shutdown, whatever its type: SqlClient, for one, aborts
+            // an in-flight command with a SqlException rather than an OperationCanceledException.
+            // A failure while ct is not cancelled still faults the task and DisposeAsync rethrows it.
         }
     }
 
@@ -95,11 +98,16 @@ public sealed class PollingEventSubscription : IEventSubscription
         // Interlocked.Exchange above establishes a full memory barrier, so the
         // _backgroundTask write from StartAsync (on another thread) is guaranteed
         // to be visible here even though _backgroundTask is not volatile.
-        if (_backgroundTask is not null)
+        // RunAsync swallows whatever the cancellation above makes the adapter or handler throw, so
+        // anything that surfaces here is a failure that happened while the subscription was running.
+        try
         {
-            try { await _backgroundTask.ConfigureAwait(false); }
-            catch (OperationCanceledException) { /* normal shutdown */ }
+            if (_backgroundTask is not null)
+                await _backgroundTask.ConfigureAwait(false);
         }
-        _cts.Dispose();
+        finally
+        {
+            _cts.Dispose();
+        }
     }
 }
