@@ -423,8 +423,42 @@ public class ResilientOrderTotalsProjection : Projection<ImmutableDictionary<str
 }
 // --- end snippet ---
 
+// --- snippet: "Pattern 11: Rebuilding a Projection in Place" ---
+public class RebuildableOrderTotalsProjection : ReplayableProjection<ImmutableDictionary<string, decimal>>
+{
+    // Current starts at the empty dictionary, and each rebuild resets to it
+    public RebuildableOrderTotalsProjection()
+        : base(ImmutableDictionary<string, decimal>.Empty)
+    {
+    }
+
+    public override string GetProjectionKey() => "rebuilt-order-totals";
+
+    protected override ImmutableDictionary<string, decimal> Apply(
+        ImmutableDictionary<string, decimal> current,
+        EventEnvelope @event) => @event.Event switch
+    {
+        OrderPlacedEvent e => current.SetItem(e.OrderId, e.Total),
+        OrderCancelledEvent e => current.Remove(e.OrderId),
+        _ => current
+    };
+}
+// --- end snippet ---
+
 public static class CustomProjectionsUsage
 {
+    public static async Task<RebuildableOrderTotalsProjection> ReplayableUsage(
+        IEventStore eventStore, IProjectionStore projectionStore)
+    {
+        // --- snippet: "Pattern 11" usage ---
+        var projection = new RebuildableOrderTotalsProjection();
+
+        // Replays the stream from the start and saves the result as JSON under "rebuilt-order-totals"
+        await projection.RebuildAsync(projectionStore, new StreamId("orders"), eventStore);
+        // --- end snippet ---
+        return projection;
+    }
+
     public static async Task BatchedUsage(IEventStore eventStore, IProjectionStore projectionStore)
     {
         // --- snippet: "Pattern 5" usage ---

@@ -204,6 +204,25 @@ public sealed class CustomProjectionsDocTests
         projection.Current.Should().BeEquivalentTo(new Dictionary<string, decimal> { ["1"] = 5m, ["3"] = 7m });
     }
 
+    [Fact]
+    public async Task Replayable_RebuildsFromTheEmptyDictionaryAndSaves()
+    {
+        var eventStore = NewEventStore();
+        var projectionStore = new InMemoryProjectionStore();
+        await eventStore.AppendAsync(
+            new StreamId("orders"),
+            new object[] { Placed("1", "c", 5m), Placed("2", "c", 7m), new OrderCancelledEvent("1") },
+            StreamPosition.Start);
+
+        var projection = await CustomProjectionsUsage.ReplayableUsage(eventStore, projectionStore);
+        await projection.RebuildAsync(projectionStore, new StreamId("orders"), eventStore);
+
+        var expected = new Dictionary<string, decimal> { ["2"] = 7m };
+        projection.Current.Should().BeEquivalentTo(expected);
+        var saved = await projectionStore.LoadAsync("rebuilt-order-totals");
+        System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, decimal>>(saved!).Should().BeEquivalentTo(expected);
+    }
+
     private sealed class RecordingEmail : IEmailService
     {
         public List<string> Sent { get; } = [];
