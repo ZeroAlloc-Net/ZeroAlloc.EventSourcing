@@ -22,19 +22,28 @@ public sealed class AggregateDispatchGenerator : IIncrementalGenerator
             .CreateSyntaxProvider(
                 predicate: static (node, _) => PartialTypeDeclarations.IsPartialClassWithBaseSyntax(node),
                 transform: static (ctx, ct) => GetAggregateInfoPublic(ctx, ct))
-            .Where(static info => info is not null)
-            .Select(static (info, _) => info!);
+            .Where(static result => result is not null)
+            .Select(static (result, _) => result!);
 
-        context.RegisterSourceOutput(aggregates, static (ctx, info) =>
+        // Only this generator reports the discovery diagnostics. EventTypeRegistryGenerator shares the
+        // discovery and would otherwise report each of them a second time.
+        context.RegisterSourceOutput(aggregates, static (ctx, result) =>
         {
-            var source = EmitApplyEvent(info);
-            ctx.AddSource($"{info.HintPrefix}.ApplyEvent.g.cs", source);
+            if (result.Diagnostic is not null)
+            {
+                ctx.ReportDiagnostic(result.Diagnostic.ToDiagnostic());
+                return;
+            }
+            var info = result.Info!;
+            ctx.AddSource($"{info.HintPrefix}.ApplyEvent.g.cs", EmitApplyEvent(info));
         });
     }
 
     /// <summary>
     /// Semantic transform: returns an <see cref="AggregateInfo"/> for classes that inherit
-    /// <c>Aggregate&lt;TId, TState&gt;</c> and whose state has <c>Apply(TEvent)</c> methods.
+    /// <c>Aggregate&lt;TId, TState&gt;</c> and whose state has <c>Apply(TEvent)</c> methods, or a
+    /// diagnostic instead when such an aggregate cannot be generated: ZAES005 when a containing type is
+    /// not partial, ZAES006 when it is generic or one of its event types uses a type parameter.
     /// Returns <c>null</c> for non-aggregate classes, for those already providing a manual override,
     /// and for every declaration of a partial class except its primary one, so that a class split over
     /// several declarations is emitted once.
@@ -43,7 +52,7 @@ public sealed class AggregateDispatchGenerator : IIncrementalGenerator
     /// aggregates with a hand-written dispatcher. If those concerns need separating in the future,
     /// introduce a dedicated discovery method for the registry generator.
     /// </summary>
-    internal static AggregateInfo? GetAggregateInfoPublic(GeneratorSyntaxContext ctx, CancellationToken cancellationToken)
+    internal static DiscoveryResult<AggregateInfo>? GetAggregateInfoPublic(GeneratorSyntaxContext ctx, CancellationToken cancellationToken)
     {
         var cls = (ClassDeclarationSyntax)ctx.Node;
         var symbol = ctx.SemanticModel.GetDeclaredSymbol(cls, cancellationToken) as INamedTypeSymbol;
@@ -86,18 +95,25 @@ public sealed class AggregateDispatchGenerator : IIncrementalGenerator
 
         if (applyMethods.Count == 0) return null;
 
+        // The event types also go into the registry, which sits at namespace level.
+        var eventTypes = applyMethods.Select(m => m.Parameters[0].Type).ToList();
+        var problem = PartialTypeDeclarations.Check(cls, symbol, eventTypes, cancellationToken);
+        if (problem is not null) return DiscoveryResult<AggregateInfo>.Report(problem);
+
         var ns = symbol.ContainingNamespace.IsGlobalNamespace
             ? string.Empty
             : symbol.ContainingNamespace.ToDisplayString();
 
-        return new AggregateInfo(
+        return DiscoveryResult<AggregateInfo>.Generate(new AggregateInfo(
             PartialTypeDeclarations.HintPrefix(symbol),
             ns,
-            symbol.Name,
+            PartialTypeDeclarations.DeclarationHeaders(symbol),
+            PartialTypeDeclarations.NamespaceLevelName(symbol) + "EventTypeRegistry",
+            PartialTypeDeclarations.Cref(symbol),
             stateType.Name,
             stateType.ToDisplayString(),
-            applyMethods.Select(m => m.Parameters[0].Type.Name).ToList(),
-            applyMethods.Select(m => m.Parameters[0].Type.ToDisplayString()).ToList());
+            eventTypes.Select(t => t.Name).ToList(),
+            eventTypes.Select(t => t.ToDisplayString()).ToList()));
     }
 
     private static string EmitApplyEvent(AggregateInfo info)
@@ -114,21 +130,18 @@ public sealed class AggregateDispatchGenerator : IIncrementalGenerator
             sb.AppendLine();
         }
 
-        sb.AppendLine($"partial class {info.ClassName}");
-        sb.AppendLine("{");
-        sb.AppendLine($"    protected override {info.StateTypeFullName} ApplyEvent({info.StateTypeFullName} state, object @event)");
-        sb.AppendLine("        => @event switch");
-        sb.AppendLine("        {");
-
-        for (var i = 0; i < info.EventTypeFullNames.Count; i++)
+        var body = new List<string>
         {
-            sb.AppendLine($"            {info.EventTypeFullNames[i]} __e => state.Apply(__e),");
-        }
+            $"protected override {info.StateTypeFullName} ApplyEvent({info.StateTypeFullName} state, object @event)",
+            "    => @event switch",
+            "    {",
+        };
+        foreach (var eventType in info.EventTypeFullNames)
+            body.Add($"        {eventType} __e => state.Apply(__e),");
+        body.Add("        _ => state");
+        body.Add("    };");
 
-        sb.AppendLine("            _ => state");
-        sb.AppendLine("        };");
-        sb.AppendLine("}");
-
+        PartialTypeDeclarations.AppendDeclarations(sb, info.DeclarationHeaders, body);
         return sb.ToString();
     }
 }

@@ -290,6 +290,12 @@ The source generator emits one for every partial aggregate whose state has inter
 methods, named `<Aggregate>EventTypeRegistry`: `OrderEventTypeRegistry` for `Order`. It maps
 each event type handled by an `Apply` method to its short type name.
 
+The registry is a class in the namespace of the aggregate. For an aggregate nested in other types,
+its name starts with the names of the containing types, joined with underscores:
+`Retail_OrderEventTypeRegistry` for `Retail.Order`. A generic containing type is followed by its
+number of type parameters: `Module1_OrderEventTypeRegistry` for `Module<T>.Order`. So two
+aggregates with the same name in different containing types get two registries.
+
 You can also implement the interface yourself, for example to keep old names readable after renaming an event type:
 
 ```csharp
@@ -360,6 +366,18 @@ The generator:
 - Creates the `ApplyEvent` override that routes events to them, and an `OrderEventTypeRegistry`
 - Ensures compile-time type safety
 - Skips an aggregate that already overrides `ApplyEvent` by hand
+
+An aggregate can be nested in another type, for example a static class per bounded context. The
+generated `ApplyEvent` then goes into the nested aggregate, which needs every containing type to be
+`partial` as well; otherwise the generator reports [ZAES005](../diagnostics.md#zaes005). A generic
+aggregate is not generated and gets [ZAES006](../diagnostics.md#zaes006).
+
+```csharp
+public static partial class Retail
+{
+    public sealed partial class Order : Aggregate<OrderId, OrderState> { }
+}
+```
 
 ## Testing Aggregates
 

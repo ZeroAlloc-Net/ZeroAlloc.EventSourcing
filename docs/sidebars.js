@@ -57,6 +57,7 @@ module.exports = {
       ],
     },
     'api-reference',
+    'diagnostics',
     {
       type: 'category',
       label: 'Advanced',

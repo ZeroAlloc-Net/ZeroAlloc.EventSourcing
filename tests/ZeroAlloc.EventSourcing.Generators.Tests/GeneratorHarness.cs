@@ -35,17 +35,28 @@ internal static class GeneratorHarness
             new ProjectionDispatchGenerator());
         driver = driver.RunGeneratorsAndUpdateCompilation(compilation, out var output, out var generatorDiagnostics);
 
-        return new GeneratorRun(driver.GetRunResult(), generatorDiagnostics, output.GetDiagnostics());
+        return new GeneratorRun(driver.GetRunResult(), generatorDiagnostics, output.GetDiagnostics(), [.. trees]);
     }
 }
 
 internal sealed record GeneratorRun(
     GeneratorDriverRunResult Result,
     ImmutableArray<Diagnostic> GeneratorDiagnostics,
-    ImmutableArray<Diagnostic> CompilationDiagnostics)
+    ImmutableArray<Diagnostic> CompilationDiagnostics,
+    ImmutableArray<SyntaxTree> Inputs)
 {
+    /// <summary>The input source text a diagnostic points at.</summary>
+    public string LocatedText(Diagnostic diagnostic)
+    {
+        var path = diagnostic.Location.GetLineSpan().Path;
+        return Inputs.Single(t => t.FilePath == path).GetText().ToString(diagnostic.Location.SourceSpan);
+    }
+
     public ImmutableArray<string> HintNames
         => Result.Results.SelectMany(r => r.GeneratedSources).Select(s => s.HintName).ToImmutableArray();
+
+    public string Source(string hintName)
+        => Result.Results.SelectMany(r => r.GeneratedSources).Single(s => s.HintName == hintName).SourceText.ToString();
 
     public ImmutableArray<Diagnostic> Errors
         => GeneratorDiagnostics.Concat(CompilationDiagnostics)

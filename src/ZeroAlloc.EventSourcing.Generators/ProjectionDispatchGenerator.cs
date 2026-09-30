@@ -23,24 +23,31 @@ public sealed class ProjectionDispatchGenerator : IIncrementalGenerator
             .CreateSyntaxProvider(
                 predicate: static (node, _) => PartialTypeDeclarations.IsPartialClassWithBaseSyntax(node),
                 transform: static (ctx, ct) => GetProjectionInfoPublic(ctx, ct))
-            .Where(static info => info is not null)
-            .Select(static (info, _) => info!);
+            .Where(static result => result is not null)
+            .Select(static (result, _) => result!);
 
-        context.RegisterSourceOutput(projections, static (ctx, info) =>
+        context.RegisterSourceOutput(projections, static (ctx, result) =>
         {
-            var source = EmitApplyTyped(info);
-            ctx.AddSource($"{info.HintPrefix}.ApplyTyped.g.cs", source);
+            if (result.Diagnostic is not null)
+            {
+                ctx.ReportDiagnostic(result.Diagnostic.ToDiagnostic());
+                return;
+            }
+            var info = result.Info!;
+            ctx.AddSource($"{info.HintPrefix}.ApplyTyped.g.cs", EmitApplyTyped(info));
         });
     }
 
     /// <summary>
     /// Semantic transform: returns a <see cref="ProjectionInfo"/> for classes that inherit
-    /// <c>Projection&lt;TReadModel&gt;</c> and have <c>Apply(TReadModel, TEvent)</c> methods.
+    /// <c>Projection&lt;TReadModel&gt;</c> and have <c>Apply(TReadModel, TEvent)</c> methods, or a
+    /// diagnostic instead when such a projection cannot be generated: ZAES005 when a containing type is
+    /// not partial, ZAES006 when it is generic.
     /// Returns <c>null</c> for non-projection classes, for those without Apply methods, and for every
     /// declaration of a partial class except its primary one, so that a class split over several
     /// declarations is emitted once.
     /// </summary>
-    private static ProjectionInfo? GetProjectionInfoPublic(GeneratorSyntaxContext ctx, CancellationToken cancellationToken)
+    private static DiscoveryResult<ProjectionInfo>? GetProjectionInfoPublic(GeneratorSyntaxContext ctx, CancellationToken cancellationToken)
     {
         var cls = (ClassDeclarationSyntax)ctx.Node;
         var symbol = ctx.SemanticModel.GetDeclaredSymbol(cls, cancellationToken) as INamedTypeSymbol;
@@ -84,17 +91,22 @@ public sealed class ProjectionDispatchGenerator : IIncrementalGenerator
 
         if (applyMethods.Count == 0) return null;
 
+        // ApplyTyped is generated inside the projection, where the type parameters of its containing
+        // types are in scope, so no type it names has to be checked for them.
+        var problem = PartialTypeDeclarations.Check(cls, symbol, [], cancellationToken);
+        if (problem is not null) return DiscoveryResult<ProjectionInfo>.Report(problem);
+
         var ns = symbol.ContainingNamespace.IsGlobalNamespace
             ? string.Empty
             : symbol.ContainingNamespace.ToDisplayString();
 
-        return new ProjectionInfo(
+        return DiscoveryResult<ProjectionInfo>.Generate(new ProjectionInfo(
             PartialTypeDeclarations.HintPrefix(symbol),
             ns,
-            symbol.Name,
+            PartialTypeDeclarations.DeclarationHeaders(symbol),
             readModelType.Name,
             readModelType.ToDisplayString(),
-            applyMethods);
+            applyMethods));
     }
 
     private static string EmitApplyTyped(ProjectionInfo info)
@@ -111,26 +123,22 @@ public sealed class ProjectionDispatchGenerator : IIncrementalGenerator
             sb.AppendLine();
         }
 
-        sb.AppendLine($"partial class {info.ClassName}");
-        sb.AppendLine("{");
-        sb.AppendLine($"    /// <summary>");
-        sb.AppendLine($"    /// Auto-generated dispatch method emitted by ProjectionDispatchGenerator.");
-        sb.AppendLine($"    /// Routes typed events to the corresponding Apply method overload.");
-        sb.AppendLine($"    /// </summary>");
-        sb.AppendLine($"    private {info.ReadModelTypeFullName} ApplyTyped({info.ReadModelTypeFullName} current, object @event)");
-        sb.AppendLine("        => @event switch");
-        sb.AppendLine("        {");
-
-        for (var i = 0; i < info.ApplyMethods.Count; i++)
+        var body = new List<string>
         {
-            var method = info.ApplyMethods[i];
-            sb.AppendLine($"            {method.EventTypeFullName} __e => Apply(current, __e),");
-        }
+            "/// <summary>",
+            "/// Auto-generated dispatch method emitted by ProjectionDispatchGenerator.",
+            "/// Routes typed events to the corresponding Apply method overload.",
+            "/// </summary>",
+            $"private {info.ReadModelTypeFullName} ApplyTyped({info.ReadModelTypeFullName} current, object @event)",
+            "    => @event switch",
+            "    {",
+        };
+        foreach (var method in info.ApplyMethods)
+            body.Add($"        {method.EventTypeFullName} __e => Apply(current, __e),");
+        body.Add("        _ => current");
+        body.Add("    };");
 
-        sb.AppendLine("            _ => current");
-        sb.AppendLine("        };");
-        sb.AppendLine("}");
-
+        PartialTypeDeclarations.AppendDeclarations(sb, info.DeclarationHeaders, body);
         return sb.ToString();
     }
 }
