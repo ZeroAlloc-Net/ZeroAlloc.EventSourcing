@@ -176,8 +176,8 @@ var streamId = new StreamId($"invoice-{invoiceId.Value}");
 var streamId = new StreamId($"company-{companyId.Value}/department-{deptId.Value}");
 var streamId = new StreamId($"customer-{customerId.Value}/orders");
 
-// Single stream for all events (event bus pattern)
-var streamId = new StreamId("$all");  // Special stream containing all events
+// Every event of every stream, in append order: for reads and subscriptions, not appends
+var streamId = StreamId.Global;  // the stream ID "*"
 ```
 
 Choose stream IDs that:
@@ -380,7 +380,7 @@ To query across multiple aggregates, subscribe to events and build a read model 
 ```csharp
 // Read all Order events across all orders
 var orderProjection = new OrderSummaryProjection();
-await foreach (var envelope in eventStore.ReadAsync(new StreamId("$all"), StreamPosition.Start))
+await foreach (var envelope in eventStore.ReadAsync(StreamId.Global, StreamPosition.Start))
 {
     if (envelope.Event is OrderPlacedEvent || envelope.Event is OrderShippedEvent)
     {
