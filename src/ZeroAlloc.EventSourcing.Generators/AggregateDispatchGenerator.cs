@@ -1,10 +1,10 @@
 // src/ZeroAlloc.EventSourcing.Generators/AggregateDispatchGenerator.cs
 using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 
 namespace ZeroAlloc.EventSourcing.Generators;
 
@@ -20,42 +20,35 @@ public sealed class AggregateDispatchGenerator : IIncrementalGenerator
     {
         var aggregates = context.SyntaxProvider
             .CreateSyntaxProvider(
-                predicate: static (node, _) => IsPartialClassWithBaseSyntax(node),
-                transform: static (ctx, _) => GetAggregateInfoPublic(ctx))
+                predicate: static (node, _) => PartialTypeDeclarations.IsPartialClassWithBaseSyntax(node),
+                transform: static (ctx, ct) => GetAggregateInfoPublic(ctx, ct))
             .Where(static info => info is not null)
             .Select(static (info, _) => info!);
 
         context.RegisterSourceOutput(aggregates, static (ctx, info) =>
         {
             var source = EmitApplyEvent(info);
-            // Qualify the hint name with the namespace to avoid collisions when two aggregates share a short name.
-            var hint = string.IsNullOrEmpty(info.Namespace)
-                ? $"{info.ClassName}.ApplyEvent.g.cs"
-                : $"{info.Namespace}.{info.ClassName}.ApplyEvent.g.cs";
-            ctx.AddSource(hint, source);
+            ctx.AddSource($"{info.HintPrefix}.ApplyEvent.g.cs", source);
         });
     }
-
-    /// <summary>Syntactic predicate: returns true for partial class declarations with a base type list. Shared with <see cref="EventTypeRegistryGenerator"/>.</summary>
-    internal static bool IsPartialClassWithBaseSyntax(SyntaxNode node)
-        => node is ClassDeclarationSyntax cls
-            && cls.Modifiers.Any(m => m.IsKind(SyntaxKind.PartialKeyword))
-            && cls.BaseList?.Types.Count > 0;
 
     /// <summary>
     /// Semantic transform: returns an <see cref="AggregateInfo"/> for classes that inherit
     /// <c>Aggregate&lt;TId, TState&gt;</c> and whose state has <c>Apply(TEvent)</c> methods.
-    /// Returns <c>null</c> for non-aggregate classes or those already providing a manual override.
+    /// Returns <c>null</c> for non-aggregate classes, for those already providing a manual override,
+    /// and for every declaration of a partial class except its primary one, so that a class split over
+    /// several declarations is emitted once.
     /// Shared with <see cref="EventTypeRegistryGenerator"/>.
     /// NOTE: the <c>hasExplicitApplyEvent</c> guard below also suppresses registry generation for
     /// aggregates with a hand-written dispatcher. If those concerns need separating in the future,
     /// introduce a dedicated discovery method for the registry generator.
     /// </summary>
-    internal static AggregateInfo? GetAggregateInfoPublic(GeneratorSyntaxContext ctx)
+    internal static AggregateInfo? GetAggregateInfoPublic(GeneratorSyntaxContext ctx, CancellationToken cancellationToken)
     {
         var cls = (ClassDeclarationSyntax)ctx.Node;
-        var symbol = ctx.SemanticModel.GetDeclaredSymbol(cls) as INamedTypeSymbol;
+        var symbol = ctx.SemanticModel.GetDeclaredSymbol(cls, cancellationToken) as INamedTypeSymbol;
         if (symbol is null) return null;
+        if (!PartialTypeDeclarations.IsPrimaryDeclaration(cls, symbol, cancellationToken)) return null;
 
         // Skip if the class already has an explicit ApplyEvent override declared directly on it.
         // This prevents a duplicate-member error when Order (in tests) defines ApplyEvent manually.
@@ -98,6 +91,7 @@ public sealed class AggregateDispatchGenerator : IIncrementalGenerator
             : symbol.ContainingNamespace.ToDisplayString();
 
         return new AggregateInfo(
+            PartialTypeDeclarations.HintPrefix(symbol),
             ns,
             symbol.Name,
             stateType.Name,

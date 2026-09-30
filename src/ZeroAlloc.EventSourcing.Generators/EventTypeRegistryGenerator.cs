@@ -17,19 +17,15 @@ public sealed class EventTypeRegistryGenerator : IIncrementalGenerator
         // Reuse the same aggregate discovery as AggregateDispatchGenerator
         var aggregates = context.SyntaxProvider
             .CreateSyntaxProvider(
-                predicate: static (node, _) => AggregateDispatchGenerator.IsPartialClassWithBaseSyntax(node),
-                transform: static (ctx, _) => AggregateDispatchGenerator.GetAggregateInfoPublic(ctx))
+                predicate: static (node, _) => PartialTypeDeclarations.IsPartialClassWithBaseSyntax(node),
+                transform: static (ctx, ct) => AggregateDispatchGenerator.GetAggregateInfoPublic(ctx, ct))
             .Where(static info => info is not null)
             .Select(static (info, _) => info!);
 
         context.RegisterSourceOutput(aggregates, static (ctx, info) =>
         {
             var source = EmitRegistry(info);
-            // Qualify hint name with namespace to avoid collisions
-            var hint = string.IsNullOrEmpty(info.Namespace)
-                ? $"{info.ClassName}EventTypeRegistry.g.cs"
-                : $"{info.Namespace}.{info.ClassName}EventTypeRegistry.g.cs";
-            ctx.AddSource(hint, source);
+            ctx.AddSource($"{info.HintPrefix}EventTypeRegistry.g.cs", source);
         });
     }
 

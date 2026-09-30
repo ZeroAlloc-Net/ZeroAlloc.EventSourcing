@@ -10,12 +10,14 @@ namespace ZeroAlloc.EventSourcing.Generators;
 internal sealed class ProjectionInfo
 {
     public ProjectionInfo(
+        string hintPrefix,
         string @namespace,
         string className,
         string readModelType,
         string readModelTypeFullName,
         IReadOnlyList<ApplyMethodInfo> applyMethods)
     {
+        HintPrefix = hintPrefix;
         Namespace = @namespace;
         ClassName = className;
         ReadModelType = readModelType;
@@ -23,6 +25,8 @@ internal sealed class ProjectionInfo
         ApplyMethods = applyMethods;
     }
 
+    /// <summary>Unique per type; see <see cref="PartialTypeDeclarations.HintPrefix"/>.</summary>
+    public string HintPrefix { get; }
     public string Namespace { get; }
     public string ClassName { get; }
     public string ReadModelType { get; }
@@ -32,6 +36,7 @@ internal sealed class ProjectionInfo
     // Value equality is required for Roslyn's incremental pipeline to cache results correctly.
     public override bool Equals(object? obj)
         => obj is ProjectionInfo other
+            && HintPrefix == other.HintPrefix
             && Namespace == other.Namespace
             && ClassName == other.ClassName
             && ReadModelType == other.ReadModelType
@@ -41,6 +46,7 @@ internal sealed class ProjectionInfo
     public override int GetHashCode()
     {
         var hash = 17;
+        hash = hash * 31 + HintPrefix.GetHashCode();
         hash = hash * 31 + Namespace.GetHashCode();
         hash = hash * 31 + ClassName.GetHashCode();
         hash = hash * 31 + ReadModelType.GetHashCode();
