@@ -1,40 +1,14 @@
-# Usage Guide: Projections Usage
+using System.Collections.Immutable;
+using Microsoft.Extensions.Logging;
+using ZeroAlloc.EventSourcing;
 
-## Scenario: How Do I Query My Event-Sourced Data Efficiently?
+// The C# in docs/usage-guides/projections-usage.md, copied as it appears there and compiled
+// against the public API. Each block between "--- snippet ---" markers is one code block of the
+// page. When a snippet changes in the docs, change it here as well. ProjectionsUsageTests runs
+// them. See issue #402.
+namespace ZeroAlloc.EventSourcing.Aggregates.ConsumerTests.ProjectionsUsage;
 
-Projections are read models derived from events. While aggregates optimize for commands, projections optimize for queries. This guide shows how to build fast, queryable views of your event-sourced data.
-
-## Projections as Read Models
-
-Aggregates are optimized for commands (writes), but reading them is expensive—you have to replay all their events. Projections solve this by maintaining denormalized views.
-
-**Conceptually:**
-
-```
-Event Stream (write model):
-  Order-123: [OrderPlaced, Confirmed, Shipped, Delivered, Refunded]
-
-Projection 1: OrderListView (what orders exist?)
-  {OrderId: 123, Status: "Refunded", Total: 1500, CustomerId: 456}
-
-Projection 2: CustomerOrderCount (how many orders per customer?)
-  {CustomerId: 456, OrderCount: 5, TotalRevenue: 7500}
-
-Projection 3: OrdersByStatus (group orders by status)
-  {Status: "Refunded", Orders: [123, ...]}
-```
-
-**Benefits:**
-- **Fast queries** — Projections are indexed, queried directly (no replay)
-- **Denormalized** — Data organized for specific query patterns
-- **Rebuilding** — Reconstruct by replaying events
-- **Decoupled** — Update aggregates without changing query logic
-
-### The Events in This Guide
-
-The examples on this page share these events:
-
-```csharp
+// --- snippet: "The Events in This Guide" ---
 public record OrderPlacedEvent(string OrderId, string CustomerId, decimal Total, DateTimeOffset PlacedAt);
 public record OrderConfirmedEvent(string OrderId, DateTimeOffset ConfirmedAt);
 public record OrderShippedEvent(string OrderId, string TrackingNumber, DateTimeOffset ShippedAt);
@@ -42,15 +16,9 @@ public record OrderCancelledEvent(string OrderId, string CustomerId);
 public record OrderRefundedEvent(string OrderId, string CustomerId, decimal RefundAmount);
 public record OrderDeliveredEvent(string OrderId);
 public record OrderReturnRequestedEvent(string OrderId);
-```
+// --- end snippet ---
 
-## Single-Stream vs. Multi-Stream Projections
-
-### Single-Stream Projections
-
-Project events from a single aggregate's stream:
-
-```csharp
+// --- snippet: "Single-Stream Projections" ---
 public sealed record OrderDetails(
     string OrderId,
     string CustomerId,
@@ -100,29 +68,9 @@ public class OrderDetailsProjection : Projection<OrderDetails>
         };
     }
 }
+// --- end snippet ---
 
-// Usage
-var projection = new OrderDetailsProjection();
-await foreach (var envelope in eventStore.ReadAsync(new StreamId("order-123"), StreamPosition.Start))
-{
-    await projection.HandleAsync(envelope);
-}
-
-var orderDetails = projection.Current;
-Console.WriteLine($"Order {orderDetails.OrderId}: {orderDetails.Status}");
-```
-
-**Use for:**
-- Detailed order/customer views
-- Single-aggregate audit reports
-- Rich display models for a specific entity
-
-### Multi-Stream Projections
-
-Aggregate data across multiple aggregates. `StreamId.Global` reads the events of every stream in
-the order they were appended:
-
-```csharp
+// --- snippet: "Multi-Stream Projections" ---
 public sealed record CustomerOrderSummary(
     string CustomerId,
     int OrderCount,
@@ -161,32 +109,9 @@ public class CustomerOrderSummaryProjection : Projection<CustomerOrderSummary>
         };
     }
 }
+// --- end snippet ---
 
-// Usage: Process all events from all streams
-var projection = new CustomerOrderSummaryProjection("customer-456");
-await foreach (var envelope in eventStore.ReadAsync(StreamId.Global, StreamPosition.Start))
-{
-    await projection.HandleAsync(envelope);
-}
-
-var summary = projection.Current;
-Console.WriteLine($"Customer {summary.CustomerId}: {summary.OrderCount} orders, ${summary.TotalRevenue}");
-```
-
-**Use for:**
-- Aggregated statistics across aggregates
-- Search indices (e.g., "orders by customer")
-- Analytics and reporting
-- Cross-entity queries
-
-## Projection Patterns
-
-### Pattern 1: Materialization (Denormalized View)
-
-Store projection result in a database for fast querying. `HandleAsync` is virtual: override it
-to persist the read model after `Apply` has produced it.
-
-```csharp
+// --- snippet: "Pattern 1: Materialization (Denormalized View)" ---
 // Your read-model storage, for example a table with one row per order
 public interface IOrderDetailsRepository
 {
@@ -214,17 +139,9 @@ public sealed class MaterializedOrderDetailsProjection : OrderDetailsProjection
             await _repository.SaveAsync(Current, ct);
     }
 }
+// --- end snippet ---
 
-// Query the materialized view (fast, no replay)
-var order = await orderDetailsRepository.GetByIdAsync("123");
-Console.WriteLine($"Status: {order?.Status}");
-```
-
-### Pattern 2: Counts and Aggregations
-
-Track counts and statistics. An immutable collection keeps `Apply` a pure function:
-
-```csharp
+// --- snippet: "Pattern 2: Counts and Aggregations" ---
 public class CustomerOrderCountProjection : Projection<ImmutableDictionary<string, int>>
 {
     public CustomerOrderCountProjection()
@@ -248,27 +165,9 @@ public class CustomerOrderCountProjection : Projection<ImmutableDictionary<strin
         };
     }
 }
+// --- end snippet ---
 
-// Usage
-var projection = new CustomerOrderCountProjection();
-await foreach (var envelope in eventStore.ReadAsync(StreamId.Global, StreamPosition.Start))
-{
-    await projection.HandleAsync(envelope);
-}
-
-var counts = projection.Current;
-var customerId = "cust-123";
-if (counts.TryGetValue(customerId, out var count))
-{
-    Console.WriteLine($"Customer has {count} orders");
-}
-```
-
-### Pattern 3: Search Indices
-
-Build searchable indices:
-
-```csharp
+// --- snippet: "Pattern 3: Search Indices" ---
 public record OrderIndex(string OrderId, string CustomerId, decimal Total, string Status);
 
 public class OrderSearchProjection : Projection<ImmutableList<OrderIndex>>
@@ -321,15 +220,9 @@ public class OrderSearchService
             .ToList();
     }
 }
-```
+// --- end snippet ---
 
-### Pattern 4: Notifications and Side Effects
-
-Don't send emails or messages from a projection's `Apply`: rebuilding the projection replays
-every event and would send them all again. Handle side effects in a stream consumer instead,
-which checkpoints the events it has handled:
-
-```csharp
+// --- snippet: "Pattern 4: Notifications and Side Effects" ---
 public interface IEmailService
 {
     Task SendOrderPlacedAsync(string orderId, string customerId, CancellationToken ct);
@@ -367,67 +260,9 @@ public class OrderNotificationHandler
         }
     }
 }
+// --- end snippet ---
 
-// Usage: a StreamConsumer checkpoints what it handled, so a restart does not send twice
-var consumer = new StreamConsumer(eventStore, new InMemoryCheckpointStore(), consumerId: "order-notifications");
-await consumer.ConsumeAsync(handler.HandleAsync);
-```
-
-See [Stream Consumers](../core-concepts/stream-consumers.md) for checkpoint stores, retries and
-dead letters.
-
-## Projection Base Class
-
-### Projection<TReadModel>
-
-The base class for custom projections. There is no projection interface; every projection
-derives from this class:
-
-```csharp
-public abstract class Projection<TReadModel>
-{
-    // The current read model. Starts at default(TReadModel): set it in your constructor
-    public TReadModel Current { get; protected set; }
-
-    // Apply an event to the read model and return the new read model.
-    // Override this method to implement projection logic
-    protected abstract TReadModel Apply(TReadModel current, EventEnvelope @event);
-
-    // Applies the event and stores the result in Current. Virtual, so a subclass can add
-    // work around it, such as persisting the read model
-    public virtual ValueTask HandleAsync(EventEnvelope @event, CancellationToken ct = default);
-}
-```
-
-All projection examples in this guide extend `Projection<TReadModel>` and override the `Apply`
-method. Feed events to a projection with `HandleAsync`, and read the result from `Current`:
-
-```csharp
-var projection = new OrderDetailsProjection();
-await foreach (var envelope in eventStore.ReadAsync(streamId, StreamPosition.Start))
-{
-    await projection.HandleAsync(envelope);
-}
-
-var details = projection.Current;
-```
-
-The library also ships specialised base classes: `FilteredProjection<TReadModel>` skips events
-that `IncludeEvent` rejects, `BatchedProjection<TReadModel>` hands events over in batches, and
-`ReplayableProjection<TReadModel>` can rebuild itself from a stream into an `IProjectionStore`.
-
-## Applying Events to Projections
-
-### Handling Events
-
-Process each event type in a switch expression and return the read model unchanged for events
-the projection does not handle; see `OrderDetailsProjection` above.
-
-### Handling Missing Data
-
-Gracefully handle incomplete state. A nullable read model is `null` until the first event:
-
-```csharp
+// --- snippet: "Handling Missing Data" ---
 public sealed record CustomerSummary(string CustomerId, int OrderCount, decimal TotalRevenue);
 
 // Current is null until the first event for the customer arrives
@@ -451,34 +286,9 @@ public class CustomerSummaryProjection : Projection<CustomerSummary?>
         };
     }
 }
-```
+// --- end snippet ---
 
-## Consistency Guarantees
-
-### Eventual Consistency
-
-Projections are eventually consistent—they lag behind the event stream:
-
-```
-Time 0:  OrderPlacedEvent appended to store
-Time 1:  Projection processes event (lag = 1ms)
-Time 5:  Projection query returns consistent data
-
-Between Time 0-1: Projection hasn't processed event yet
-After Time 1:     Projection shows new data
-```
-
-**Implications:**
-- Queries may show stale data briefly
-- Acceptable for most applications
-- Not suitable for financial transactions requiring immediate consistency
-
-### At-Least-Once Processing
-
-Events are processed at least once, possibly multiple times, for example when a consumer restarts
-from its last checkpoint. Make `Apply` idempotent by remembering the last position it applied:
-
-```csharp
+// --- snippet: "At-Least-Once Processing" ---
 public sealed record OrderStatus(string Status, long LastProcessedPosition);
 
 public class OrderStatusProjection : Projection<OrderStatus>
@@ -507,23 +317,9 @@ public class OrderStatusProjection : Projection<OrderStatus>
         return updated with { LastProcessedPosition = @event.Position.Value };
     }
 }
+// --- end snippet ---
 
-// The projection might be handed the same event twice
-await projection.HandleAsync(placed);
-await projection.HandleAsync(shipped);
-await projection.HandleAsync(shipped);  // Duplicate: ignored
-```
-
-Positions are per stream, so this check works for a projection that reads one stream. A
-projection that reads `StreamId.Global` gets global positions and can use the same check.
-
-## Projection Rebuilding and Replays
-
-### Rebuilding from Scratch
-
-Reconstruct a projection by replaying all events:
-
-```csharp
+// --- snippet: "Rebuilding from Scratch" ---
 public class ProjectionRebuildService
 {
     private readonly IEventStore _eventStore;
@@ -547,19 +343,9 @@ public class ProjectionRebuildService
         return projection.Current;
     }
 }
+// --- end snippet ---
 
-// Usage
-var rebuildService = new ProjectionRebuildService(eventStore);
-var projection = new OrderListProjection();
-var finalState = await rebuildService.RebuildAsync(projection, StreamId.Global);
-Console.WriteLine($"Rebuilt with {finalState.Count} orders");
-```
-
-### Partial Rebuilds
-
-Rebuild a single stream's projection:
-
-```csharp
+// --- snippet: "Partial Rebuilds" ---
 public class OrderProjectionRebuilder
 {
     private readonly IEventStore _eventStore;
@@ -584,16 +370,9 @@ public class OrderProjectionRebuilder
         await _detailsRepository.SaveAsync(projection.Current, ct);
     }
 }
-```
+// --- end snippet ---
 
-## Multi-Step Workflows with Projections
-
-### Projection Chains
-
-Run several projections over the same events. Here `OrderStatusProjection` from above tracks the
-order status, and a second projection tracks customer satisfaction:
-
-```csharp
+// --- snippet: "Projection Chains" ---
 public sealed record CustomerSatisfaction(int RecentDeliveries, int RecentReturns);
 
 // Projection 2: Track customer satisfaction next to OrderStatusProjection
@@ -620,82 +399,9 @@ public class CustomerSatisfactionProjection : Projection<CustomerSatisfaction>
         };
     }
 }
+// --- end snippet ---
 
-// Usage: Apply both in sequence
-var statusProj = new OrderStatusProjection();
-var satisfactionProj = new CustomerSatisfactionProjection();
-
-await foreach (var envelope in eventStore.ReadAsync(StreamId.Global, StreamPosition.Start))
-{
-    await statusProj.HandleAsync(envelope);
-    await satisfactionProj.HandleAsync(envelope);
-}
-```
-
-## Testing Projections
-
-`Apply` is protected, so a test drives a projection the way the application does: through
-`HandleAsync`, with an `EventEnvelope` it builds itself.
-
-### Test Event Application
-
-```csharp
-[Fact]
-public async Task Projection_AppliesOrderPlacedEvent()
-{
-    // Arrange
-    var projection = new OrderListProjection();
-    var @event = new OrderPlacedEvent("ORD-001", "cust-123", 1500m, DateTimeOffset.UtcNow);
-    var envelope = new EventEnvelope(
-        new StreamId("order-ORD-001"),
-        new StreamPosition(1),
-        @event,
-        EventMetadata.New(nameof(OrderPlacedEvent)));
-
-    // Act
-    await projection.HandleAsync(envelope);
-
-    // Assert
-    Assert.Contains(projection.Current, o => o.OrderId == "ORD-001" && o.Status == "Placed");
-}
-```
-
-### Test Multi-Stream Projection
-
-```csharp
-[Fact]
-public async Task CustomerSummary_AggregatesAllOrders()
-{
-    // Arrange
-    var summary = new CustomerOrderSummaryProjection("cust-123");
-
-    var events = new object[]
-    {
-        new OrderPlacedEvent("ORD-001", "cust-123", 1000m, DateTimeOffset.UtcNow),
-        new OrderPlacedEvent("ORD-002", "cust-123", 500m, DateTimeOffset.UtcNow),
-        new OrderPlacedEvent("ORD-003", "cust-456", 200m, DateTimeOffset.UtcNow),
-    };
-
-    // Act
-    var position = StreamPosition.Start;
-    foreach (var e in events)
-    {
-        position = position.Next();
-        await summary.HandleAsync(new EventEnvelope(
-            StreamId.Global, position, e, EventMetadata.New(e.GetType().Name)));
-    }
-
-    // Assert: Only cust-123 orders counted
-    Assert.Equal(2, summary.Current.OrderCount);
-    Assert.Equal(1500m, summary.Current.TotalRevenue);
-}
-```
-
-## Complete Examples
-
-### Example 1: Order List with Search
-
-```csharp
+// --- snippet: "Example 1: Order List with Search" ---
 public record OrderListItem(
     string OrderId,
     string CustomerId,
@@ -763,11 +469,9 @@ public class OrderListSearchService
             .Sum(o => o.Total);
     }
 }
-```
+// --- end snippet ---
 
-### Example 2: Customer Order Statistics
-
-```csharp
+// --- snippet: "Example 2: Customer Order Statistics" ---
 public record CustomerOrderStatistics(
     string CustomerId,
     int OrderCount,
@@ -804,50 +508,9 @@ public class CustomerOrderStatisticsProjection
         };
     }
 }
-```
+// --- end snippet ---
 
-## Performance: Query Speed vs. Update Latency
-
-### Query Optimization
-
-Materialized projections are optimized for queries:
-
-```
-Direct Query (no projection):
-  1. Load aggregate: ~100ms (replay 1000 events)
-  2. Extract info: ~1ms
-  Total: ~101ms per query
-
-With Materialized Projection:
-  1. Query projection: ~1ms (indexed database query)
-  Total: ~1ms per query
-
-Improvement: 100x faster!
-```
-
-### Update Latency
-
-Projections may lag behind events:
-
-```
-Event appended: T+0
-Projection processed: T+50ms
-Query returns updated data: T+50ms
-```
-
-For most applications, 50-100ms lag is acceptable. For real-time dashboards, use subscriptions.
-
-## Handling Projection Failures and Retries
-
-### Fault-Tolerant Projection Processor
-
-A `StreamConsumer` already retries a failing handler with its `IRetryPolicy` and, with
-`ErrorHandlingStrategy.DeadLetter`, writes the event to an `IDeadLetterStore`. When you drive a
-projection yourself, the same can be done by hand:
-
-```csharp
-using Microsoft.Extensions.Logging;
-
+// --- snippet: "Fault-Tolerant Projection Processor" ---
 public class ResilientProjectionProcessor<TState>
 {
     private const int MaxRetries = 3;
@@ -893,22 +556,4 @@ public class ResilientProjectionProcessor<TState>
         }
     }
 }
-```
-
-## Summary
-
-Effective projection usage requires:
-
-1. **Identify query patterns** — What questions do users ask?
-2. **Design appropriate projections** — Single-stream or multi-stream?
-3. **Implement idempotent handlers** — Handle duplicate event processing
-4. **Persist materialized views** — Index projections for fast queries
-5. **Test thoroughly** — Verify correctness across event sequences
-6. **Accept eventual consistency** — Projections lag behind events
-7. **Plan for rebuilds** — Ability to reconstruct from events
-
-## Next Steps
-
-- **[SQL Adapters](./sql-adapters.md)** — Persist projections to databases
-- **[Performance Guide](../performance.md)** — Optimize query patterns
-- **[Testing Projections](../testing/)** — Comprehensive projection testing
+// --- end snippet ---
