@@ -233,10 +233,9 @@ public abstract class KafkaConsumerBase : IStreamConsumer, IDisposable
                 // dead-lettering, so neither the offset nor the checkpoint moves past it, see #422.
                 ThrowStopped(ex, ct);
             }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
+            // With ct live, any exception is a handler failure, an OperationCanceledException too:
+            // a handler's own timeout is retried and then handled by the error strategy, as in
+            // StreamConsumer, instead of stopping the consumer, see #426.
             catch (Exception) when (attempts < _options.MaxRetries)
             {
                 attempts++;

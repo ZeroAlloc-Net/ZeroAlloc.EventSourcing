@@ -387,6 +387,10 @@ whatever it throws: the consumer stops with an `OperationCanceledException`, no 
 strategy runs, and the checkpoint stays before that event, so it is handled again on the next start.
 Cancellation during a retry backoff stops the consumer the same way.
 
+An `OperationCanceledException` the consumer did not cause, such as a handler's own timeout while
+the consumer's token is still live, is a handler failure like any other: it is retried, then
+handled by the error strategy. `KafkaConsumerBase` behaves the same way.
+
 ## Checkpoint Stores
 
 You can implement `ICheckpointStore` to persist positions wherever you want:

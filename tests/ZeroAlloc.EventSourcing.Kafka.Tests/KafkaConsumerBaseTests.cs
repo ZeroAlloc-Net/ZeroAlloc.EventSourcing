@@ -355,6 +355,97 @@ public sealed class KafkaConsumerBaseTests
         await store.Received(1).WriteAsync("c:p0", new StreamPosition(1), Arg.Any<CancellationToken>());
     }
 
+    // ── a cancellation the consumer did not cause is a handler failure, see #426 ──
+
+    /// <summary>
+    /// A handler's own timeout surfaces as an <see cref="OperationCanceledException"/> while the
+    /// consumer's token is live. It is retried, then handled by the error strategy, the same as
+    /// <see cref="StreamConsumer"/> does, instead of stopping the consumer.
+    /// </summary>
+    [Theory]
+    [InlineData(ErrorHandlingStrategy.Skip)]
+    [InlineData(ErrorHandlingStrategy.DeadLetter)]
+    public async Task ConsumeAsync_ForeignCancellation_WithALiveToken_IsRetriedThenHandledByTheErrorStrategy(
+        ErrorHandlingStrategy strategy)
+    {
+        var (store, consumer, serializer, registry) = Substitutes();
+        var deadLetter = Substitute.For<IDeadLetterStore>();
+        var messages = new Queue<ConsumeResult<string, byte[]>?>();
+        messages.Enqueue(MakeMessage(0, 1));
+        messages.Enqueue(MakeMessage(0, 2));
+        messages.Enqueue(null);
+        consumer.Consume(Arg.Any<TimeSpan>()).Returns(_ => messages.Count > 0 ? messages.Dequeue() : null);
+
+        var options = new StreamConsumerOptions
+        {
+            MaxRetries = 2,
+            RetryPolicy = new NoDelayRetryPolicy(),
+            ErrorStrategy = strategy,
+            CommitStrategy = CommitStrategy.AfterEvent,
+        };
+        var sut = new StubConsumer(consumer, store, serializer, registry, "c", deadLetter, options);
+        using var cts = new CancellationTokenSource();
+        var handled = new List<long>();
+
+        await sut.ConsumeAsync((env, _) =>
+        {
+            handled.Add(env.Position.Value);
+            if (env.Position.Value == 1) throw new OperationCanceledException("handler timeout");
+            return Task.CompletedTask;
+        }, cts.Token);
+
+        handled.Should().Equal(1L, 1L, 1L, 2L);
+        await store.Received(1).WriteAsync("c:p0", new StreamPosition(1), Arg.Any<CancellationToken>());
+        await store.Received(1).WriteAsync("c:p0", new StreamPosition(2), Arg.Any<CancellationToken>());
+        if (strategy == ErrorHandlingStrategy.DeadLetter)
+        {
+            await deadLetter.Received(1).WriteAsync(
+                "c", Arg.Is<EventEnvelope>(e => e.Position.Value == 1),
+                Arg.Any<OperationCanceledException>(), Arg.Any<CancellationToken>());
+        }
+        else
+        {
+            await deadLetter.DidNotReceive().WriteAsync(
+                Arg.Any<string>(), Arg.Any<EventEnvelope>(), Arg.Any<Exception>(), Arg.Any<CancellationToken>());
+        }
+    }
+
+    [Fact]
+    public async Task ConsumeAsync_ForeignCancellation_WithALiveToken_IsRetriedThenRethrownOnFailFast()
+    {
+        var (store, consumer, serializer, registry) = Substitutes();
+        var messages = new Queue<ConsumeResult<string, byte[]>?>();
+        messages.Enqueue(MakeMessage(0, 1));
+        messages.Enqueue(null);
+        consumer.Consume(Arg.Any<TimeSpan>()).Returns(_ => messages.Count > 0 ? messages.Dequeue() : null);
+
+        var options = new StreamConsumerOptions
+        {
+            MaxRetries = 2, RetryPolicy = new NoDelayRetryPolicy(), ErrorStrategy = ErrorHandlingStrategy.FailFast,
+        };
+        var sut = new StubConsumer(consumer, store, serializer, registry, "c", options: options);
+        using var cts = new CancellationTokenSource();
+        var timeout = new OperationCanceledException("handler timeout");
+        var calls = 0;
+
+        var consume = sut.ConsumeAsync((_, _) =>
+        {
+            calls++;
+            throw timeout;
+        }, cts.Token);
+
+        var thrown = await consume.Invoking(t => t).Should().ThrowAsync<OperationCanceledException>();
+        thrown.Which.Should().BeSameAs(timeout);
+        calls.Should().Be(3);
+        cts.IsCancellationRequested.Should().BeFalse();
+        await store.DidNotReceive().WriteAsync(Arg.Any<string>(), Arg.Any<StreamPosition>(), Arg.Any<CancellationToken>());
+    }
+
+    private sealed class NoDelayRetryPolicy : IRetryPolicy
+    {
+        public TimeSpan GetDelay(int attemptNumber) => TimeSpan.Zero;
+    }
+
     private static (ICheckpointStore Store, IConsumer<string, byte[]> Consumer, IEventSerializer Serializer,
         IEventTypeRegistry Registry) Substitutes()
     {
