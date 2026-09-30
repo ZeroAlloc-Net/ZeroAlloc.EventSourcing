@@ -232,6 +232,10 @@ strategy runs, and neither the offset nor the checkpoint moves past that message
 consumed again on the next start.
 Cancellation during a retry backoff stops the consumer the same way.
 
+An `OperationCanceledException` the consumer did not cause, such as a handler's own timeout or an
+`HttpClient` timeout while the consumer's token is still live, is a handler failure like any other:
+it is retried, then handled by the error strategy, the same as in `StreamConsumer`.
+
 ## Retry Policy
 
 Configure exponential backoff for transient failures:
