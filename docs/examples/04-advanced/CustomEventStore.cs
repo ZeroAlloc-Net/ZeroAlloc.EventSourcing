@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
+using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using ZeroAlloc.EventSourcing;
 using ZeroAlloc.Results;
@@ -15,131 +18,122 @@ namespace ZeroAlloc.EventSourcing.Examples.Advanced;
 /// - Use your existing database infrastructure
 /// - Optimize for your specific access patterns
 ///
-/// This example uses an in-memory dictionary for simplicity,
-/// but demonstrates the patterns for a real SQL store.
+/// The adapter stores <see cref="RawEvent"/>s: the event type name, the serialized payload and the
+/// metadata. <see cref="EventStore"/> wraps the adapter and does the serialization and the type
+/// lookup. This example keeps the events in a dictionary for simplicity. The SQL Server,
+/// PostgreSQL and SQLite adapters that ship as packages follow the same contract against a database.
+///
+/// This file is compiled and run by the test suite, so it only uses the public API.
 /// </summary>
-
-public class InMemoryEventStoreAdapter : IEventStoreAdapter
+public sealed class DictionaryEventStoreAdapter : IEventStoreAdapter
 {
-    // In-memory storage: stream ID -> list of events
-    private readonly Dictionary<string, List<SerializedEvent>> _streams = new();
+    // In-memory storage: stream ID -> events in stream order
+    private readonly Dictionary<string, List<RawEvent>> _streams = new(StringComparer.Ordinal);
+    private readonly List<Subscription> _subscriptions = new();
     private readonly object _lock = new();
 
     /// <summary>
-    /// Appends events to a stream with optimistic locking.
+    /// Appends events to a stream with optimistic concurrency.
+    /// The stream's version is the number of events in it; a new stream is at
+    /// <see cref="StreamPosition.Start"/>. Positions are 1-based: the first event is at 1.
     /// </summary>
     public async ValueTask<Result<AppendResult, StoreError>> AppendAsync(
-        StreamId streamId,
-        ReadOnlyMemory<SerializedEvent> events,
+        StreamId id,
+        ReadOnlyMemory<RawEvent> events,
         StreamPosition expectedVersion,
         CancellationToken ct = default)
     {
+        RawEvent[] appended;
+        Subscription[] subscribers;
+        StreamPosition newVersion;
+
         lock (_lock)
         {
-            // Validate inputs
-            if (events.Length == 0)
-                return Result.Error<AppendResult, StoreError>(
-                    StoreError.Other("No events to append"));
-
-            var key = streamId.Value;
-
-            // Get current stream (or create new)
-            if (!_streams.ContainsKey(key))
-                _streams[key] = new List<SerializedEvent>();
-
-            var stream = _streams[key];
-
-            // Check optimistic lock: expected version must match current position
-            // Current position is the last event's position (or -1 if empty)
-            var currentPosition = new StreamPosition(stream.Count - 1);
-
-            if (currentPosition != expectedVersion)
+            if (!_streams.TryGetValue(id.Value, out var stream))
             {
-                return Result.Error<AppendResult, StoreError>(
-                    StoreError.Conflict(
-                        "Expected version {0}, but current position is {1}",
-                        expectedVersion.Value,
-                        currentPosition.Value));
+                stream = new List<RawEvent>();
+                _streams[id.Value] = stream;
             }
 
-            // Append events
-            var firstPosition = new StreamPosition(stream.Count);
-            var nextPosition = firstPosition;
-
-            foreach (var @event in events.Span)
+            // Check the optimistic lock: the caller must have seen the current version
+            var currentVersion = new StreamPosition(stream.Count);
+            if (currentVersion != expectedVersion)
             {
-                stream.Add(@event);
-                nextPosition = new StreamPosition(stream.Count - 1);
+                return Result<AppendResult, StoreError>.Failure(
+                    StoreError.Conflict(id, expectedVersion, currentVersion));
             }
 
-            return Result.Ok<AppendResult, StoreError>(
-                new AppendResult(firstPosition, nextPosition));
+            // The adapter owns the positions: assign each event the next one
+            appended = new RawEvent[events.Length];
+            for (var i = 0; i < appended.Length; i++)
+            {
+                appended[i] = events.Span[i] with { Position = new StreamPosition(stream.Count + 1) };
+                stream.Add(appended[i]);
+            }
+
+            newVersion = new StreamPosition(stream.Count);
+
+            subscribers = _subscriptions.Where(s => s.StreamId == id && s.IsRunning).ToArray();
         }
+
+        // Notify live subscribers outside the lock
+        foreach (var subscriber in subscribers)
+        {
+            foreach (var e in appended)
+                await subscriber.Handler(e, ct);
+        }
+
+        return Result<AppendResult, StoreError>.Success(new AppendResult(id, newVersion));
     }
 
     /// <summary>
-    /// Reads events from a stream starting at the given position.
+    /// Reads the events of a stream that come after <paramref name="from"/>. The bound is
+    /// exclusive: <see cref="StreamPosition.Start"/> reads the whole stream, and a consumer that
+    /// passes the position of the last event it handled gets only the events after it.
     /// </summary>
-    public async IAsyncEnumerable<SerializedEvent> ReadAsync(
-        StreamId streamId,
-        StreamPosition from = default,
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
-    {
-        lock (_lock)
-        {
-            var key = streamId.Value;
-
-            if (!_streams.TryGetValue(key, out var stream))
-                yield break;
-
-            var startIndex = from.Value + 1;
-            if (startIndex < 0)
-                startIndex = 0;
-
-            for (int i = startIndex; i < stream.Count; i++)
-            {
-                var @event = stream[i];
-                // Add position information for output
-                yield return new SerializedEvent(
-                    @event.Type,
-                    @event.Data,
-                    new StreamPosition(i));
-            }
-        }
-    }
-
-    /// <summary>
-    /// Subscribes to events appended to a stream.
-    /// </summary>
-    public async ValueTask<IEventSubscription> SubscribeAsync(
-        StreamId streamId,
+    public async IAsyncEnumerable<RawEvent> ReadAsync(
+        StreamId id,
         StreamPosition from,
-        Func<SerializedEvent, CancellationToken, ValueTask> handler,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        // Copy under the lock, then yield outside it
+        List<RawEvent> snapshot;
+        lock (_lock)
+        {
+            snapshot = _streams.TryGetValue(id.Value, out var stream)
+                ? stream.Where(e => e.Position.Value > from.Value).ToList()
+                : new List<RawEvent>();
+        }
+
+        foreach (var e in snapshot)
+        {
+            ct.ThrowIfCancellationRequested();
+            yield return e;
+        }
+    }
+
+    /// <summary>
+    /// Subscribes to the events appended to a stream after the subscription starts.
+    /// Read the history with <see cref="ReadAsync"/> first if you need it. A database adapter
+    /// would poll or use change notifications; the shipped SQL adapters return a
+    /// <see cref="PollingEventSubscription"/>.
+    /// </summary>
+    public ValueTask<IEventSubscription> SubscribeAsync(
+        StreamId id,
+        StreamPosition from,
+        Func<RawEvent, CancellationToken, ValueTask> handler,
         CancellationToken ct = default)
     {
-        // 1. Read all existing events
-        await foreach (var @event in ReadAsync(streamId, from, ct))
+        var subscription = new Subscription(this, id, handler);
+        lock (_lock)
         {
-            await handler(@event, ct);
+            _subscriptions.Add(subscription);
         }
-
-        // 2. For this in-memory store, we can't really subscribe to future events
-        // In a real store, you'd use database notifications or message queues
-        return new InMemorySubscription();
+        return ValueTask.FromResult<IEventSubscription>(subscription);
     }
 
-    private class InMemorySubscription : IEventSubscription
-    {
-        public async ValueTask DisposeAsync()
-        {
-            // Nothing to cleanup
-        }
-    }
-
-    /// <summary>
-    /// Get all streams (for debugging/testing).
-    /// </summary>
-    public IEnumerable<string> GetAllStreams()
+    /// <summary>Get all streams (for debugging/testing).</summary>
+    public IReadOnlyList<string> GetAllStreams()
     {
         lock (_lock)
         {
@@ -147,142 +141,148 @@ public class InMemoryEventStoreAdapter : IEventStoreAdapter
         }
     }
 
-    /// <summary>
-    /// Get event count for a stream.
-    /// </summary>
+    /// <summary>Get event count for a stream.</summary>
     public int GetEventCount(StreamId streamId)
     {
         lock (_lock)
         {
-            return _streams.TryGetValue(streamId.Value, out var stream)
-                ? stream.Count
-                : 0;
+            return _streams.TryGetValue(streamId.Value, out var stream) ? stream.Count : 0;
         }
     }
 
-    /// <summary>
-    /// Clear all data (for testing).
-    /// </summary>
-    public void Clear()
+    private sealed class Subscription(
+        DictionaryEventStoreAdapter owner,
+        StreamId streamId,
+        Func<RawEvent, CancellationToken, ValueTask> handler) : IEventSubscription
     {
-        lock (_lock)
+        public StreamId StreamId => streamId;
+        public Func<RawEvent, CancellationToken, ValueTask> Handler => handler;
+        public bool IsRunning { get; private set; }
+
+        // Events are delivered only after StartAsync, so the caller can finish its setup first
+        public ValueTask StartAsync(CancellationToken ct = default)
         {
-            _streams.Clear();
+            IsRunning = true;
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            IsRunning = false;
+            lock (owner._lock)
+            {
+                owner._subscriptions.Remove(this);
+            }
+            return ValueTask.CompletedTask;
         }
     }
 }
 
+// Events used by the example
+public record AccountOpened(string Owner);
+public record FundsDeposited(decimal Amount);
+
 /// <summary>
-/// Example: How you would implement with SQL Server.
-/// (Pseudo-code, not fully functional)
+/// Maps event type names to CLR types. For an aggregate, the source generator emits this
+/// registry; the example has no aggregate, so it writes one by hand.
 /// </summary>
-public class SqlServerEventStoreAdapterExample : IEventStoreAdapter
+public sealed class ExampleEventTypeRegistry : IEventTypeRegistry
 {
-    // This is how you'd structure a SQL implementation:
-    // 1. Use ADO.NET or a library like Dapper
-    // 2. Store events in a table: Events (StreamId, Position, EventType, EventData, Timestamp)
-    // 3. Use transactions for optimistic locking via unique constraint (StreamId, Position)
-    // 4. Query from the Events table for reads
-
-    private readonly string _connectionString;
-
-    public SqlServerEventStoreAdapterExample(string connectionString)
+    public bool TryGetType(string eventType, out Type? type)
     {
-        _connectionString = connectionString;
+        type = eventType switch
+        {
+            nameof(AccountOpened) => typeof(AccountOpened),
+            nameof(FundsDeposited) => typeof(FundsDeposited),
+            _ => null
+        };
+        return type is not null;
     }
 
-    public async ValueTask<Result<AppendResult, StoreError>> AppendAsync(
-        StreamId streamId,
-        ReadOnlyMemory<SerializedEvent> events,
-        StreamPosition expectedVersion,
-        CancellationToken ct = default)
-    {
-        // 1. Open connection
-        // 2. Begin transaction (SERIALIZABLE for safety)
-        // 3. SELECT MAX(Position) FROM Events WHERE StreamId = @StreamId
-        // 4. If result != expectedVersion, rollback and return Conflict
-        // 5. INSERT INTO Events (StreamId, Position, EventType, EventData, Timestamp)
-        //    VALUES (@StreamId, @Position, @EventType, @EventData, @Timestamp) x N
-        // 6. Commit transaction
-        // 7. Return positions
-
-        throw new NotImplementedException("See SqlServerEventStoreAdapter in custom-event-store.md");
-    }
-
-    public async IAsyncEnumerable<SerializedEvent> ReadAsync(
-        StreamId streamId,
-        StreamPosition from = default,
-        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
-    {
-        // 1. Open connection
-        // 2. SELECT EventType, EventData, Position FROM Events
-        //    WHERE StreamId = @StreamId AND Position >= @FromPosition
-        //    ORDER BY Position ASC
-        // 3. For each row, yield SerializedEvent
-
-        throw new NotImplementedException("See SqlServerEventStoreAdapter in custom-event-store.md");
-    }
-
-    public async ValueTask<IEventSubscription> SubscribeAsync(
-        StreamId streamId,
-        StreamPosition from,
-        Func<SerializedEvent, CancellationToken, ValueTask> handler,
-        CancellationToken ct = default)
-    {
-        // 1. Read all existing events using ReadAsync
-        // 2. Set up SQL Server Service Broker or polling for new events
-        // 3. Call handler for each new event
-
-        throw new NotImplementedException("See SqlServerEventStoreAdapter in custom-event-store.md");
-    }
+    public string GetTypeName(Type type) => type.Name;
 }
 
 /// <summary>
 /// Usage example showing how to use a custom event store.
 /// </summary>
-public class CustomEventStoreExample
+public static class CustomEventStoreExample
 {
-    public static async Task Main()
+    public sealed record Outcome(
+        IReadOnlyList<EventEnvelope> Events,
+        StoreError? ConflictError,
+        IReadOnlyList<object> Delivered,
+        int StreamCount);
+
+    public static async Task<Outcome> RunAsync()
     {
         Console.WriteLine("=== Custom Event Store Example ===\n");
 
         // 1. Create the custom adapter
-        var adapter = new InMemoryEventStoreAdapter();
+        var adapter = new DictionaryEventStoreAdapter();
 
-        // 2. Create the event store (IEventStore wraps the adapter)
-        var eventStore = new EventStore(adapter, new JsonEventSerializer());
+        // 2. Create the event store: it wraps the adapter and adds serialization and type lookup
+        var eventStore = new EventStore(adapter, new JsonEventSerializer(), new ExampleEventTypeRegistry());
 
         // 3. Use the event store like normal
-        var streamId = new StreamId("order-123");
-
-        // Append some events
-        var events = new object[]
-        {
-            new { type = "OrderPlaced", total = 1000m },
-            new { type = "OrderConfirmed" },
-        };
+        var streamId = new StreamId("account-123");
 
         Console.WriteLine("Appending events...");
         var result = await eventStore.AppendAsync(
             streamId,
-            events,
+            new object[] { new AccountOpened("alice"), new FundsDeposited(100m) },
             StreamPosition.Start);
 
         if (result.IsSuccess)
+            Console.WriteLine($"Appended; the stream is now at version {result.Value.NextExpectedVersion.Value}\n");
+
+        // 4. A second writer that still expects a new stream gets a conflict instead of a lost update
+        var conflict = await eventStore.AppendAsync(
+            streamId,
+            new object[] { new FundsDeposited(50m) },
+            StreamPosition.Start);
+        var conflictError = conflict.IsSuccess ? null : conflict.Error;
+        Console.WriteLine($"Stale append: {conflictError}\n");
+
+        // 5. Subscribe to new events, then append one at the current version
+        var delivered = new List<object>();
+        await using (var subscription = await eventStore.SubscribeAsync(
+            streamId,
+            StreamPosition.Start,
+            (envelope, _) =>
+            {
+                delivered.Add(envelope.Event);
+                return ValueTask.CompletedTask;
+            }))
         {
-            Console.WriteLine($"✓ Appended events, positions {result.Value.FirstPosition} to {result.Value.LastPosition}\n");
+            await subscription.StartAsync();
+            await eventStore.AppendAsync(streamId, new object[] { new FundsDeposited(25m) }, result.Value.NextExpectedVersion);
         }
 
-        // Read events back
+        // 6. Read events back
         Console.WriteLine("Reading events...");
+        var events = new List<EventEnvelope>();
         await foreach (var envelope in eventStore.ReadAsync(streamId))
         {
-            Console.WriteLine($"  Position {envelope.Position}: {envelope.Event}");
+            Console.WriteLine($"  Position {envelope.Position.Value}: {envelope.Event}");
+            events.Add(envelope);
         }
 
         // Show internal state
-        Console.WriteLine($"\nInternal storage:");
-        Console.WriteLine($"  Streams: {adapter.GetAllStreams().Count()}");
+        Console.WriteLine("\nInternal storage:");
+        Console.WriteLine($"  Streams: {adapter.GetAllStreams().Count}");
         Console.WriteLine($"  Events in stream: {adapter.GetEventCount(streamId)}");
+
+        return new Outcome(events, conflictError, delivered, adapter.GetAllStreams().Count);
+    }
+
+    // A reflection-based JSON serializer keeps the example short. In an application, use the
+    // built-in ZeroAllocEventSerializer that AddEventSourcing() registers; it is AOT-safe.
+    private sealed class JsonEventSerializer : IEventSerializer
+    {
+        public ReadOnlyMemory<byte> Serialize<TEvent>(TEvent @event) where TEvent : notnull
+            => JsonSerializer.SerializeToUtf8Bytes(@event, @event.GetType());
+
+        public object Deserialize(ReadOnlyMemory<byte> payload, Type eventType)
+            => JsonSerializer.Deserialize(payload.Span, eventType)!;
     }
 }

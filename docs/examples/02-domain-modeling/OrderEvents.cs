@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace ZeroAlloc.EventSourcing.Examples.DomainModeling;
 
@@ -63,7 +64,8 @@ public record OrderCancelledEvent
 /// Version 2 of OrderPlaced with additional customer information.
 /// Old orders will still use OrderPlacedEvent.
 /// New orders will use OrderPlacedEventV2.
-/// Both are handled in the aggregate's ApplyEvent method.
+/// To handle both, give OrderState an internal Apply(OrderPlacedEventV2) method next to
+/// Apply(OrderPlacedEvent); the generated ApplyEvent then routes each version to its own method.
 /// </summary>
 public record OrderPlacedEventV2(
     string OrderNumber,
