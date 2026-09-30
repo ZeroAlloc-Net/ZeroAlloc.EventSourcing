@@ -1,3 +1,5 @@
+using ZeroAlloc.EventSourcing.Internal;
+
 namespace ZeroAlloc.EventSourcing;
 
 /// <summary>
@@ -17,7 +19,8 @@ public sealed class PollingEventSubscription : IEventSubscription
     // Position of the last delivered event. Adapter reads exclude their start position, so the
     // next read from here returns only the events after it.
     private StreamPosition _lastPosition;
-    private readonly CancellationTokenSource _cts = new();
+    // Stopped only by DisposeAsync. Tells a failure the stop caused from one that came first, see #434.
+    private readonly StopScope _stop = new();
     private Task? _backgroundTask;
     private volatile bool _running;
     private int _started;   // 0 = not started, 1 = started — guards against double-start
@@ -55,7 +58,7 @@ public sealed class PollingEventSubscription : IEventSubscription
         if (Interlocked.Exchange(ref _started, 1) != 0)
             throw new InvalidOperationException("StartAsync has already been called on this subscription.");
         _running = true;
-        _backgroundTask = Task.Run(() => RunAsync(_cts.Token), CancellationToken.None);
+        _backgroundTask = Task.Run(() => RunAsync(_stop.Token), CancellationToken.None);
         return ValueTask.CompletedTask;
     }
 
@@ -71,21 +74,83 @@ public sealed class PollingEventSubscription : IEventSubscription
             while (await timer.WaitForNextTickAsync(ct).ConfigureAwait(false))
                 await DeliverNewEventsAsync(ct).ConfigureAwait(false);
         }
-        catch (Exception) when (ct.IsCancellationRequested)
+        catch (Exception ex) when (_stop.IsCausedByStop(ex))
         {
-            // Normal shutdown — swallow. Only DisposeAsync cancels ct, so any exception seen once it
-            // is cancelled comes from that shutdown, whatever its type: SqlClient, for one, aborts
-            // an in-flight command with a SqlException rather than an OperationCanceledException.
-            // A failure while ct is not cancelled still faults the task and DisposeAsync rethrows it.
+            // Normal shutdown — swallow. The exception came from an operation that was still in
+            // flight when DisposeAsync requested the stop, whatever its type: SqlClient, for one,
+            // aborts an in-flight command with a SqlException rather than an
+            // OperationCanceledException. A failure that came before the stop still faults the
+            // task, and DisposeAsync rethrows it, even when the loop only observes it after the
+            // stop, see #434.
         }
     }
 
+    // Every read and every handler call goes through _stop.Track, so the stop can tell whether it
+    // was still in flight. The enumerator is driven by hand for that reason.
     private async Task DeliverNewEventsAsync(CancellationToken ct)
     {
-        await foreach (var e in _adapter.ReadAsync(_id, _lastPosition, ct).ConfigureAwait(false))
+        IAsyncEnumerator<RawEvent> events;
+        try
         {
-            await _handler(e, ct).ConfigureAwait(false);
-            _lastPosition = e.Position;
+            events = _adapter.ReadAsync(_id, _lastPosition, ct).GetAsyncEnumerator(ct);
+        }
+        catch (Exception ex)
+        {
+            _stop.ObserveThrown(ex);
+            throw;
+        }
+
+        try
+        {
+            while (await _stop.Track(MoveNext(events)))
+            {
+                var e = events.Current;
+                await _stop.Track(Handle(e, ct));
+                _lastPosition = e.Position;
+            }
+        }
+        finally
+        {
+            await _stop.Track(DisposeEnumerator(events));
+        }
+    }
+
+    private ValueTask<bool> MoveNext(IAsyncEnumerator<RawEvent> events)
+    {
+        try
+        {
+            return events.MoveNextAsync();
+        }
+        catch (Exception ex)
+        {
+            _stop.ObserveThrown(ex);
+            throw;
+        }
+    }
+
+    private ValueTask Handle(RawEvent e, CancellationToken ct)
+    {
+        try
+        {
+            return _handler(e, ct);
+        }
+        catch (Exception ex)
+        {
+            _stop.ObserveThrown(ex);
+            throw;
+        }
+    }
+
+    private ValueTask DisposeEnumerator(IAsyncEnumerator<RawEvent> events)
+    {
+        try
+        {
+            return events.DisposeAsync();
+        }
+        catch (Exception ex)
+        {
+            _stop.ObserveThrown(ex);
+            throw;
         }
     }
 
@@ -94,12 +159,14 @@ public sealed class PollingEventSubscription : IEventSubscription
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
         _running = false;
-        await _cts.CancelAsync().ConfigureAwait(false);
+        // Looks at the operation in flight, then cancels: a handler or read that had already
+        // failed is still reported below, however late the loop observes it, see #434.
+        await _stop.RequestStopAsync().ConfigureAwait(false);
         // Interlocked.Exchange above establishes a full memory barrier, so the
         // _backgroundTask write from StartAsync (on another thread) is guaranteed
         // to be visible here even though _backgroundTask is not volatile.
-        // RunAsync swallows whatever the cancellation above makes the adapter or handler throw, so
-        // anything that surfaces here is a failure that happened while the subscription was running.
+        // RunAsync swallows whatever the stop above makes the adapter or handler throw, so anything
+        // that surfaces here is a failure that happened before the stop was requested.
         try
         {
             if (_backgroundTask is not null)
@@ -107,7 +174,7 @@ public sealed class PollingEventSubscription : IEventSubscription
         }
         finally
         {
-            _cts.Dispose();
+            _stop.Dispose();
         }
     }
 }

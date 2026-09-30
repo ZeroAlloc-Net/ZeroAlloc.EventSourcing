@@ -121,62 +121,148 @@ public sealed class PollingEventSubscriptionTests
         await act.Should().NotThrowAsync();
     }
 
-    // A failure while the subscription is not being disposed is not shutdown: it faults the
-    // background task and DisposeAsync rethrows it. The handler's failure is completed by the test
-    // itself, so the subscription has observed it before DisposeAsync cancels.
+    // A failure that came before DisposeAsync requested the stop is not shutdown: it faults the
+    // background task and DisposeAsync rethrows it. The test fails the handler, lets DisposeAsync
+    // request the stop, and only then lets the subscription observe the failure, so the token is
+    // already cancelled when the exception is caught. That ordering used to swallow it, see #434.
     [Fact]
-    public async Task HandlerException_PropagatesViaDisposeAsync()
+    public async Task HandlerException_BeforeTheStop_ObservedAfterIt_PropagatesViaDisposeAsync()
     {
-        var id = new StreamId("test-stream");
-        var adapter = new SingleEventAdapter(MakeRaw());
-        var handlerCalled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        // Without RunContinuationsAsynchronously, SetException below runs the subscription's
-        // continuations inline, so the failure is handled before SetException returns.
-        var handlerResult = new TaskCompletionSource();
+        var thrown = await DisposeAfterHandlerFailedFirst(new InvalidOperationException("handler boom"));
 
-        var sub = new PollingEventSubscription(
-            adapter, id, StreamPosition.Start,
-            (_, _) =>
-            {
-                handlerCalled.TrySetResult();
-                return new ValueTask(handlerResult.Task);
-            },
-            TimeSpan.FromMilliseconds(50));
-
-        await sub.StartAsync();
-        await handlerCalled.Task.WaitAsync(TimeSpan.FromSeconds(10));
-        handlerResult.SetException(new InvalidOperationException("handler boom"));
-
-        var act = async () => await sub.DisposeAsync();
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("handler boom");
+        thrown.Should().BeOfType<InvalidOperationException>().Which.Message.Should().Be("handler boom");
     }
 
     // An OperationCanceledException that the subscription did not cause, such as a handler's own
     // timeout, is a failure like any other; DisposeAsync used to swallow it as if it were shutdown.
+    // Same ordering as above, so the result does not depend on when the subscription observes it.
     [Fact]
     public async Task HandlerOwnCancellation_PropagatesViaDisposeAsync()
     {
-        var adapter = new SingleEventAdapter(MakeRaw());
-        var handlerCalled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        var handlerResult = new TaskCompletionSource();
+        using var handlerTimeout = new CancellationTokenSource();
+        await handlerTimeout.CancelAsync();
 
+        var thrown = await DisposeAfterHandlerFailedFirst(
+            new OperationCanceledException("handler timed out", handlerTimeout.Token));
+
+        thrown.Should().BeOfType<OperationCanceledException>().Which.Message.Should().Be("handler timed out");
+    }
+
+    // A handler that is still running when DisposeAsync requests the stop, and then fails, fails
+    // because of the stop, whatever it throws: DisposeAsync does not throw.
+    [Fact]
+    public async Task HandlerException_AfterTheStop_IsShutdown()
+    {
+        var operation = new ControlledOperation();
+        var stopped = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var sub = new PollingEventSubscription(
-            adapter, new StreamId("test-stream"), StreamPosition.Start,
-            (_, _) =>
+            new SingleEventAdapter(MakeRaw()), new StreamId("test-stream"), StreamPosition.Start,
+            (_, ct) =>
             {
-                handlerCalled.TrySetResult();
-                return new ValueTask(handlerResult.Task);
+                ct.Register(() => stopped.TrySetResult());
+                return operation.AsValueTask();
             },
             TimeSpan.FromMilliseconds(50));
 
         await sub.StartAsync();
-        await handlerCalled.Task.WaitAsync(TimeSpan.FromSeconds(10));
-        using var handlerTimeout = new CancellationTokenSource();
-        await handlerTimeout.CancelAsync();
-        handlerResult.SetException(new OperationCanceledException("handler timed out", handlerTimeout.Token));
+        await operation.Awaited.WaitAsync(TimeSpan.FromSeconds(10));
+        var dispose = sub.DisposeAsync().AsTask();
+        await stopped.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        operation.Fail(new InvalidOperationException("A severe error occurred on the current command."));
+        operation.RunContinuation();
 
-        var act = async () => await sub.DisposeAsync();
-        await act.Should().ThrowAsync<OperationCanceledException>().WithMessage("handler timed out");
+        await dispose.Invoking(t => t).Should().NotThrowAsync();
+    }
+
+    // A read that failed before the stop is reported the same way as a handler that did.
+    [Fact]
+    public async Task ReadException_BeforeTheStop_ObservedAfterIt_PropagatesViaDisposeAsync()
+    {
+        var read = new ControlledOperation();
+        var adapter = new ControlledReadAdapter(read);
+        var sub = new PollingEventSubscription(
+            adapter, new StreamId("test-stream"), StreamPosition.Start,
+            (_, _) => ValueTask.CompletedTask,
+            TimeSpan.FromMilliseconds(50));
+
+        await sub.StartAsync();
+        await read.Awaited.WaitAsync(TimeSpan.FromSeconds(10));
+        read.Fail(new InvalidOperationException("store unavailable"));
+        var dispose = sub.DisposeAsync().AsTask();
+        await adapter.Stopped.WaitAsync(TimeSpan.FromSeconds(10));
+        read.RunContinuation();
+
+        var act = async () => await dispose;
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("store unavailable");
+    }
+
+    /// <summary>
+    /// Fails the handler, lets DisposeAsync request the stop, then lets the subscription observe
+    /// the failure, and returns what DisposeAsync threw.
+    /// </summary>
+    private static async Task<Exception?> DisposeAfterHandlerFailedFirst(Exception failure)
+    {
+        var operation = new ControlledOperation();
+        var stopped = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var sub = new PollingEventSubscription(
+            new SingleEventAdapter(MakeRaw()), new StreamId("test-stream"), StreamPosition.Start,
+            (_, ct) =>
+            {
+                ct.Register(() => stopped.TrySetResult());
+                return operation.AsValueTask();
+            },
+            TimeSpan.FromMilliseconds(50));
+
+        await sub.StartAsync();
+        await operation.Awaited.WaitAsync(TimeSpan.FromSeconds(10));
+        operation.Fail(failure);
+        var dispose = sub.DisposeAsync().AsTask();
+        await stopped.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        operation.RunContinuation();
+
+        try
+        {
+            await dispose;
+            return null;
+        }
+        catch (Exception ex)
+        {
+            return ex;
+        }
+    }
+
+    /// <summary>An adapter whose read waits on a <see cref="ControlledOperation"/>.</summary>
+    private sealed class ControlledReadAdapter(ControlledOperation read) : IEventStoreAdapter
+    {
+        private readonly TaskCompletionSource _stopped = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        /// <summary>Completes when the token given to the read is cancelled.</summary>
+        public Task Stopped => _stopped.Task;
+
+        public IAsyncEnumerable<RawEvent> ReadAsync(StreamId id, StreamPosition from, CancellationToken ct = default)
+        {
+            ct.Register(() => _stopped.TrySetResult());
+            return new Events(read);
+        }
+
+        public ValueTask<Result<AppendResult, StoreError>> AppendAsync(
+            StreamId id, ReadOnlyMemory<RawEvent> events, StreamPosition expectedVersion, CancellationToken ct = default)
+            => throw new NotSupportedException();
+
+        public ValueTask<IEventSubscription> SubscribeAsync(
+            StreamId id, StreamPosition from, Func<RawEvent, CancellationToken, ValueTask> handler, CancellationToken ct = default)
+            => throw new NotSupportedException();
+
+        private sealed class Events(ControlledOperation read) : IAsyncEnumerable<RawEvent>, IAsyncEnumerator<RawEvent>
+        {
+            public RawEvent Current => throw new InvalidOperationException("No event is read.");
+
+            public IAsyncEnumerator<RawEvent> GetAsyncEnumerator(CancellationToken cancellationToken = default) => this;
+
+            public ValueTask<bool> MoveNextAsync() => read.AsBoolValueTask();
+
+            public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        }
     }
 
     // The in-memory adapter keeps the position it is given, as EventStore sets it; SQL adapters assign their own.

@@ -9,6 +9,12 @@
     <ProjectReference Include="..\ZeroAlloc.EventSourcing\ZeroAlloc.EventSourcing.csproj" />
   </ItemGroup>
 
+  <!-- Compiled into this assembly rather than shared as an internal of ZeroAlloc.EventSourcing,
+       so this package never depends on another package's internals, see #434. -->
+  <ItemGroup>
+    <Compile Include="..\ZeroAlloc.EventSourcing\Internal\StopScope.cs" Link="Internal\StopScope.cs" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Confluent.Kafka" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />

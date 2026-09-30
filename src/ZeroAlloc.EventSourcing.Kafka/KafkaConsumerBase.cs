@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Confluent.Kafka;
+using ZeroAlloc.EventSourcing.Internal;
 
 namespace ZeroAlloc.EventSourcing.Kafka;
 
@@ -135,7 +136,19 @@ public abstract class KafkaConsumerBase : IStreamConsumer, IDisposable
         await InitializeAsync(ct).ConfigureAwait(false);
         try
         {
-            await ProcessBatchesAsync(handler, ct).ConfigureAwait(false);
+            // The handler and the checkpoints get the scope's token, which the scope cancels only
+            // after it has looked at the handler in flight. That tells a handler failure that came
+            // before ct was cancelled from one the cancellation caused, see #434.
+            using var stop = new StopScope(ct);
+            try
+            {
+                await ProcessBatchesAsync(handler, stop, ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException ex) when (ex.CancellationToken == stop.Token)
+            {
+                // Callers see the cancellation of their own token.
+                throw new OperationCanceledException(ex.Message, ex, ct);
+            }
         }
         finally
         {
@@ -151,8 +164,10 @@ public abstract class KafkaConsumerBase : IStreamConsumer, IDisposable
 
     private async Task ProcessBatchesAsync(
         Func<EventEnvelope, CancellationToken, Task> handler,
-        CancellationToken ct)
+        StopScope stop,
+        CancellationToken callerToken)
     {
+        var ct = stop.Token;
         while (!ct.IsCancellationRequested)
         {
             await DrainPendingSeeksAsync(ct).ConfigureAwait(false);
@@ -162,7 +177,7 @@ public abstract class KafkaConsumerBase : IStreamConsumer, IDisposable
             // This gives a catch-up consumer model: process all available messages, then stop.
             if (batch.Count == 0) break;
 
-            var lastPerPartition = await ProcessBatchAsync(handler, batch, ct).ConfigureAwait(false);
+            var lastPerPartition = await ProcessBatchAsync(handler, batch, stop, callerToken).ConfigureAwait(false);
 
             if (_options.CommitStrategy == CommitStrategy.AfterBatch)
             {
@@ -188,14 +203,16 @@ public abstract class KafkaConsumerBase : IStreamConsumer, IDisposable
     private async Task<Dictionary<int, StreamPosition>> ProcessBatchAsync(
         Func<EventEnvelope, CancellationToken, Task> handler,
         List<ConsumeResult<string, byte[]>> batch,
-        CancellationToken ct)
+        StopScope stop,
+        CancellationToken callerToken)
     {
+        var ct = stop.Token;
         var lastPerPartition = new Dictionary<int, StreamPosition>();
 
         foreach (var msg in batch)
         {
             var envelope  = KafkaMessageMapper.ToEnvelope(msg, _serializer, _registry);
-            await ProcessEventWithRetryAsync(handler, envelope, ct).ConfigureAwait(false);
+            await ProcessEventWithRetryAsync(handler, envelope, stop, callerToken).ConfigureAwait(false);
 
             var pos       = KafkaMessageMapper.ToStreamPosition(msg.Offset);
             var partition = msg.Partition.Value;
@@ -217,21 +234,35 @@ public abstract class KafkaConsumerBase : IStreamConsumer, IDisposable
     private async Task ProcessEventWithRetryAsync(
         Func<EventEnvelope, CancellationToken, Task> handler,
         EventEnvelope envelope,
-        CancellationToken ct)
+        StopScope stop,
+        CancellationToken callerToken)
     {
+        var ct = stop.Token;
         int attempts = 0;
         while (true)
         {
             try
             {
-                await handler(envelope, ct).ConfigureAwait(false);
+                Task handling;
+                try
+                {
+                    handling = handler(envelope, ct);
+                }
+                catch (Exception ex)
+                {
+                    stop.ObserveThrown(ex);
+                    throw;
+                }
+                await stop.Track(handling);
                 return;
             }
-            catch (Exception ex) when (ct.IsCancellationRequested)
+            catch (Exception ex) when (stop.IsCausedByStop(ex))
             {
                 // Shutdown, not a failing event: stop without retrying, skipping or
                 // dead-lettering, so neither the offset nor the checkpoint moves past it, see #422.
-                ThrowStopped(ex, ct);
+                // Only a handler still running when the stop was requested gets here; one that had
+                // already failed is a failure, however late it is observed, see #434.
+                ThrowStopped(ex, callerToken);
             }
             // With ct live, any exception is a handler failure, an OperationCanceledException too:
             // a handler's own timeout is retried and then handled by the error strategy, as in
@@ -266,14 +297,15 @@ public abstract class KafkaConsumerBase : IStreamConsumer, IDisposable
     }
 
     /// <summary>
-    /// Ends processing of an event whose handler failed after <paramref name="ct"/> was cancelled.
-    /// An <see cref="OperationCanceledException"/> is rethrown as it is; any other exception is
-    /// wrapped in one, so the caller sees cancellation the same way whatever the handler threw.
+    /// Ends processing of an event whose handler was still running when the stop was requested.
+    /// An <see cref="OperationCanceledException"/> of <paramref name="ct"/>, the caller's, is
+    /// rethrown as it is; any other exception is wrapped in one of <paramref name="ct"/>, so the
+    /// caller sees the cancellation of its own token whatever the handler threw.
     /// </summary>
     [System.Diagnostics.CodeAnalysis.DoesNotReturn]
     private static void ThrowStopped(Exception exception, CancellationToken ct)
     {
-        if (exception is OperationCanceledException)
+        if (exception is OperationCanceledException oce && oce.CancellationToken == ct)
             System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(exception).Throw();
 
         throw new OperationCanceledException(

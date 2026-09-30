@@ -1,3 +1,5 @@
+using ZeroAlloc.EventSourcing.Internal;
+
 namespace ZeroAlloc.EventSourcing;
 
 /// <summary>
@@ -49,6 +51,28 @@ public sealed class StreamConsumer : IStreamConsumer
         if (handler == null)
             throw new ArgumentNullException(nameof(handler));
 
+        // The handler, the store and the checkpoints get the scope's token, which the scope cancels
+        // only after it has looked at the handler in flight. That tells a handler failure that came
+        // before cancellationToken was cancelled from one the cancellation caused, see #434.
+        using var stop = new StopScope(cancellationToken);
+        try
+        {
+            await ConsumeCoreAsync(handler, stop, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException ex) when (ex.CancellationToken == stop.Token)
+        {
+            // Callers see the cancellation of their own token.
+            throw new OperationCanceledException(ex.Message, ex, cancellationToken);
+        }
+    }
+
+    private async Task ConsumeCoreAsync(
+        Func<EventEnvelope, CancellationToken, Task> handler,
+        StopScope stop,
+        CancellationToken callerToken)
+    {
+        var cancellationToken = stop.Token;
+
         // Read starting position from checkpoint
         var position = await _checkpointStore.ReadAsync(ConsumerId, cancellationToken).ConfigureAwait(false) ?? StreamPosition.Start;
         _currentPosition = position;
@@ -72,7 +96,7 @@ public sealed class StreamConsumer : IStreamConsumer
             // Process batch
             foreach (var envelope in batch)
             {
-                await ProcessEventWithRetryAsync(handler, envelope, cancellationToken).ConfigureAwait(false);
+                await ProcessEventWithRetryAsync(handler, envelope, stop, callerToken).ConfigureAwait(false);
                 position = envelope.Position;
                 _currentPosition = position;
 
@@ -110,22 +134,36 @@ public sealed class StreamConsumer : IStreamConsumer
     private async Task ProcessEventWithRetryAsync(
         Func<EventEnvelope, CancellationToken, Task> handler,
         EventEnvelope envelope,
-        CancellationToken cancellationToken)
+        StopScope stop,
+        CancellationToken callerToken)
     {
+        var cancellationToken = stop.Token;
         int attemptCount = 0;
 
         while (true)
         {
             try
             {
-                await handler(envelope, cancellationToken).ConfigureAwait(false);
+                Task handling;
+                try
+                {
+                    handling = handler(envelope, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    stop.ObserveThrown(ex);
+                    throw;
+                }
+                await stop.Track(handling);
                 return; // Success
             }
-            catch (Exception ex) when (cancellationToken.IsCancellationRequested)
+            catch (Exception ex) when (stop.IsCausedByStop(ex))
             {
                 // Shutdown, not a failing event: stop without retrying, skipping or
-                // dead-lettering, so the checkpoint stays before this event, see #422.
-                ThrowStopped(ex, cancellationToken);
+                // dead-lettering, so the checkpoint stays before this event, see #422. Only a
+                // handler still running when the stop was requested gets here; one that had
+                // already failed is a failure, however late it is observed, see #434.
+                ThrowStopped(ex, callerToken);
             }
             catch (Exception) when (attemptCount < _options.MaxRetries)
             {
@@ -160,15 +198,16 @@ public sealed class StreamConsumer : IStreamConsumer
     }
 
     /// <summary>
-    /// Ends processing of an event whose handler failed after <paramref name="cancellationToken"/>
-    /// was cancelled. An <see cref="OperationCanceledException"/> is rethrown as it is; any other
-    /// exception, such as the SqlException SqlClient throws for an aborted command, is wrapped
-    /// in one, so the caller sees cancellation the same way whatever the handler threw.
+    /// Ends processing of an event whose handler was still running when the stop was requested.
+    /// An <see cref="OperationCanceledException"/> of <paramref name="cancellationToken"/>, the
+    /// caller's, is rethrown as it is; any other exception, such as the SqlException SqlClient
+    /// throws for an aborted command, is wrapped in one of <paramref name="cancellationToken"/>, so
+    /// the caller sees the cancellation of its own token whatever the handler threw.
     /// </summary>
     [System.Diagnostics.CodeAnalysis.DoesNotReturn]
     private static void ThrowStopped(Exception exception, CancellationToken cancellationToken)
     {
-        if (exception is OperationCanceledException)
+        if (exception is OperationCanceledException oce && oce.CancellationToken == cancellationToken)
             System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(exception).Throw();
 
         throw new OperationCanceledException(

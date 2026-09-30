@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using ZeroAlloc.EventSourcing.Internal;
 using ZeroAlloc.EventSourcing.Mediator;
 using ZeroAlloc.Mediator;
 
@@ -22,7 +23,7 @@ public sealed class OutboxDispatcher : IHostedService, IAsyncDisposable
     private readonly IDeadLetterStore? _deadLetters;
     private readonly OutboxOptions _options;
     private readonly ILogger<OutboxDispatcher> _logger;
-    private CancellationTokenSource? _loopCts;
+    private StopScope? _stop;
     private Task? _loopTask;
 
     /// <summary>Initialises the dispatcher. Normally constructed by the DI container via <c>AddOutbox</c>.</summary>
@@ -55,24 +56,27 @@ public sealed class OutboxDispatcher : IHostedService, IAsyncDisposable
     /// <summary>Starts the polling loop on a background <see cref="Task"/>. Returns immediately.</summary>
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        _loopCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        // Stopped by StopAsync or by the host's token. It tells a failure the stop caused from one
+        // that came first, see #434.
+        var stop = new StopScope(cancellationToken);
+        _stop = stop;
         // CancellationToken.None: with the loop token, a cancellation before the delegate started
         // would leave the task cancelled, indistinguishable from a loop that crashed with an
         // OperationCanceledException. RunAsync checks the token itself before its first poll.
-        _loopTask = Task.Run(() => RunAsync(_loopCts.Token), CancellationToken.None);
+        _loopTask = Task.Run(() => RunAsync(stop), CancellationToken.None);
         return Task.CompletedTask;
     }
 
     /// <summary>Signals cancellation and awaits the background loop to exit gracefully.</summary>
     public async Task StopAsync(CancellationToken cancellationToken)
     {
-        if (_loopCts is not null)
-            _loopCts.Cancel();
+        if (_stop is not null)
+            await _stop.RequestStopAsync().ConfigureAwait(false);
 
         if (_loopTask is not null)
         {
-            // RunAsync returns normally on shutdown whatever the cancellation made the store throw,
-            // so an exception here is a crash that halted the loop while it was running.
+            // RunAsync returns normally on shutdown whatever the stop made the store or a handler
+            // throw, so an exception here is a crash that happened before the stop was requested.
             await _loopTask.ConfigureAwait(false);
         }
     }
@@ -86,7 +90,7 @@ public sealed class OutboxDispatcher : IHostedService, IAsyncDisposable
         }
         finally
         {
-            _loopCts?.Dispose();
+            _stop?.Dispose();
         }
     }
 
@@ -100,8 +104,9 @@ public sealed class OutboxDispatcher : IHostedService, IAsyncDisposable
     /// failure. Continuing with backoff is also defensible but masks the failure mode;
     /// we lean fail-fast for v0.1 visibility.
     /// </summary>
-    private async Task RunAsync(CancellationToken ct)
+    private async Task RunAsync(StopScope stop)
     {
+        var ct = stop.Token;
         _logger.LogInformation(
             "OutboxDispatcher starting (ConsumerId={ConsumerId}, BatchSize={BatchSize}, PollInterval={PollInterval}).",
             _options.ConsumerId, _options.BatchSize, _options.PollInterval);
@@ -126,14 +131,15 @@ public sealed class OutboxDispatcher : IHostedService, IAsyncDisposable
         {
             try
             {
-                await consumer.ConsumeAsync(DispatchAsync, ct).ConfigureAwait(false);
+                await stop.Track(Consume(consumer, stop));
                 // ConsumeAsync returns when the current batch is empty. Poll-sleep, then resume.
                 await Task.Delay(_options.PollInterval, ct).ConfigureAwait(false);
             }
-            // Only StopAsync or the host cancels ct, so any exception seen once it is cancelled comes
-            // from that shutdown, whatever its type: SqlClient, for one, aborts an in-flight command
-            // with a SqlException rather than an OperationCanceledException.
-            catch (Exception) when (ct.IsCancellationRequested)
+            // The exception came from a consume that was still in flight when StopAsync or the host
+            // requested the stop, whatever its type: SqlClient, for one, aborts an in-flight command
+            // with a SqlException rather than an OperationCanceledException. A consume that had
+            // already failed is a crash, however late the loop observes it, see #434.
+            catch (Exception ex) when (stop.IsCausedByStop(ex))
             {
                 _logger.LogInformation("OutboxDispatcher stopped cleanly.");
                 return;
@@ -143,6 +149,19 @@ public sealed class OutboxDispatcher : IHostedService, IAsyncDisposable
                 _logger.LogError(ex, "OutboxDispatcher background loop crashed; halting.");
                 throw;
             }
+        }
+    }
+
+    private Task Consume(StreamConsumer consumer, StopScope stop)
+    {
+        try
+        {
+            return consumer.ConsumeAsync(DispatchAsync, stop.Token);
+        }
+        catch (Exception ex)
+        {
+            stop.ObserveThrown(ex);
+            throw;
         }
     }
 
