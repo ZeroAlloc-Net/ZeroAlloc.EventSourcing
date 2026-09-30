@@ -597,9 +597,9 @@ var projection = new RebuildableOrderTotalsProjection();
 await projection.RebuildAsync(projectionStore, new StreamId("orders"), eventStore);
 ```
 
-Do not set `Current` in the constructor of a `ReplayableProjection` instead: the parameterless
-base constructor resets to `default(TReadModel)` on a rebuild, which is `null` for a record or a
-collection. Pass an immutable value, since every rebuild reuses the same instance.
+Do not set `Current` in the constructor of a `ReplayableProjection` instead: a rebuild resets it
+to the initial state passed to the base constructor. Pass an immutable value, since every rebuild
+reuses the same instance.
 
 `IProjectionStore` stores text, so the serializer must write UTF-8 text. `RebuildAsync` throws a
 `DecoderFallbackException` for output that is not valid UTF-8, as the output of a binary serializer
@@ -607,8 +607,10 @@ such as MemoryPack or MessagePack generally is not; binary state is tracked in
 [#425](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/issues/425).
 
 The constructors without a serializer, `base()` and `base(initialState)`, save the read model with
-reflection-based `System.Text.Json` instead. They carry `[RequiresUnreferencedCode]` and
-`[RequiresDynamicCode]`, so the trim and NativeAOT analyzers report a projection that uses them.
+reflection-based `System.Text.Json` instead. They are obsolete,
+[ZAES008](../diagnostics.md#zaes008), and removed in the next major version. They also carry
+`[RequiresUnreferencedCode]` and `[RequiresDynamicCode]`, so the trim and NativeAOT analyzers report
+a projection that uses them.
 
 The projection answers queries from the partial state while it rebuilds. To keep serving the old
 state until the rebuild is done, rebuild a new instance and switch over, as

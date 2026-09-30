@@ -44,9 +44,9 @@ public sealed class ReplayableOrderProjectionFull : ReplayableProjection<OrderRe
     private readonly StreamId _streamId;
 
     public ReplayableOrderProjectionFull(StreamId streamId)
+        : base(new OrderReadModel(string.Empty, 0m, null, false), TestProjectionSerializers.OrderReadModel)
     {
         _streamId = streamId;
-        Current = new OrderReadModel(string.Empty, 0m, null, false);
     }
 
     public override string GetProjectionKey() => $"ReplayableOrderProjection-{_streamId.Value}";

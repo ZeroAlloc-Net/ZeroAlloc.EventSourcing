@@ -67,6 +67,13 @@ public abstract class ReplayableProjection<TReadModel> : Projection<TReadModel>
         "RebuildAsync saves the read model with reflection-based System.Text.Json, which is not trim- or "
         + "NativeAOT-safe. Use the constructor that takes an ISerializer<TReadModel> instead.";
 
+    private const string ObsoleteReflectionConstructor =
+        "This constructor saves the read model with reflection-based System.Text.Json, which is not trim- or "
+        + "NativeAOT-safe. Use the constructor that also takes an ISerializer<TReadModel>. "
+        + "This constructor will be removed in the next major version.";
+
+    private const string ObsoleteReflectionConstructorId = "ZAES008";
+
     private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 
     private readonly TReadModel _initialState;
@@ -78,12 +85,17 @@ public abstract class ReplayableProjection<TReadModel> : Projection<TReadModel>
     /// reflection-based System.Text.Json.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// <c>default</c> is a valid empty state for a struct, but <see langword="null"/> for a record, class or
-    /// collection. Use <see cref="ReplayableProjection{TReadModel}(TReadModel)"/> when <c>Apply</c> needs a
-    /// non-null starting value, and
-    /// <see cref="ReplayableProjection{TReadModel}(TReadModel, ISerializer{TReadModel})"/> for trimmed or
-    /// NativeAOT applications.
+    /// collection.
+    /// </para>
+    /// <para>
+    /// Obsolete, ZAES008: reflection-based serialization is not trim- or NativeAOT-safe. Use
+    /// <see cref="ReplayableProjection{TReadModel}(TReadModel, ISerializer{TReadModel})"/>, passing
+    /// <c>default</c> as the initial state to keep this constructor's behaviour.
+    /// </para>
     /// </remarks>
+    [Obsolete(ObsoleteReflectionConstructor, DiagnosticId = ObsoleteReflectionConstructorId)]
     [RequiresUnreferencedCode(ReflectionSerializationMessage)]
     [RequiresDynamicCode(ReflectionSerializationMessage)]
     protected ReplayableProjection()
@@ -97,13 +109,14 @@ public abstract class ReplayableProjection<TReadModel> : Projection<TReadModel>
     /// the stream, and saves the read model with reflection-based System.Text.Json.
     /// </summary>
     /// <remarks>
-    /// Use <see cref="ReplayableProjection{TReadModel}(TReadModel, ISerializer{TReadModel})"/> for trimmed or
-    /// NativeAOT applications.
+    /// Obsolete, ZAES008: reflection-based serialization is not trim- or NativeAOT-safe. Use
+    /// <see cref="ReplayableProjection{TReadModel}(TReadModel, ISerializer{TReadModel})"/>.
     /// </remarks>
     /// <param name="initialState">
     /// The read model before any event is applied, for example <c>ImmutableDictionary&lt;string, decimal&gt;.Empty</c>.
     /// The same instance is reused on every rebuild, so it should be immutable.
     /// </param>
+    [Obsolete(ObsoleteReflectionConstructor, DiagnosticId = ObsoleteReflectionConstructorId)]
     [RequiresUnreferencedCode(ReflectionSerializationMessage)]
     [RequiresDynamicCode(ReflectionSerializationMessage)]
     protected ReplayableProjection(TReadModel initialState)
