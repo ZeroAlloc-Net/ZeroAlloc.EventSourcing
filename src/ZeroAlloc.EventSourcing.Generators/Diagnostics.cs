@@ -37,6 +37,21 @@ internal static class Diagnostics
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true,
         helpLinkUri: "https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/blob/main/docs/diagnostics.md#zaes006");
+
+    /// <summary>
+    /// A file-local aggregate or projection, or one nested in a file-local type. A file-local type is
+    /// visible only in its own source file, so a generated file cannot extend it; nothing is generated.
+    /// </summary>
+    public static readonly DiagnosticDescriptor ZAES007_FileLocalType = new(
+        id: "ZAES007",
+        title: "File-local aggregate or projection is not generated",
+        messageFormat: "Aggregate or projection '{0}' is file-local or nested in a file-local type, so no code is "
+            + "generated for it. A generated file cannot extend a file-local type; remove the file modifier, "
+            + "or declare the type without partial and write its dispatch by hand.",
+        category: Category,
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        helpLinkUri: "https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/blob/main/docs/diagnostics.md#zaes007");
 }
 
 /// <summary>

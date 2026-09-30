@@ -41,8 +41,8 @@ public sealed class ProjectionDispatchGenerator : IIncrementalGenerator
     /// <summary>
     /// Semantic transform: returns a <see cref="ProjectionInfo"/> for classes that inherit
     /// <c>Projection&lt;TReadModel&gt;</c> and have <c>Apply(TReadModel, TEvent)</c> methods, or a
-    /// diagnostic instead when such a projection cannot be generated: ZAES005 when a containing type is
-    /// not partial, ZAES006 when it is generic.
+    /// diagnostic instead when such a projection cannot be generated: ZAES007 when it is file-local,
+    /// ZAES005 when a containing type is not partial, ZAES006 when it is generic.
     /// Returns <c>null</c> for non-projection classes, for those without Apply methods, and for every
     /// declaration of a partial class except its primary one, so that a class split over several
     /// declarations is emitted once.
