@@ -111,9 +111,10 @@ public static class EventSourcingBuilderExtensions
     /// <see cref="NpgsqlDataSource.Create(string)"/> if one is not already present.
     /// Uses <c>TryAddSingleton</c> — existing registrations are not overwritten.
     /// <para>
-    /// Requires <see cref="IEventSerializer"/> to be registered in the container.
-    /// <see cref="ServiceCollectionExtensions.AddEventSourcing"/> registers the default
-    /// <c>ZeroAllocEventSerializer</c> automatically.
+    /// Requires <see cref="IEventSerializer"/> and <see cref="IEventTypeRegistry"/> to be registered
+    /// in the container. <see cref="ServiceCollectionExtensions.AddEventSourcing"/> registers the
+    /// default <c>ZeroAllocEventSerializer</c> automatically. The registry is the one the event store
+    /// uses; the dead-letter store needs it to turn stored payloads back into event objects.
     /// </para>
     /// </remarks>
     /// <param name="builder">The <see cref="EventSourcingBuilder"/> to configure.</param>
@@ -123,7 +124,11 @@ public static class EventSourcingBuilderExtensions
         this EventSourcingBuilder builder, string connectionString)
     {
         builder.Services.TryAddSingleton(_ => NpgsqlDataSource.Create(connectionString));
-        builder.Services.TryAddSingleton<IDeadLetterStore, PostgreSqlDeadLetterStore>();
+        builder.Services.TryAddSingleton<IDeadLetterStore>(
+            sp => new PostgreSqlDeadLetterStore(
+                sp.GetRequiredService<NpgsqlDataSource>(),
+                sp.GetRequiredService<IEventSerializer>(),
+                sp.GetRequiredService<IEventTypeRegistry>()));
         return builder;
     }
 
@@ -202,9 +207,10 @@ public static class EventSourcingBuilderExtensions
     /// Uses <c>TryAddSingleton</c> — an existing <see cref="IDeadLetterStore"/> registration
     /// is not overwritten.
     /// <para>
-    /// Requires <see cref="IEventSerializer"/> to be registered in the container.
-    /// <see cref="ServiceCollectionExtensions.AddEventSourcing"/> registers the default
-    /// <c>ZeroAllocEventSerializer</c> automatically.
+    /// Requires <see cref="IEventSerializer"/> and <see cref="IEventTypeRegistry"/> to be registered
+    /// in the container. <see cref="ServiceCollectionExtensions.AddEventSourcing"/> registers the
+    /// default <c>ZeroAllocEventSerializer</c> automatically. The registry is the one the event store
+    /// uses; the dead-letter store needs it to turn stored payloads back into event objects.
     /// </para>
     /// </remarks>
     /// <param name="builder">The <see cref="EventSourcingBuilder"/> to configure.</param>
@@ -216,7 +222,8 @@ public static class EventSourcingBuilderExtensions
         builder.Services.TryAddSingleton<IDeadLetterStore>(
             sp => new SqlServerDeadLetterStore(
                 connectionString,
-                sp.GetRequiredService<IEventSerializer>()));
+                sp.GetRequiredService<IEventSerializer>(),
+                sp.GetRequiredService<IEventTypeRegistry>()));
         return builder;
     }
 
