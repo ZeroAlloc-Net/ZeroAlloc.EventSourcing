@@ -382,6 +382,11 @@ catch (OperationCanceledException)
 }
 ```
 
+A handler that fails after the consumer's token was cancelled is not treated as a failing event,
+whatever it throws: the consumer stops with an `OperationCanceledException`, no retry or error
+strategy runs, and the checkpoint stays before that event, so it is handled again on the next start.
+Cancellation during a retry backoff stops the consumer the same way.
+
 ## Checkpoint Stores
 
 You can implement `ICheckpointStore` to persist positions wherever you want:

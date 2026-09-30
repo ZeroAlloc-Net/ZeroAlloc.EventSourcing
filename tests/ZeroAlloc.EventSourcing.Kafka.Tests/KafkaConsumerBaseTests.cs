@@ -247,6 +247,126 @@ public sealed class KafkaConsumerBaseTests
             Arg.Any<Exception>(), Arg.Any<CancellationToken>());
     }
 
+    // ── shutdown is not a handler failure, see #422 ──────────────────────────
+
+    [Theory]
+    [InlineData(ErrorHandlingStrategy.Skip, CommitStrategy.AfterEvent)]
+    [InlineData(ErrorHandlingStrategy.Skip, CommitStrategy.AfterBatch)]
+    [InlineData(ErrorHandlingStrategy.DeadLetter, CommitStrategy.AfterEvent)]
+    [InlineData(ErrorHandlingStrategy.DeadLetter, CommitStrategy.AfterBatch)]
+    public async Task ConsumeAsync_HandlerFailingAfterCancellation_StopsWithoutApplyingTheErrorStrategy(
+        ErrorHandlingStrategy strategy, CommitStrategy commit)
+    {
+        var (store, consumer, serializer, registry) = Substitutes();
+        var deadLetter = Substitute.For<IDeadLetterStore>();
+        var messages = new Queue<ConsumeResult<string, byte[]>?>();
+        messages.Enqueue(MakeMessage(0, 1));
+        messages.Enqueue(MakeMessage(0, 2));
+        messages.Enqueue(null);
+        consumer.Consume(Arg.Any<TimeSpan>()).Returns(_ => messages.Count > 0 ? messages.Dequeue() : null);
+
+        var options = new StreamConsumerOptions { MaxRetries = 0, ErrorStrategy = strategy, CommitStrategy = commit };
+        var sut = new StubConsumer(consumer, store, serializer, registry, "c", deadLetter, options);
+        using var cts = new CancellationTokenSource();
+        var running = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var handled = new List<long>();
+
+        var consume = sut.ConsumeAsync(async (env, ct) =>
+        {
+            handled.Add(env.Position.Value);
+            running.TrySetResult();
+            var cancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            using (ct.Register(() => cancelled.TrySetResult()))
+                await cancelled.Task;
+            throw new InvalidOperationException("A severe error occurred on the current command.");
+        }, cts.Token);
+
+        await running.Task;
+        cts.Cancel();
+
+        var thrown = await consume.Invoking(t => t).Should().ThrowAsync<OperationCanceledException>();
+        thrown.Which.InnerException.Should().BeOfType<InvalidOperationException>();
+        handled.Should().Equal(1L);
+        consumer.DidNotReceive().StoreOffset(Arg.Any<ConsumeResult<string, byte[]>>());
+        await store.DidNotReceive().WriteAsync(Arg.Any<string>(), Arg.Any<StreamPosition>(), Arg.Any<CancellationToken>());
+        await deadLetter.DidNotReceive().WriteAsync(
+            Arg.Any<string>(), Arg.Any<EventEnvelope>(), Arg.Any<Exception>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ConsumeAsync_CancellationDuringRetryBackoff_StopsWithoutApplyingTheErrorStrategy()
+    {
+        var (store, consumer, serializer, registry) = Substitutes();
+        var deadLetter = Substitute.For<IDeadLetterStore>();
+        var messages = new Queue<ConsumeResult<string, byte[]>?>();
+        messages.Enqueue(MakeMessage(0, 1));
+        messages.Enqueue(null);
+        consumer.Consume(Arg.Any<TimeSpan>()).Returns(_ => messages.Count > 0 ? messages.Dequeue() : null);
+
+        var options = new StreamConsumerOptions
+        {
+            MaxRetries = 1,
+            RetryPolicy = new ExponentialBackoffRetryPolicy(initialDelayMs: 600_000, maxDelayMs: 600_000),
+            ErrorStrategy = ErrorHandlingStrategy.DeadLetter,
+            CommitStrategy = CommitStrategy.AfterEvent,
+        };
+        var sut = new StubConsumer(consumer, store, serializer, registry, "c", deadLetter, options);
+        using var cts = new CancellationTokenSource();
+        var failed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var calls = 0;
+
+        var consume = sut.ConsumeAsync((_, _) =>
+        {
+            calls++;
+            failed.TrySetResult();
+            throw new InvalidOperationException("transient");
+        }, cts.Token);
+        await failed.Task;
+        cts.Cancel();
+
+        await consume.Invoking(t => t).Should().ThrowAsync<OperationCanceledException>();
+        calls.Should().Be(1);
+        await store.DidNotReceive().WriteAsync(Arg.Any<string>(), Arg.Any<StreamPosition>(), Arg.Any<CancellationToken>());
+        await deadLetter.DidNotReceive().WriteAsync(
+            Arg.Any<string>(), Arg.Any<EventEnvelope>(), Arg.Any<Exception>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ConsumeAsync_HandlerFailingWhileRunning_WithALiveToken_IsDeadLetteredAndCheckpointed()
+    {
+        var (store, consumer, serializer, registry) = Substitutes();
+        var deadLetter = Substitute.For<IDeadLetterStore>();
+        var messages = new Queue<ConsumeResult<string, byte[]>?>();
+        messages.Enqueue(MakeMessage(0, 1));
+        messages.Enqueue(null);
+        consumer.Consume(Arg.Any<TimeSpan>()).Returns(_ => messages.Count > 0 ? messages.Dequeue() : null);
+
+        var options = new StreamConsumerOptions
+        {
+            MaxRetries = 0, ErrorStrategy = ErrorHandlingStrategy.DeadLetter, CommitStrategy = CommitStrategy.AfterEvent,
+        };
+        var sut = new StubConsumer(consumer, store, serializer, registry, "c", deadLetter, options);
+        using var cts = new CancellationTokenSource();
+
+        await sut.ConsumeAsync((_, _) => throw new InvalidOperationException("poison"), cts.Token);
+
+        await deadLetter.Received(1).WriteAsync(
+            Arg.Any<string>(), Arg.Any<EventEnvelope>(), Arg.Any<InvalidOperationException>(), Arg.Any<CancellationToken>());
+        await store.Received(1).WriteAsync("c:p0", new StreamPosition(1), Arg.Any<CancellationToken>());
+    }
+
+    private static (ICheckpointStore Store, IConsumer<string, byte[]> Consumer, IEventSerializer Serializer,
+        IEventTypeRegistry Registry) Substitutes()
+    {
+        var store      = Substitute.For<ICheckpointStore>();
+        var consumer   = Substitute.For<IConsumer<string, byte[]>>();
+        var serializer = Substitute.For<IEventSerializer>();
+        var registry   = Substitute.For<IEventTypeRegistry>();
+        registry.TryGetType("OrderCreated", out _).Returns(x => { x[1] = typeof(object); return true; });
+        serializer.Deserialize(Arg.Any<ReadOnlyMemory<byte>>(), Arg.Any<Type>()).Returns(new object());
+        return (store, consumer, serializer, registry);
+    }
+
     // ── obsolete constructor shape ────────────────────────────────────────────
 
     [Fact]
