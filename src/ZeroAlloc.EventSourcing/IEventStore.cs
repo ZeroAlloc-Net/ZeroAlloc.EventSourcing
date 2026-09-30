@@ -12,7 +12,7 @@ public interface IEventStore
         StreamPosition expectedVersion,
         CancellationToken ct = default);
 
-    /// <summary>Reads events from a stream starting at <paramref name="from"/>.</summary>
+    /// <summary>Reads the events of a stream after <paramref name="from"/>. The bound is exclusive: the events with a position greater than <paramref name="from"/>, so <see cref="StreamPosition.Start"/> reads the whole stream.</summary>
     IAsyncEnumerable<EventEnvelope> ReadAsync(
         StreamId id,
         StreamPosition from = default,

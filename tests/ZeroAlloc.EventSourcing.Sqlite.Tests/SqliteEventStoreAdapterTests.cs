@@ -237,4 +237,79 @@ public sealed class SqliteEventStoreAdapterTests : IAsyncLifetime
         sub.Should().BeOfType<PollingEventSubscription>();
         await sub.DisposeAsync();
     }
+
+    private async Task<SqliteEventStoreAdapter> NewSchemaAdapterAsync()
+    {
+        var adapter = NewAdapter();
+        await adapter.EnsureSchemaAsync();
+        return adapter;
+    }
+
+    // The in-memory adapter keeps the position it is given, as EventStore sets it; SQL adapters assign their own.
+    private static RawEvent Raw(string eventType, long position)
+        => MakeRaw(eventType) with { Position = new StreamPosition(position) };
+
+    // Issue 409: after delivering the event at position N the subscription read from N + 1,
+    // and reads exclude their start position, so the first event of every later poll cycle
+    // was lost. Each append below lands in its own poll cycle.
+    [Fact]
+    public async Task Subscribe_DeliversEveryLiveEvent_AcrossPollCycles()
+    {
+        var adapter = await NewSchemaAdapterAsync();
+        var id = new StreamId($"orders-{Guid.NewGuid()}");
+        await adapter.AppendAsync(id, new[] { Raw("E1", 1) }.AsMemory(), StreamPosition.Start);
+
+        var received = new List<string>();
+        var sub = await adapter.SubscribeAsync(id, StreamPosition.Start, (e, _) =>
+        {
+            lock (received) received.Add(e.EventType);
+            return ValueTask.CompletedTask;
+        });
+        await sub.StartAsync();
+        try
+        {
+            await PollingTestHelpers.WaitForCountAsync(received, 1);
+            await adapter.AppendAsync(id, new[] { Raw("E2", 2) }.AsMemory(), new StreamPosition(1));
+            await PollingTestHelpers.WaitForCountAsync(received, 2);
+            await adapter.AppendAsync(id, new[] { Raw("E3", 3) }.AsMemory(), new StreamPosition(2));
+            await PollingTestHelpers.WaitForCountAsync(received, 3);
+        }
+        finally
+        {
+            await sub.DisposeAsync();
+        }
+
+        received.Should().Equal("E1", "E2", "E3");
+    }
+
+    [Fact]
+    public async Task Subscribe_Global_DeliversEveryLiveEvent_AcrossPollCycles()
+    {
+        var adapter = await NewSchemaAdapterAsync();
+        var a = new StreamId($"a-{Guid.NewGuid()}");
+        var b = new StreamId($"b-{Guid.NewGuid()}");
+        await adapter.AppendAsync(a, new[] { Raw("A1", 1) }.AsMemory(), StreamPosition.Start);
+
+        var received = new List<string>();
+        var sub = await adapter.SubscribeAsync(StreamId.Global, StreamPosition.Start, (e, _) =>
+        {
+            lock (received) received.Add(e.EventType);
+            return ValueTask.CompletedTask;
+        });
+        await sub.StartAsync();
+        try
+        {
+            await PollingTestHelpers.WaitForCountAsync(received, 1);
+            await adapter.AppendAsync(b, new[] { Raw("B1", 1) }.AsMemory(), StreamPosition.Start);
+            await PollingTestHelpers.WaitForCountAsync(received, 2);
+            await adapter.AppendAsync(a, new[] { Raw("A2", 2) }.AsMemory(), new StreamPosition(1));
+            await PollingTestHelpers.WaitForCountAsync(received, 3);
+        }
+        finally
+        {
+            await sub.DisposeAsync();
+        }
+
+        received.Should().Equal("A1", "B1", "A2");
+    }
 }
