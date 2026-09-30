@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Confluent.Kafka;
 using Confluent.Kafka.Admin;
 using AwesomeAssertions;
@@ -55,9 +56,89 @@ internal sealed class SystemTextJsonEventSerializer : IEventSerializer
                $"Deserialization of {eventType.FullName} returned null.");
 }
 
-/// <summary>Shared Kafka admin and producer helpers for integration tests.</summary>
+/// <summary>Shared Kafka container, admin and producer helpers for integration tests.</summary>
 internal static class KafkaIntegrationHelpers
 {
+    private const string KafkaImage = "confluentinc/cp-kafka:7.5.0";
+
+    /// <summary>How long a started broker gets to elect a controller before the fixture fails.</summary>
+    public static readonly TimeSpan ControllerTimeout = TimeSpan.FromSeconds(60);
+
+    /// <summary>
+    /// Starts a Kafka container and returns once its broker has elected a controller, so topics
+    /// can be created on it.
+    /// </summary>
+    /// <remarks>
+    /// The container reports started once the broker accepts connections, which can be before the
+    /// broker has a controller. An admin client that asks for the controller then refreshes its
+    /// metadata once, sees none, and looks again only on a broker state change. When none comes,
+    /// <c>CreateTopicsAsync</c> fails with "Failed while waiting for controller: Local: Timed out"
+    /// after its full request timeout, even when the controller is elected a moment later.
+    /// </remarks>
+    public static async Task<KafkaContainer> StartKafkaAsync()
+    {
+        var kafka = new KafkaBuilder(KafkaImage).Build();
+        try
+        {
+            await kafka.StartAsync();
+            await WaitForControllerAsync(kafka.GetBootstrapAddress(), ControllerTimeout);
+            return kafka;
+        }
+        catch
+        {
+            await kafka.DisposeAsync();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Asks the broker for its cluster description until it names a controller. Each call sends a
+    /// fresh request, unlike an admin operation that waits on the client's cached metadata.
+    /// </summary>
+    /// <exception cref="TimeoutException">The broker named no controller within <paramref name="timeout"/>.</exception>
+    public static async Task WaitForControllerAsync(string bootstrapServers, TimeSpan timeout)
+    {
+        using var admin = new AdminClientBuilder(
+            new AdminClientConfig { BootstrapServers = bootstrapServers }).Build();
+
+        var elapsed   = Stopwatch.StartNew();
+        var attempts  = 0;
+        Exception? lastError = null;
+
+        while (true)
+        {
+            var remaining = timeout - elapsed.Elapsed;
+            if (remaining <= TimeSpan.Zero)
+            {
+                throw new TimeoutException(
+                    $"The Kafka broker at {bootstrapServers} named no controller within {timeout.TotalSeconds:0} s "
+                    + $"({attempts} attempts), so no topic can be created on it. "
+                    + (lastError is null
+                        ? "The broker answered every request without a controller."
+                        : $"The last request failed: {lastError.Message}"),
+                    lastError);
+            }
+
+            attempts++;
+            try
+            {
+                var cluster = await admin.DescribeClusterAsync(new DescribeClusterOptions
+                {
+                    RequestTimeout = remaining < TimeSpan.FromSeconds(5) ? remaining : TimeSpan.FromSeconds(5),
+                });
+                if (cluster.Controller is not null)
+                    return;
+                lastError = null;
+            }
+            catch (KafkaException e)
+            {
+                lastError = e;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(250));
+        }
+    }
+
     public static async Task CreateTopicAsync(
         string bootstrapServers, string topic, int numPartitions = 1)
     {
@@ -107,6 +188,26 @@ internal static class KafkaIntegrationHelpers
     }
 }
 
+/// <summary>
+/// The controller wait fails within its bound, with a message that says why, when no broker ever
+/// answers. It needs no Docker: nothing listens on the address.
+/// </summary>
+public sealed class KafkaIntegrationHelpersTests
+{
+    [Fact]
+    public async Task WaitForControllerAsync_NoBroker_FailsWithinItsBound()
+    {
+        const string Unreachable = "127.0.0.1:1";
+        var elapsed = Stopwatch.StartNew();
+
+        var act = () => KafkaIntegrationHelpers.WaitForControllerAsync(Unreachable, TimeSpan.FromSeconds(3));
+
+        var thrown = await act.Should().ThrowAsync<TimeoutException>();
+        thrown.Which.Message.Should().Contain(Unreachable).And.Contain("named no controller within 3 s");
+        elapsed.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(15));
+    }
+}
+
 // ── Manual partition consumer integration tests ───────────────────────────────
 
 /// <summary>
@@ -121,8 +222,7 @@ public sealed class KafkaManualPartitionConsumerIntegrationTests : IAsyncLifetim
 
     public async Task InitializeAsync()
     {
-        _kafka = new KafkaBuilder("confluentinc/cp-kafka:7.5.0").Build();
-        await _kafka.StartAsync();
+        _kafka = await KafkaIntegrationHelpers.StartKafkaAsync();
         _bootstrapServers = _kafka.GetBootstrapAddress();
     }
 
@@ -291,8 +391,7 @@ public sealed class KafkaConsumerGroupConsumerIntegrationTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        _kafka = new KafkaBuilder("confluentinc/cp-kafka:7.5.0").Build();
-        await _kafka.StartAsync();
+        _kafka = await KafkaIntegrationHelpers.StartKafkaAsync();
         _bootstrapServers = _kafka.GetBootstrapAddress();
     }
 
@@ -494,11 +593,7 @@ public sealed class KafkaConsumerGroupConsumerIntegrationTests : IAsyncLifetime
         var registry    = new SimpleEventTypeRegistry();
         registry.Register<IntegrationTestEvent>("TestEvent");
 
-        // Create topic with 2 partitions explicitly
-        using (var admin = new AdminClientBuilder(new AdminClientConfig { BootstrapServers = _bootstrapServers }).Build())
-        {
-            await admin.CreateTopicsAsync([new TopicSpecification { Name = topic, NumPartitions = 2, ReplicationFactor = 1 }]);
-        }
+        await KafkaIntegrationHelpers.CreateTopicAsync(_bootstrapServers, topic, numPartitions: 2);
 
         // Pre-produce 1 event on each partition so messages are available when the consumer starts.
         await KafkaIntegrationHelpers.ProduceAsync(_bootstrapServers, topic, 0, new IntegrationTestEvent("p0-event"), "TestEvent");

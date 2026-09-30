@@ -291,6 +291,11 @@ Use `Testcontainers.Kafka` to test against a real broker. The repository's
 it starts a container, creates a topic, produces messages with the header contract above, and
 consumes them with both consumers.
 
+The container reports started once the broker accepts connections, which can be before the broker
+has elected a controller. Creating a topic then can fail with "Failed while waiting for controller:
+Local: Timed out". Poll `IAdminClient.DescribeClusterAsync` until `Controller` is set before you
+create topics, as `KafkaIntegrationHelpers.StartKafkaAsync` in the tests does.
+
 ```csharp
 // Sketch: the container gives you the bootstrap address for the options
 var kafka = new KafkaBuilder("confluentinc/cp-kafka:7.5.0").Build();
