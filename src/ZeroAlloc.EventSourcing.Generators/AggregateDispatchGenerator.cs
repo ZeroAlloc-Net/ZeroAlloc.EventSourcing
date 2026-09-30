@@ -42,8 +42,8 @@ public sealed class AggregateDispatchGenerator : IIncrementalGenerator
     /// <summary>
     /// Semantic transform: returns an <see cref="AggregateInfo"/> for classes that inherit
     /// <c>Aggregate&lt;TId, TState&gt;</c> and whose state has <c>Apply(TEvent)</c> methods, or a
-    /// diagnostic instead when such an aggregate cannot be generated: ZAES005 when a containing type is
-    /// not partial, ZAES006 when it is generic or one of its event types uses a type parameter.
+    /// diagnostic instead when such an aggregate cannot be generated: ZAES007 when it is file-local,
+    /// ZAES005 when a containing type is not partial, ZAES006 when it is generic or one of its event types uses a type parameter.
     /// Returns <c>null</c> for non-aggregate classes, for those already providing a manual override,
     /// and for every declaration of a partial class except its primary one, so that a class split over
     /// several declarations is emitted once.

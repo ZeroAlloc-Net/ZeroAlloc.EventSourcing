@@ -370,7 +370,8 @@ The generator:
 An aggregate can be nested in another type, for example a static class per bounded context. The
 generated `ApplyEvent` then goes into the nested aggregate, which needs every containing type to be
 `partial` as well; otherwise the generator reports [ZAES005](../diagnostics.md#zaes005). A generic
-aggregate is not generated and gets [ZAES006](../diagnostics.md#zaes006).
+aggregate is not generated and gets [ZAES006](../diagnostics.md#zaes006). A `file` aggregate cannot be
+extended from a generated file, so it gets the error [ZAES007](../diagnostics.md#zaes007).
 
 ```csharp
 public static partial class Retail

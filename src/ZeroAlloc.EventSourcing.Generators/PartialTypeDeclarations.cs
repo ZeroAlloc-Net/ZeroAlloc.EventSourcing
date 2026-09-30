@@ -64,9 +64,10 @@ internal static class PartialTypeDeclarations
 
     /// <summary>
     /// Returns the diagnostic that stops generation for <paramref name="symbol"/>, or <c>null</c> when
-    /// it can be generated: ZAES006 when it is generic or one of <paramref name="namespaceLevelTypes"/>
-    /// uses a type parameter, otherwise ZAES005 when a containing type is not partial. The diagnostic
-    /// is located on the identifier of <paramref name="declaration"/>.
+    /// it can be generated: ZAES007 when it or a containing type is file-local, ZAES006 when it is
+    /// generic or one of <paramref name="namespaceLevelTypes"/> uses a type parameter, otherwise ZAES005
+    /// when a containing type is not partial. The diagnostic is located on the identifier of
+    /// <paramref name="declaration"/>.
     /// </summary>
     internal static DiagnosticInfo? Check(
         ClassDeclarationSyntax declaration,
@@ -75,6 +76,9 @@ internal static class PartialTypeDeclarations
         CancellationToken cancellationToken)
     {
         var location = declaration.Identifier.GetLocation();
+        if (IsFileLocalOrNestedInOne(symbol))
+            return new DiagnosticInfo(Diagnostics.ZAES007_FileLocalType, location, symbol.ToDisplayString());
+
         // Arity, not IsGenericType: IsGenericType is also true for a type nested in a generic type.
         if (symbol.Arity > 0 || namespaceLevelTypes.Any(UsesTypeParameter))
             return new DiagnosticInfo(Diagnostics.ZAES006_GenericType, location, symbol.ToDisplayString());
@@ -108,6 +112,16 @@ internal static class PartialTypeDeclarations
             sb.Append(bodyIndent).AppendLine(line);
         for (var depth = headers.Count - 1; depth >= 0; depth--)
             sb.Append(new string(' ', depth * 4)).AppendLine("}");
+    }
+
+    // Only a top-level type can be declared file, but everything nested in it is file-local too.
+    private static bool IsFileLocalOrNestedInOne(INamedTypeSymbol symbol)
+    {
+        for (var type = symbol; type is not null; type = type.ContainingType)
+        {
+            if (type.IsFileLocal) return true;
+        }
+        return false;
     }
 
     /// <summary>
@@ -226,10 +240,9 @@ internal static class PartialTypeDeclarations
         _ => "class",
     };
 
-    // A file-local type has no accessibility modifier to repeat, and a partial part may leave it out.
+    // File-local types never get here: Check reports ZAES007 for them.
     private static string AccessibilityKeyword(INamedTypeSymbol type)
     {
-        if (type.IsFileLocal) return string.Empty;
         return type.DeclaredAccessibility switch
         {
             Accessibility.Public => "public",

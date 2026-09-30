@@ -488,7 +488,9 @@ for `Retail.Order`. A generic containing type is followed by its number of type 
 `Module1_OrderEventTypeRegistry` for `Module<T>.Order`.
 
 A nested type whose containing type is not `partial`, and a generic aggregate or projection, is not
-generated; the generator reports a warning instead. See [Diagnostics](diagnostics.md).
+generated; the generator reports a warning instead. A `file` aggregate or projection, or one nested
+in a `file` type, is not generated either, and gets an error, because a generated file cannot extend
+a file-local type. See [Diagnostics](diagnostics.md).
 
 ---
 

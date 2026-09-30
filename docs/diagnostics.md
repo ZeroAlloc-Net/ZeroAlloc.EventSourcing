@@ -7,6 +7,7 @@ means that nothing is generated for the aggregate or projection it points at.
 |----|----------|-------|
 | [ZAES005](#zaes005) | Warning | Containing type of an aggregate or projection is not partial |
 | [ZAES006](#zaes006) | Warning | Generic aggregate or projection is not generated |
+| [ZAES007](#zaes007) | Error | File-local aggregate or projection is not generated |
 
 `ZAES001` to `ZAES004` are the diagnostic IDs of obsolete APIs, reported by the compiler through
 `[Obsolete]`; they are not generator diagnostics.
@@ -69,3 +70,25 @@ public sealed class Order<TTag> : Aggregate<OrderId, OrderState>
     };
 }
 ```
+
+## ZAES007
+
+**File-local aggregate or projection is not generated.**
+
+A `file` type is visible only in the source file that declares it, so the generated file cannot
+extend it. The generator reports the error ZAES007 on an aggregate or projection that is declared
+`file`, or that is nested in a `file` type, and generates nothing for it. Other aggregates and
+projections in the project are still generated.
+
+```csharp
+file sealed partial class Order : Aggregate<OrderId, OrderState> { }   // ZAES007
+```
+
+Fix it by removing the `file` modifier, for example by making the type `internal`:
+
+```csharp
+internal sealed partial class Order : Aggregate<OrderId, OrderState> { }
+```
+
+To keep the type file-local, declare it without `partial` and write its dispatch by hand, as for
+[ZAES006](#zaes006): the generators only look at partial classes.
