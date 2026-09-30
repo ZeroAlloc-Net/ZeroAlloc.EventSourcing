@@ -82,7 +82,8 @@ public sealed class PostgreSqlDeadLetterStoreTests(PostgreSqlContainerFixture fi
                 );
                 INSERT INTO dead_letters
                     (consumer_id, stream_id, position, event_type, payload, exception_type, exception_message, failed_at)
-                VALUES ('legacy', 's', 1, 'DeadLetterTestEvent', '\x7b7d', 'Exception', 'old', @failed_at);
+                VALUES ('legacy', 's', 1, 'DeadLetterTestEvent',
+                        convert_to('{"OrderId":"legacy","Quantity":1}', 'UTF8'), 'Exception', 'old', @failed_at);
                 """;
             cmd.Parameters.AddWithValue("@failed_at", failedAt);
             await cmd.ExecuteNonQueryAsync();
