@@ -3,7 +3,7 @@ namespace ZeroAlloc.EventSourcing;
 /// <summary>
 /// A catch-up + polling <see cref="IEventSubscription"/> for adapters that do not support
 /// push-based delivery (e.g. SQL adapters). On <see cref="StartAsync"/>, replays all events
-/// from <c>from</c> then polls at <see cref="DefaultPollInterval"/> until disposed.
+/// after <c>from</c> then polls at <see cref="DefaultPollInterval"/> until disposed.
 /// </summary>
 public sealed class PollingEventSubscription : IEventSubscription
 {
@@ -14,7 +14,9 @@ public sealed class PollingEventSubscription : IEventSubscription
     private readonly StreamId _id;
     private readonly Func<RawEvent, CancellationToken, ValueTask> _handler;
     private readonly TimeSpan _pollInterval;
-    private StreamPosition _nextPosition;
+    // Position of the last delivered event. Adapter reads exclude their start position, so the
+    // next read from here returns only the events after it.
+    private StreamPosition _lastPosition;
     private readonly CancellationTokenSource _cts = new();
     private Task? _backgroundTask;
     private volatile bool _running;
@@ -24,7 +26,7 @@ public sealed class PollingEventSubscription : IEventSubscription
     /// <summary>Initialises the subscription but does not start polling. Call <see cref="StartAsync"/> to begin delivery.</summary>
     /// <param name="adapter">The event-store adapter used to read events.</param>
     /// <param name="id">The stream to subscribe to.</param>
-    /// <param name="from">The position (inclusive) from which to begin catch-up.</param>
+    /// <param name="from">The position after which catch-up begins (exclusive, like <see cref="IEventStoreAdapter.ReadAsync"/>): <see cref="StreamPosition.Start"/> delivers the whole stream.</param>
     /// <param name="handler">Callback invoked for each delivered event.</param>
     /// <param name="pollInterval">Interval between poll cycles once catch-up is complete.</param>
     public PollingEventSubscription(
@@ -38,7 +40,7 @@ public sealed class PollingEventSubscription : IEventSubscription
         ArgumentNullException.ThrowIfNull(handler);
         _adapter = adapter;
         _id = id;
-        _nextPosition = from;
+        _lastPosition = from;
         _handler = handler;
         _pollInterval = pollInterval;
     }
@@ -61,7 +63,7 @@ public sealed class PollingEventSubscription : IEventSubscription
     {
         try
         {
-            // Catch-up: deliver all events from _nextPosition onward.
+            // Catch-up: deliver all events after _lastPosition.
             await DeliverNewEventsAsync(ct).ConfigureAwait(false);
 
             // Live: poll on interval until cancelled.
@@ -77,10 +79,10 @@ public sealed class PollingEventSubscription : IEventSubscription
 
     private async Task DeliverNewEventsAsync(CancellationToken ct)
     {
-        await foreach (var e in _adapter.ReadAsync(_id, _nextPosition, ct).ConfigureAwait(false))
+        await foreach (var e in _adapter.ReadAsync(_id, _lastPosition, ct).ConfigureAwait(false))
         {
             await _handler(e, ct).ConfigureAwait(false);
-            _nextPosition = e.Position.Next();
+            _lastPosition = e.Position;
         }
     }
 
