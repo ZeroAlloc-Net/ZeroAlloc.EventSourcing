@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace ZeroAlloc.EventSourcing;
@@ -34,7 +35,7 @@ public static class EventSourcingBuilderUpcasterExtensions
     /// <typeparamref name="TUpcaster"/> is registered as a singleton.
     /// Avoid injecting scoped services into <typeparamref name="TUpcaster"/> to prevent lifetime mismatch.
     /// </remarks>
-    public static EventSourcingBuilder AddUpcaster<TOld, TNew, TUpcaster>(
+    public static EventSourcingBuilder AddUpcaster<TOld, TNew, [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] TUpcaster>(
         this EventSourcingBuilder builder)
         where TOld : notnull
         where TNew : notnull

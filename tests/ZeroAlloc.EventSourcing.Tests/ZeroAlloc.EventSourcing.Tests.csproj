@@ -17,6 +17,7 @@
     <PackageReference Include="AwesomeAssertions" />
     <PackageReference Include="NSubstitute" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+    <PackageReference Include="ZeroAlloc.Serialisation.SystemTextJson" />
   </ItemGroup>
 
   <ItemGroup>

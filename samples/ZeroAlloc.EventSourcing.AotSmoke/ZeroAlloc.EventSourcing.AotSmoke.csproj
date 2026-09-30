@@ -17,6 +17,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="ZeroAlloc.Serialisation.SystemTextJson" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\ZeroAlloc.EventSourcing\ZeroAlloc.EventSourcing.csproj"
                       SetTargetFramework="TargetFramework=net10.0" />
     <ProjectReference Include="..\..\src\ZeroAlloc.EventSourcing.Aggregates\ZeroAlloc.EventSourcing.Aggregates.csproj"

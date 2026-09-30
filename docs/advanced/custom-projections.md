@@ -554,15 +554,24 @@ instead.
 ## Pattern 11: Rebuilding a Projection in Place
 
 `ReplayableProjection<TReadModel>` rebuilds itself: `RebuildAsync` resets `Current`, replays a
-stream and saves the result to an `IProjectionStore` under `GetProjectionKey()`. Pass the starting
-value to the base constructor, so every rebuild starts from it again:
+stream and saves the result to an `IProjectionStore` under `GetProjectionKey()`. Pass the base
+constructor the starting value, so every rebuild starts from it again, and an `ISerializer<TReadModel>`
+from ZeroAlloc.Serialisation to save the result with. `SystemTextJsonSerializer<T>` from the
+ZeroAlloc.Serialisation.SystemTextJson package writes JSON from a `JsonSerializerContext`, without
+reflection:
 
 ```csharp
+[JsonSerializable(typeof(ImmutableDictionary<string, decimal>))]
+internal partial class ProjectionJsonContext : JsonSerializerContext { }
+
 public class RebuildableOrderTotalsProjection : ReplayableProjection<ImmutableDictionary<string, decimal>>
 {
     // Current starts at the empty dictionary, and each rebuild resets to it
     public RebuildableOrderTotalsProjection()
-        : base(ImmutableDictionary<string, decimal>.Empty)
+        : base(
+            ImmutableDictionary<string, decimal>.Empty,
+            new SystemTextJsonSerializer<ImmutableDictionary<string, decimal>>(
+                ProjectionJsonContext.Default.ImmutableDictionaryStringDecimal))
     {
     }
 
@@ -592,11 +601,18 @@ Do not set `Current` in the constructor of a `ReplayableProjection` instead: the
 base constructor resets to `default(TReadModel)` on a rebuild, which is `null` for a record or a
 collection. Pass an immutable value, since every rebuild reuses the same instance.
 
+`IProjectionStore` stores text, so the serializer must write UTF-8 text. `RebuildAsync` throws a
+`DecoderFallbackException` for output that is not valid UTF-8, as the output of a binary serializer
+such as MemoryPack or MessagePack generally is not; binary state is tracked in
+[#425](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/issues/425).
+
+The constructors without a serializer, `base()` and `base(initialState)`, save the read model with
+reflection-based `System.Text.Json` instead. They carry `[RequiresUnreferencedCode]` and
+`[RequiresDynamicCode]`, so the trim and NativeAOT analyzers report a projection that uses them.
+
 The projection answers queries from the partial state while it rebuilds. To keep serving the old
 state until the rebuild is done, rebuild a new instance and switch over, as
-[Core Concepts: Projections](../core-concepts/projections.md) shows. `RebuildAsync` serializes the
-read model with reflection-based `System.Text.Json`, which is not NativeAOT-safe yet; see
-[#415](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/issues/415).
+[Core Concepts: Projections](../core-concepts/projections.md) shows.
 
 ## Comparison: Patterns for Different Scenarios
 
