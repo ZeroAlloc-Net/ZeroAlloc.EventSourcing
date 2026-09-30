@@ -372,34 +372,50 @@ public sealed partial class Order : Aggregate<OrderId, OrderState>
 public void Confirm_ThrowsWhen_OrderNotPlaced()
 {
     // Arrange
-    var order = new Order();
-    order.SetId(new OrderId(Guid.NewGuid()));
-    
+    using var order = new Order();
+
     // Act & Assert
     var ex = Assert.Throws<InvalidOperationException>(
         () => order.Confirm("tx-123"));
-    
-    Assert.Contains("not been placed", ex.Message);
+
+    Assert.Contains("hasn't been placed", ex.Message);
+    Assert.Equal(StreamPosition.Start, order.Version);  // Nothing was raised
 }
 
 [Fact]
-public void Confirm_RaisesEvent_WhenValid()
+public async Task Confirm_RaisesEvent_WhenValid()
 {
-    // Arrange
-    var order = new Order();
-    order.SetId(new OrderId(Guid.NewGuid()));
-    order.Place("ORD-001", 1500m);
-    order.DequeueUncommitted();  // Clear initial events
-    
+    // Arrange: a repository over the in-memory event store
+    var eventStore = new EventStore(
+        new InMemoryEventStoreAdapter(), new JsonEventSerializer(), new OrderEventTypeRegistry());
+    var repository = new AggregateRepository<Order, OrderId>(
+        eventStore, () => new Order(), id => new StreamId($"order-{id.Value}"));
+    var orderId = new OrderId(Guid.NewGuid());
+
+    using var order = new Order();
+    order.Place("ORD-001", new CustomerId(Guid.NewGuid()), 1500m);
+    await repository.SaveAsync(order, orderId);  // Persist the initial event
+
     // Act
     order.Confirm("tx-123");
-    
-    // Assert
-    var events = order.DequeueUncommitted();
-    Assert.Single(events);
-    Assert.IsType<OrderConfirmedEvent>(events[0]);
+
+    // Assert: save, then read back only the events after the previous save
+    var from = order.OriginalVersion;
+    var saved = await repository.SaveAsync(order, orderId);
+    Assert.True(saved.IsSuccess);
+
+    var events = new List<object>();
+    await foreach (var envelope in eventStore.ReadAsync(new StreamId($"order-{orderId.Value}"), from))
+        events.Add(envelope.Event);
+    Assert.IsType<OrderConfirmedEvent>(Assert.Single(events));
 }
 ```
+
+The events an aggregate has raised but not saved are internal to the library; the repository takes
+them when it saves. Tests therefore save through a repository over the in-memory store and read
+the stream back. `JsonEventSerializer` stands for any `IEventSerializer`, and
+`OrderEventTypeRegistry` is emitted by the source generator for the partial `Order`. See
+[Testing Aggregates](../testing/testing-aggregates.md) for a reusable harness.
 
 ## Identity Design: Value Types for IDs
 
@@ -434,27 +450,33 @@ Generate IDs at the application layer, not in the aggregate:
 ```csharp
 // Application/Command Handler
 // Note: See building-aggregates.md for repository interface definition
+public record PlaceOrderCommand(CustomerId CustomerId, OrderLineItem[] Items, decimal Total);
+
 public class PlaceOrderHandler
 {
     private readonly IAggregateRepository<Order, OrderId> _repository;
-    
+
+    public PlaceOrderHandler(IAggregateRepository<Order, OrderId> repository) => _repository = repository;
+
     public async Task Handle(PlaceOrderCommand command)
     {
         // Generate ID at the application layer
         var orderId = new OrderId(Guid.NewGuid());
-        
+
         // Create aggregate
-        var order = new Order();
-        order.SetId(orderId);
-        
-        // Apply the command
+        using var order = new Order();
+
+        // Apply the command (Order as in the complete example below)
         order.Place(
             orderNumber: "ORD-" + DateTime.Now.Ticks,
             customerId: command.CustomerId,
+            items: command.Items,
             total: command.Total);
-        
-        // Save
-        await _repository.SaveAsync(order);
+
+        // Save: the repository takes the id that names the stream
+        var saved = await _repository.SaveAsync(order, orderId);
+        if (saved.IsFailure)
+            throw new InvalidOperationException($"Could not save order {orderId.Value}: {saved.Error}");
     }
 }
 ```

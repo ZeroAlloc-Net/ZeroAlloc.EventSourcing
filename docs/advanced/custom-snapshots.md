@@ -309,105 +309,98 @@ public class PostgreSqlSnapshotStore<TState> : ISnapshotStore<TState>
 
 ## Snapshot Strategy: When and How Often
 
-### Strategy 1: Time-Based Snapshots
-
-Snapshot every N time units:
+`SnapshotCachingRepositoryDecorator` decides when to write a snapshot with an `ISnapshotPolicy`,
+asked after each successful save. It gets the stream position after the save and the position
+of the last snapshot, if any:
 
 ```csharp
-public class TimedSnapshotStrategy<TState> where TState : struct
+public interface ISnapshotPolicy
+{
+    bool ShouldSnapshot(StreamPosition currentPosition, StreamPosition? lastSnapshotPosition);
+}
+```
+
+Pass it as `snapshotPolicy:`, together with `extractState: order => order.State`
+(see [Pattern 2](#pattern-2-periodic-snapshotting)).
+
+### Strategy 1: Event-Count-Based Snapshots
+
+Snapshot every N events. The library ships this one:
+
+```csharp
+// Snapshot once 100 events have been appended since the last snapshot
+ISnapshotPolicy policy = SnapshotPolicy.EveryNEvents(100);
+
+// Or on every save, or never
+ISnapshotPolicy always = SnapshotPolicy.Always;
+ISnapshotPolicy never = SnapshotPolicy.Never;
+```
+
+### Strategy 2: Time-Based Snapshots
+
+Snapshot a stream at most once per time interval. The policy is not told which stream it is
+asked about, so a time-based rule is a small wrapper around the save instead:
+
+```csharp
+public sealed class TimedSnapshotWriter<TState> where TState : struct
 {
     private readonly ISnapshotStore<TState> _store;
     private readonly TimeSpan _interval;
-    private DateTime _lastSnapshot = DateTime.MinValue;
+    private readonly ConcurrentDictionary<StreamId, DateTimeOffset> _lastSnapshot = new();
 
-    public async ValueTask<bool> ShouldSnapshotAsync()
+    public TimedSnapshotWriter(ISnapshotStore<TState> store, TimeSpan interval)
     {
-        return DateTime.UtcNow - _lastSnapshot >= _interval;
+        _store = store;
+        _interval = interval;
     }
 
+    // Call after a successful save, with the saved aggregate's Version and State
     public async ValueTask SnapshotIfNeededAsync(
         StreamId streamId,
         StreamPosition position,
-        TState state)
+        TState state,
+        CancellationToken ct = default)
     {
-        if (await ShouldSnapshotAsync())
-        {
-            await _store.WriteAsync(streamId, position, state);
-            _lastSnapshot = DateTime.UtcNow;
-        }
+        var now = DateTimeOffset.UtcNow;
+        var last = _lastSnapshot.GetValueOrDefault(streamId, DateTimeOffset.MinValue);
+        if (now - last < _interval)
+            return;
+
+        await _store.WriteAsync(streamId, position, state, ct);
+        _lastSnapshot[streamId] = now;
     }
 }
 
-// Usage: Snapshot every 5 minutes
-var strategy = new TimedSnapshotStrategy<OrderState>(store, TimeSpan.FromMinutes(5));
-```
-
-### Strategy 2: Event-Count-Based Snapshots
-
-Snapshot every N events:
-
-```csharp
-public class CountBasedSnapshotStrategy<TState> where TState : struct
-{
-    private readonly ISnapshotStore<TState> _store;
-    private readonly int _eventInterval;
-    private int _eventsSinceLastSnapshot = 0;
-
-    public async ValueTask<bool> ShouldSnapshotAsync()
-    {
-        return _eventsSinceLastSnapshot >= _eventInterval;
-    }
-
-    public async ValueTask SnapshotIfNeededAsync(
-        StreamId streamId,
-        StreamPosition position,
-        TState state)
-    {
-        _eventsSinceLastSnapshot++;
-
-        if (await ShouldSnapshotAsync())
-        {
-            await _store.WriteAsync(streamId, position, state);
-            _eventsSinceLastSnapshot = 0;
-        }
-    }
-}
-
-// Usage: Snapshot every 100 events
-var strategy = new CountBasedSnapshotStrategy<OrderState>(store, eventInterval: 100);
+// Usage: Snapshot each stream at most every 5 minutes
+var writer = new TimedSnapshotWriter<OrderState>(store, TimeSpan.FromMinutes(5));
 ```
 
 ### Strategy 3: Adaptive Snapshots
 
-Snapshot only when aggregate becomes large:
+Snapshot short streams rarely and long streams often:
 
 ```csharp
-public class AdaptiveSnapshotStrategy<TState> where TState : struct
+public sealed class AdaptiveSnapshotPolicy : ISnapshotPolicy
 {
-    private readonly ISnapshotStore<TState> _store;
-    private StreamPosition _lastSnapshotPosition = StreamPosition.Start;
-
-    public async ValueTask<bool> ShouldSnapshotAsync(StreamPosition currentPosition)
+    public bool ShouldSnapshot(StreamPosition currentPosition, StreamPosition? lastSnapshotPosition)
     {
-        // Snapshot if 500+ events since last snapshot
-        return currentPosition.Value - _lastSnapshotPosition.Value >= 500;
-    }
+        var sinceLast = currentPosition.Value - (lastSnapshotPosition?.Value ?? 0);
 
-    public async ValueTask SnapshotIfNeededAsync(
-        StreamId streamId,
-        StreamPosition position,
-        TState state)
-    {
-        if (await ShouldSnapshotAsync(position))
-        {
-            await _store.WriteAsync(streamId, position, state);
-            _lastSnapshotPosition = position;
-        }
+        // Streams under 500 events are cheap to replay: no snapshot.
+        // Beyond that, snapshot every 500 events, and every 100 past 10,000.
+        if (currentPosition.Value < 500)
+            return false;
+        return sinceLast >= (currentPosition.Value > 10_000 ? 100 : 500);
     }
 }
 ```
 
 ## Loading Aggregates with Snapshots
+
+A custom store plugs into `SnapshotCachingRepositoryDecorator` like the built-in ones. The decorator
+reads the snapshot, restores it onto a fresh aggregate, and replays only the events after it.
+Replaying events onto an aggregate is internal to the repositories, so load through the decorator
+rather than writing that loop yourself:
 
 ```csharp
 public async Task<Order> LoadOrderAsync(
@@ -415,79 +408,74 @@ public async Task<Order> LoadOrderAsync(
     IEventStore eventStore,
     ISnapshotStore<OrderState> snapshotStore)
 {
-    var order = new Order();
-    order.SetId(orderId);
+    var repository = new SnapshotCachingRepositoryDecorator<Order, OrderId, OrderState>(
+        innerRepository: new AggregateRepository<Order, OrderId>(
+            eventStore,
+            () => new Order(),
+            id => new StreamId($"order-{id.Value}")),
+        snapshotStore: snapshotStore,  // your custom store
+        strategy: SnapshotLoadingStrategy.ValidateAndReplay,
+        restoreState: (order, state, pos) => order.RestoreState(state, pos),
+        eventStore: eventStore,
+        streamIdFactory: id => new StreamId($"order-{id.Value}"),
+        aggregateFactory: () => new Order());
 
-    var streamId = new StreamId($"order-{orderId.Value}");
+    // 1. Reads the snapshot, if any, and restores it
+    // 2. Replays the events after the snapshot position (or all of them without a snapshot)
+    var result = await repository.LoadAsync(orderId);
+    if (result.IsFailure)
+        throw new InvalidOperationException(result.Error.ToString());
 
-    // 1. Try to load snapshot
-    var snapshot = await snapshotStore.ReadAsync(streamId);
-
-    StreamPosition startPosition;
-    if (snapshot.HasValue)
-    {
-        // Load state from snapshot
-        order.LoadSnapshot(snapshot.Value.State);
-        startPosition = snapshot.Value.Position.Next();
-    }
-    else
-    {
-        // Load from beginning
-        startPosition = StreamPosition.Start;
-    }
-
-    // 2. Replay remaining events
-    await foreach (var envelope in eventStore.ReadAsync(streamId, startPosition))
-    {
-        order.ApplyHistoric(envelope.Event, envelope.Position);
-    }
-
-    return order;
+    return result.Value;  // the caller disposes the aggregate
 }
 ```
+
+In an application, build the repository once (or register it in DI) rather than per load.
+[`CustomSnapshotStore.cs`](../examples/04-advanced/CustomSnapshotStore.cs) is a runnable example
+with a custom JSON snapshot store.
 
 ## Snapshot Rebuilding
 
 When aggregate structure changes, rebuild all snapshots:
 
+Load each aggregate through the plain `AggregateRepository`, which replays the full stream and never
+reads snapshots, and write its state at its version. A store keeps only the latest snapshot per
+stream, so one write per aggregate is enough:
+
 ```csharp
-public async Task RebuildSnapshotsAsync<TState>(
-    IEventStore eventStore,
-    ISnapshotStore<TState> snapshotStore,
-    StreamId streamId)
-    where TState : struct
+public async Task RebuildSnapshotAsync(
+    AggregateRepository<Order, OrderId> fullReplayRepository,
+    ISnapshotStore<OrderState> snapshotStore,
+    OrderId orderId)
 {
-    // 1. Load aggregate from scratch
-    var order = new Order();
-    order.SetId(orderId);
+    // 1. Load aggregate from scratch: replays all events with the new logic
+    var result = await fullReplayRepository.LoadAsync(orderId);
+    if (result.IsFailure)
+        throw new InvalidOperationException(result.Error.ToString());
 
-    var eventCount = 0;
-    StreamPosition? lastPosition = null;
+    using var order = result.Value;
+    if (order.Version == StreamPosition.Start)
+        return;  // empty stream, nothing to snapshot
 
-    // 2. Replay all events
-    await foreach (var envelope in eventStore.ReadAsync(streamId, StreamPosition.Start))
-    {
-        order.ApplyHistoric(envelope.Event, envelope.Position);
-        lastPosition = envelope.Position;
-        eventCount++;
-
-        // 3. Snapshot every 100 events
-        if (eventCount % 100 == 0 && lastPosition.HasValue)
-        {
-            await snapshotStore.WriteAsync(streamId, lastPosition.Value, order.State);
-        }
-    }
+    // 2. Version is the position of the last replayed event
+    var streamId = new StreamId($"order-{orderId.Value}");
+    await snapshotStore.WriteAsync(streamId, order.Version, order.State);
 }
 
 // Usage: Rebuild snapshots for all orders
 public async Task RebuildAllSnapshotsAsync(IEventStore eventStore, ISnapshotStore<OrderState> snapshotStore)
 {
-    // Get all stream IDs (implementation-specific)
-    var streamIds = await GetAllOrderStreamIdsAsync();
+    var repository = new AggregateRepository<Order, OrderId>(
+        eventStore,
+        () => new Order(),
+        id => new StreamId($"order-{id.Value}"));
 
-    foreach (var streamId in streamIds)
+    // Get all order IDs (implementation-specific: IEventStore reads one stream at a time)
+    var orderIds = await GetAllOrderIdsAsync();
+
+    foreach (var orderId in orderIds)
     {
-        await RebuildSnapshotsAsync(eventStore, snapshotStore, streamId);
+        await RebuildSnapshotAsync(repository, snapshotStore, orderId);
     }
 }
 ```
@@ -498,22 +486,23 @@ public async Task RebuildAllSnapshotsAsync(IEventStore eventStore, ISnapshotStor
 [TestClass]
 public class SnapshotStoreTests
 {
-    private ISnapshotStore<OrderState> _store;
+    private SqlServerSnapshotStore<OrderState> _store;
 
     [TestInitialize]
     public async Task Setup()
     {
         _store = new SqlServerSnapshotStore<OrderState>(
-            "Server=.;Database=EventStoreTest;"
+            "Server=.;Database=EventStoreTest;",
+            serializer: mySerializer  // your IEventSerializer; it must handle OrderState
         );
-        await _store.InitializeAsync();
+        await _store.EnsureSchemaAsync();
     }
 
     [TestMethod]
     public async Task WriteAsync_WritesSnapshot()
     {
         var streamId = new StreamId("order-123");
-        var state = new OrderState { Total = 1000, IsPlaced = true };
+        var state = StateAfterPlacing(1000m);
         var position = new StreamPosition(10);
 
         await _store.WriteAsync(streamId, position, state);
@@ -538,17 +527,25 @@ public class SnapshotStoreTests
         var streamId = new StreamId("order-456");
 
         // Write first snapshot
-        var state1 = new OrderState { Total = 1000 };
+        var state1 = StateAfterPlacing(1000m);
         await _store.WriteAsync(streamId, new StreamPosition(10), state1);
 
         // Write second snapshot
-        var state2 = new OrderState { Total = 2000 };
+        var state2 = StateAfterPlacing(2000m);
         await _store.WriteAsync(streamId, new StreamPosition(20), state2);
 
         // Should have second snapshot
         var read = await _store.ReadAsync(streamId);
         Assert.AreEqual(new StreamPosition(20), read.Value.Position);
         Assert.AreEqual(2000, read.Value.State.Total);
+    }
+
+    // State has private setters: build it the way the application does, by raising events
+    private static OrderState StateAfterPlacing(decimal total)
+    {
+        using var order = new Order();
+        order.Place("ORD-001", total);
+        return order.State;
     }
 }
 ```
@@ -567,19 +564,11 @@ public class SnapshotStoreTests
 Fastest for large aggregates:
 
 ```csharp
-// Load snapshot (if exists)
-var snapshot = await snapshotStore.ReadAsync(streamId);
-if (snapshot.HasValue)
-{
-    aggregate.LoadSnapshot(snapshot.Value.State);
-    startPosition = snapshot.Value.Position.Next();
-}
-
-// Replay recent events
-await foreach (var e in eventStore.ReadAsync(streamId, startPosition))
-{
-    aggregate.ApplyHistoric(e.Event, e.Position);
-}
+// SnapshotCachingRepositoryDecorator, configured as in "Loading Aggregates with Snapshots":
+// 1. loads the snapshot (if it exists) and restores it with RestoreState
+// 2. replays only the events after the snapshot position
+var result = await snapshotRepository.LoadAsync(orderId);
+using var order = result.Value;
 ```
 
 ### Pattern 2: Periodic Snapshotting
@@ -587,17 +576,20 @@ await foreach (var e in eventStore.ReadAsync(streamId, startPosition))
 On aggregate save:
 
 ```csharp
-public async Task SaveAsync(Order order)
-{
-    // Append events
-    var result = await eventStore.AppendAsync(...);
+// The decorator writes a snapshot after a successful save once the policy says so
+var snapshotRepository = new SnapshotCachingRepositoryDecorator<Order, OrderId, OrderState>(
+    innerRepository: innerRepository,
+    snapshotStore: snapshotStore,
+    strategy: SnapshotLoadingStrategy.ValidateAndReplay,
+    restoreState: (order, state, pos) => order.RestoreState(state, pos),
+    eventStore: eventStore,
+    streamIdFactory: id => new StreamId($"order-{id.Value}"),
+    aggregateFactory: () => new Order(),
+    snapshotPolicy: SnapshotPolicy.EveryNEvents(100),  // Snapshot every 100 events
+    extractState: order => order.State);
 
-    // Snapshot every 100 events
-    if (order.Version % 100 == 0)
-    {
-        await snapshotStore.WriteAsync(streamId, order.Version, order.State);
-    }
-}
+// Appends the events, then snapshots if 100+ events were appended since the last snapshot
+var saved = await snapshotRepository.SaveAsync(order, orderId);
 ```
 
 ### Pattern 3: Lazy Snapshots
@@ -605,24 +597,24 @@ public async Task SaveAsync(Order order)
 Build snapshots only for frequently-accessed aggregates:
 
 ```csharp
-private readonly Dictionary<StreamId, int> _accessCounts = new();
+private readonly ConcurrentDictionary<OrderId, int> _accessCounts = new();
 
-public async Task<Order> LoadAsync(StreamId streamId)
+public async Task<Order> LoadAsync(OrderId orderId, CancellationToken ct = default)
 {
     // Track access
-    if (!_accessCounts.ContainsKey(streamId))
-        _accessCounts[streamId] = 0;
-    _accessCounts[streamId]++;
+    var accesses = _accessCounts.AddOrUpdate(orderId, 1, (_, n) => n + 1);
 
-    var order = await LoadFromEventStore(streamId);
+    // snapshotRepository: the decorator from Pattern 2, with snapshotPolicy: SnapshotPolicy.Never
+    var order = (await snapshotRepository.LoadAsync(orderId, ct)).Value;
 
-    // Snapshot only if accessed 10+ times
-    if (_accessCounts[streamId] >= 10 && order.Version > 500)
+    // Snapshot only if accessed 10+ times, and only a long stream
+    if (accesses >= 10 && order.Version.Value > 500)
     {
-        await snapshotStore.WriteAsync(streamId, order.Version, order.State);
+        var streamId = new StreamId($"order-{orderId.Value}");
+        await snapshotStore.WriteAsync(streamId, order.Version, order.State, ct);
     }
 
-    return order;
+    return order;  // the caller disposes it
 }
 ```
 

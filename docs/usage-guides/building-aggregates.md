@@ -6,28 +6,53 @@ Aggregates are the core of your event-sourced domain model. This guide shows pat
 
 ## Repository Interface (Shared Across All Guides)
 
-All examples in this guide and related guides use the generic repository interface for consistency:
+All examples in this guide and related guides load and save aggregates through the library's
+generic repository interface, `IAggregateRepository<TAggregate, TId>` in
+`ZeroAlloc.EventSourcing.Aggregates`:
 
 ```csharp
 public interface IAggregateRepository<TAggregate, TId>
-    where TAggregate : IAggregateRoot
+    where TAggregate : IAggregate
     where TId : struct
 {
-    /// Load an aggregate from the event store
-    Task<Result<TAggregate>> LoadAsync(TId id, CancellationToken ct = default);
-    
-    /// Save an aggregate and its uncommitted events
-    Task<Result<Success>> SaveAsync(TAggregate aggregate, CancellationToken ct = default);
+    /// Load an aggregate by replaying its event stream
+    ValueTask<Result<TAggregate, StoreError>> LoadAsync(TId id, CancellationToken ct = default);
+
+    /// Append the aggregate's uncommitted events, expecting the stream at aggregate.OriginalVersion
+    ValueTask<Result<AppendResult, StoreError>> SaveAsync(TAggregate aggregate, TId id, CancellationToken ct = default);
 }
 ```
 
-This generic interface works for any aggregate type. Alternatively, you can use a domain-specific interface for a single aggregate:
+`AggregateRepository<TAggregate, TId>` implements it over an `IEventStore`, and
+`SnapshotCachingRepositoryDecorator<TAggregate, TId, TState>` wraps it to load from snapshots:
+
+```csharp
+var repository = new AggregateRepository<Order, OrderId>(
+    eventStore,
+    () => new Order(),
+    id => new StreamId($"order-{id.Value}"));
+
+var saved = await repository.SaveAsync(order, orderId);
+if (saved.IsFailure && saved.Error.Code == "CONFLICT")
+{
+    // Someone else appended to the stream since this order was loaded: reload and retry
+}
+
+var loaded = await repository.LoadAsync(orderId);
+using var reloaded = loaded.Value;
+```
+
+Loading a stream that has no events succeeds with a fresh aggregate whose `Version` is
+`StreamPosition.Start`. The repository does not set `Id` on a loaded aggregate; keep the id you
+loaded it with.
+
+If you prefer a domain-specific interface for a single aggregate, wrap the generic one:
 
 ```csharp
 public interface IOrderRepository
 {
-    Task<Result<Order>> LoadAsync(OrderId id, CancellationToken ct = default);
-    Task<Result<Success>> SaveAsync(Order order, CancellationToken ct = default);
+    ValueTask<Result<Order, StoreError>> LoadAsync(OrderId id, CancellationToken ct = default);
+    ValueTask<Result<AppendResult, StoreError>> SaveAsync(Order order, OrderId id, CancellationToken ct = default);
 }
 ```
 
@@ -48,15 +73,15 @@ public sealed partial class Order : Aggregate<OrderId, OrderState>
     public void Confirm() { ... }
     public void Ship(string trackingNumber) { ... }
     
-    // 3. Event dispatcher (ApplyEvent implementation)
-    protected override OrderState ApplyEvent(OrderState state, object @event) => ...;
+    // 3. Event dispatcher: ApplyEvent is emitted by the source generator,
+    //    because the class is partial. You can also write it by hand; see below.
 }
 ```
 
 ### Key Design Principles
 
 1. **Sealed classes** — Inheritance defeats the single-responsibility principle
-2. **Partial for generators** — Source generators can auto-generate `ApplyEvent`
+2. **Partial for generators** — The source generator emits `ApplyEvent` and an event type registry
 3. **Public commands, private helpers** — Domain logic is public; internals are private
 4. **No property setters** — Only `Raise()` changes state
 
@@ -73,6 +98,7 @@ public partial struct OrderState : IAggregateState<OrderState>
     // 2. State properties
     public bool IsPlaced { get; private set; }
     public bool IsConfirmed { get; private set; }
+    public bool IsShipped { get; private set; }
     public decimal Total { get; private set; }
     public string? TrackingNumber { get; private set; }
     
@@ -84,7 +110,7 @@ public partial struct OrderState : IAggregateState<OrderState>
         this with { IsConfirmed = true };
     
     internal OrderState Apply(OrderShippedEvent e) =>
-        this with { IsPlaced = false, TrackingNumber = e.TrackingNumber };
+        this with { IsShipped = true, TrackingNumber = e.TrackingNumber };
 }
 ```
 
@@ -103,7 +129,7 @@ All aggregates and states depend on these base classes from ZeroAlloc.EventSourc
 The base class for all aggregates. Key methods and properties:
 
 ```csharp
-public abstract class Aggregate<TId, TState> : IAggregateRoot
+public abstract class Aggregate<TId, TState> : IAggregate, IDisposable
     where TId : struct
     where TState : struct, IAggregateState<TState>
 {
@@ -120,36 +146,35 @@ public abstract class Aggregate<TId, TState> : IAggregateRoot
     /// Used for optimistic concurrency control
     public StreamPosition OriginalVersion { get; private set; }
     
-    /// Apply an event to the current state (called by Raise)
-    /// Override in partial class or use [AggregateDispatch] source generator
+    /// Apply an event to the current state (called by Raise and during replay)
+    /// Emitted by the source generator for a partial class, or overridden by hand
     protected abstract TState ApplyEvent(TState state, object @event);
-    
+
     /// Raise a new event from a command
     /// Queues event, applies it to state, increments version
-    protected void Raise(object @event) { ... }
-    
-    /// Apply a historic event during replay
-    /// Called when loading from event store
-    internal void ApplyHistoric(object @event, StreamPosition position) { ... }
-    
+    protected void Raise<TEvent>(TEvent @event) where TEvent : notnull { ... }
+
     /// Restore state from a snapshot: sets State, Version and OriginalVersion to the snapshot's
     /// Called by the snapshot decorator's restoreState callback, before replaying the remaining events
     /// Throws InvalidOperationException unless the aggregate is fresh
     public void RestoreState(TState state, StreamPosition position) { ... }
 
-    /// Get all uncommitted events raised since load/creation
-    /// Called by the repository on save to get the events to append
-    internal ReadOnlySpan<object> DequeueUncommitted() { ... }
+    /// Returns the pooled buffer of uncommitted events
+    public void Dispose() { ... }
 }
 ```
 
 **Key usage patterns:**
 - `Raise()` to emit events from commands
-- `ApplyHistoric()` when the repository replays from the event store
 - `RestoreState()` in the `restoreState` callback of `SnapshotCachingRepositoryDecorator`:
   `restoreState: (order, state, pos) => order.RestoreState(state, pos)`. Only a fresh aggregate
   can be restored; one that has raised, replayed or restored anything throws `InvalidOperationException`
-- `DequeueUncommitted()` when the repository saves
+- `Dispose()` when you are done with the aggregate, usually through `using var order = ...`
+
+Replaying stored events and taking the uncommitted events for a save are internal to the
+library: `AggregateRepository` does both in `LoadAsync` and `SaveAsync`. Application code and
+tests go through the repository. The number of events raised but not yet saved is
+`Version.Value - OriginalVersion.Value`.
 
 ### IAggregateState<TState>
 
@@ -239,7 +264,7 @@ public sealed partial class Order : Aggregate<OrderId, OrderState>
 Some commands should raise multiple events:
 
 ```csharp
-public void PlaceAndConfirm(string orderNumber, decimal total, string paymentId)
+public void PlaceAndConfirm(string orderNumber, decimal total)
 {
     // Validate
     if (State.IsPlaced)
@@ -247,38 +272,46 @@ public void PlaceAndConfirm(string orderNumber, decimal total, string paymentId)
     
     // Raise multiple events atomically
     Raise(new OrderPlacedEvent(orderNumber, total));
-    Raise(new OrderConfirmedEvent(paymentId));
+    Raise(new OrderConfirmedEvent());
     
-    // Both events are now in the aggregate's uncommitted list
-    // When saved, both are persisted as a single transaction
+    // Both events are now pending on the aggregate
+    // When saved, both are persisted in a single append
 }
 
-// Later: Get all uncommitted events
-var events = order.DequeueUncommitted();  // [OrderPlacedEvent, OrderConfirmedEvent]
+// Later: one save appends both events in a single append
+var saved = await repository.SaveAsync(order, orderId);  // appends [OrderPlacedEvent, OrderConfirmedEvent]
 ```
 
 ## Event Type Registry
 
-The `EventTypeRegistry` maps event types to serializable names. It's used by the event store to serialize/deserialize events. Define it once and reuse across your application:
+An `IEventTypeRegistry` maps event types to the names stored with each event. The event store uses it to serialize and deserialize events; on read it skips events whose name it cannot resolve.
+
+The source generator emits one for every partial aggregate whose state has internal `Apply`
+methods, named `<Aggregate>EventTypeRegistry`: `OrderEventTypeRegistry` for `Order`. It maps
+each event type handled by an `Apply` method to its short type name.
+
+You can also implement the interface yourself, for example to keep old names readable after renaming an event type:
 
 ```csharp
-public class OrderEventTypeRegistry : IEventTypeRegistry
+public sealed class OrderEventTypeRegistry : IEventTypeRegistry
 {
-    public EventTypeRegistry()
+    private static readonly Dictionary<string, Type> ByName = new()
     {
-        Register<OrderPlacedEvent>(nameof(OrderPlacedEvent));
-        Register<OrderConfirmedEvent>(nameof(OrderConfirmedEvent));
-        Register<OrderShippedEvent>(nameof(OrderShippedEvent));
-        Register<OrderCancelledEvent>(nameof(OrderCancelledEvent));
-        Register<OrderDeliveredEvent>(nameof(OrderDeliveredEvent));
-    }
+        [nameof(OrderPlacedEvent)] = typeof(OrderPlacedEvent),
+        [nameof(OrderConfirmedEvent)] = typeof(OrderConfirmedEvent),
+        [nameof(OrderShippedEvent)] = typeof(OrderShippedEvent),
+        [nameof(OrderCancelledEvent)] = typeof(OrderCancelledEvent),
+        [nameof(OrderDeliveredEvent)] = typeof(OrderDeliveredEvent),
+    };
+
+    public bool TryGetType(string eventType, out Type? type) => ByName.TryGetValue(eventType, out type);
+
+    public string GetTypeName(Type type) => type.Name;
 }
 ```
 
-**Note:** The registry can be:
-1. **Manually created** (as above) — Define it in your domain layer
-2. **Source-generated** — Use ZeroAlloc.EventSourcing.Generators to auto-generate it
-3. **Dynamically created** — Register types at runtime
+If you write your own `OrderEventTypeRegistry`, write the `ApplyEvent` override by hand as well.
+Otherwise the generator emits a class with the same name and the build fails.
 
 Once defined, pass it to the EventStore:
 
@@ -311,11 +344,10 @@ public sealed partial class Order : Aggregate<OrderId, OrderState>
 
 ### Using Source Generators
 
-ZeroAlloc.EventSourcing can auto-generate this dispatcher:
+ZeroAlloc.EventSourcing generates this dispatcher for you. No attribute is needed; the class only
+has to be `partial`:
 
 ```csharp
-// Decorate with [AggregateDispatch]
-[AggregateDispatch]
 public sealed partial class Order : Aggregate<OrderId, OrderState>
 {
     // Source generator creates ApplyEvent automatically!
@@ -324,40 +356,56 @@ public sealed partial class Order : Aggregate<OrderId, OrderState>
 ```
 
 The generator:
-- Finds all `Apply` methods in the state struct
-- Creates a dispatch method that routes events to them
+- Finds all `internal` `Apply` methods with one parameter on the state struct
+- Creates the `ApplyEvent` override that routes events to them, and an `OrderEventTypeRegistry`
 - Ensures compile-time type safety
+- Skips an aggregate that already overrides `ApplyEvent` by hand
 
 ## Testing Aggregates
 
-Test aggregates by calling commands and asserting on raised events:
+Test aggregates by calling commands and asserting on state and on the raised events. The
+uncommitted events are internal, so to see them, save the aggregate through a repository over the
+in-memory event store and read the stream back:
 
 ```csharp
 public class OrderTests
 {
-    // Arrange: Create aggregate
-    private Order CreateOrder()
+    private readonly OrderId _orderId = new(Guid.NewGuid());
+    private readonly IEventStore _eventStore = new EventStore(
+        new InMemoryEventStoreAdapter(), new JsonEventSerializer(), new OrderEventTypeRegistry());
+    private readonly IAggregateRepository<Order, OrderId> _repository;
+
+    public OrderTests()
     {
-        var order = new Order();
-        order.SetId(new OrderId(Guid.NewGuid()));
-        return order;
+        _repository = new AggregateRepository<Order, OrderId>(
+            _eventStore, () => new Order(), id => new StreamId($"order-{id.Value}"));
+    }
+
+    // Saves the order and returns the events that save appended
+    private async Task<List<object>> SaveAndReadNewEventsAsync(Order order)
+    {
+        var from = order.OriginalVersion;
+        var saved = await _repository.SaveAsync(order, _orderId);
+        Assert.True(saved.IsSuccess);
+
+        var events = new List<object>();
+        await foreach (var envelope in _eventStore.ReadAsync(new StreamId($"order-{_orderId.Value}"), from))
+            events.Add(envelope.Event);
+        return events;
     }
 
     [Fact]
-    public void Place_RaisesOrderPlacedEvent()
+    public async Task Place_RaisesOrderPlacedEvent()
     {
         // Arrange
-        var order = CreateOrder();
-        
+        using var order = new Order();
+
         // Act
         order.Place("ORD-001", 1500m);
-        
+
         // Assert: Check raised events
-        var events = order.DequeueUncommitted();
-        Assert.Single(events);
-        Assert.IsType<OrderPlacedEvent>(events[0]);
-        
-        var placedEvent = (OrderPlacedEvent)events[0];
+        var events = await SaveAndReadNewEventsAsync(order);
+        var placedEvent = Assert.IsType<OrderPlacedEvent>(Assert.Single(events));
         Assert.Equal("ORD-001", placedEvent.OrderId);
         Assert.Equal(1500m, placedEvent.Total);
     }
@@ -366,37 +414,36 @@ public class OrderTests
     public void Confirm_ThrowsWhen_OrderNotPlaced()
     {
         // Arrange
-        var order = CreateOrder();
+        using var order = new Order();
         
         // Act & Assert
         var ex = Assert.Throws<InvalidOperationException>(
             () => order.Confirm());
         
-        Assert.Contains("not been placed", ex.Message);
+        Assert.Contains("unplaced", ex.Message);
     }
 
     [Fact]
-    public void Confirm_RaisesEvent_WhenValid()
+    public async Task Confirm_RaisesEvent_WhenValid()
     {
         // Arrange
-        var order = CreateOrder();
+        using var order = new Order();
         order.Place("ORD-001", 1500m);
-        order.DequeueUncommitted();  // Clear initial events
-        
+        await SaveAndReadNewEventsAsync(order);  // Persist the earlier event
+
         // Act
         order.Confirm();
-        
-        // Assert
-        var events = order.DequeueUncommitted();
-        Assert.Single(events);
-        Assert.IsType<OrderConfirmedEvent>(events[0]);
+
+        // Assert: only the event raised since the last save
+        var events = await SaveAndReadNewEventsAsync(order);
+        Assert.IsType<OrderConfirmedEvent>(Assert.Single(events));
     }
 
     [Fact]
     public void Ship_ThrowsWhen_OrderNotConfirmed()
     {
         // Arrange
-        var order = CreateOrder();
+        using var order = new Order();
         order.Place("ORD-001", 1500m);
         
         // Act & Assert
@@ -407,21 +454,20 @@ public class OrderTests
     }
 
     [Fact]
-    public void Ship_RaisesEvent_WhenValid()
+    public async Task Ship_RaisesEvent_WhenValid()
     {
         // Arrange
-        var order = CreateOrder();
+        using var order = new Order();
         order.Place("ORD-001", 1500m);
         order.Confirm();
-        order.DequeueUncommitted();  // Clear previous events
-        
+        await SaveAndReadNewEventsAsync(order);  // Persist the earlier events
+
         // Act
         order.Ship("TRACK-123");
-        
+
         // Assert
-        var events = order.DequeueUncommitted();
-        Assert.Single(events);
-        var shippedEvent = Assert.IsType<OrderShippedEvent>(events[0]);
+        var events = await SaveAndReadNewEventsAsync(order);
+        var shippedEvent = Assert.IsType<OrderShippedEvent>(Assert.Single(events));
         Assert.Equal("TRACK-123", shippedEvent.TrackingNumber);
     }
 
@@ -429,7 +475,7 @@ public class OrderTests
     public void StateReflectsAllRaisedEvents()
     {
         // Arrange
-        var order = CreateOrder();
+        using var order = new Order();
         
         // Act
         order.Place("ORD-001", 1500m);
@@ -445,6 +491,11 @@ public class OrderTests
     }
 }
 ```
+
+`JsonEventSerializer` stands for any `IEventSerializer`. See
+[Testing Aggregates](../testing/testing-aggregates.md) for a reusable harness, and
+[`docs/examples/03-testing/TestingAggregates.cs`](../examples/03-testing/TestingAggregates.cs)
+for a version that the library's test suite compiles and runs.
 
 ### Testing State Transitions
 
@@ -499,7 +550,7 @@ When you need to change an event:
 
 1. **Keep the old event type** — Don't delete it
 2. **Create a new event type** — With v2, v3, etc. suffix
-3. **Handle both versions** — Update the dispatcher to handle both
+3. **Handle both versions** — Add an `Apply` method for each version to the state
 
 Example: OrderPlacedEvent gets a new field:
 
@@ -513,19 +564,8 @@ public record OrderPlacedEventV2(
     decimal Total,
     string CustomerId);  // New field
 
-// State dispatcher handles both
-public sealed partial class Order : Aggregate<OrderId, OrderState>
-{
-    protected override OrderState ApplyEvent(OrderState state, object @event) =>
-        @event switch
-        {
-            // Handle both old and new versions
-            OrderPlacedEvent e => state.Apply(e),
-            OrderPlacedEventV2 e => state.Apply(e),
-            OrderConfirmedEvent e => state.Apply(e),
-            _ => state
-        };
-}
+// The generated ApplyEvent dispatches both versions, because the state has an
+// Apply method for each. With a hand-written ApplyEvent, add a case for OrderPlacedEventV2.
 
 // State handles both event types
 public partial struct OrderState : IAggregateState<OrderState>
@@ -590,24 +630,31 @@ Add the NuGet package:
 dotnet add package ZeroAlloc.EventSourcing.Generators
 ```
 
-Decorate your aggregate:
+Make your aggregate `partial`, with `internal` `Apply` methods on its state:
 
 ```csharp
-[AggregateDispatch]
 public sealed partial class Order : Aggregate<OrderId, OrderState>
 {
-    // Generator creates ApplyEvent
+    // Generator creates ApplyEvent and OrderEventTypeRegistry
 }
 ```
 
 ### View Generated Code
 
-In Visual Studio:
-1. Right-click project → Properties
-2. Build → Outputs → Tick "Generate single file"
-3. Open `obj/Debug/net8.0/YourProject.GlobalUsings.g.cs`
+In Visual Studio, expand the project's **Dependencies → Analyzers → ZeroAlloc.EventSourcing.Generators**
+node in Solution Explorer. For each aggregate there are two files:
 
-Or use a tool like `dotnet-script` to examine generated code.
+- `<Namespace>.<Aggregate>.ApplyEvent.g.cs`, the `ApplyEvent` switch (from `AggregateDispatchGenerator`)
+- `<Namespace>.<Aggregate>EventTypeRegistry.g.cs`, the event type registry (from `EventTypeRegistryGenerator`)
+
+To write them to disk, set this in the project file and rebuild; they appear under
+`obj/<Configuration>/<TargetFramework>/generated/ZeroAlloc.EventSourcing.Generators/`:
+
+```xml
+<PropertyGroup>
+  <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+</PropertyGroup>
+```
 
 ## Common Pitfalls
 
@@ -683,6 +730,9 @@ public partial struct OrderState : IAggregateState<OrderState>
 }
 
 // ✓ Good: Deterministic, use event timestamp
+// The command puts the time on the event when it raises it
+public record OrderPlacedEvent(string OrderNumber, decimal Total, DateTime PlacedAt);
+
 public partial struct OrderState : IAggregateState<OrderState>
 {
     public DateTime PlacedAt { get; private set; }
@@ -706,7 +756,9 @@ public partial struct OrderState : IAggregateState<OrderState>
         this with { IsPlaced = true };  // Missing PlacedAt and Source!
 }
 
-// ✓ Good: Update Apply for all new properties
+// ✓ Good: Update Apply for all new properties, carried on the event
+public record OrderPlacedEvent(string OrderNumber, decimal Total, DateTime PlacedAt, string? Source);
+
 public partial struct OrderState : IAggregateState<OrderState>
 {
     public bool IsPlaced { get; private set; }
@@ -766,7 +818,7 @@ public partial struct OrderState : IAggregateState<OrderState>
     public decimal Total { get; private set; }
     public string? TrackingNumber { get; private set; }
     
-    public OrderState Apply(OrderPlacedEvent e) =>
+    internal OrderState Apply(OrderPlacedEvent e) =>
         this with
         {
             IsPlaced = true,
@@ -774,26 +826,25 @@ public partial struct OrderState : IAggregateState<OrderState>
             CustomerId = e.CustomerId,
             Total = e.Total
         };
-    
-    public OrderState Apply(OrderConfirmedEvent e) =>
+
+    internal OrderState Apply(OrderConfirmedEvent e) =>
         this with { IsConfirmed = true };
-    
-    public OrderState Apply(OrderShippedEvent e) =>
+
+    internal OrderState Apply(OrderShippedEvent e) =>
         this with
         {
             IsShipped = true,
             TrackingNumber = e.TrackingNumber
         };
-    
-    public OrderState Apply(OrderDeliveredEvent e) =>
+
+    internal OrderState Apply(OrderDeliveredEvent e) =>
         this with { IsDelivered = true };
-    
-    public OrderState Apply(OrderCancelledEvent e) =>
+
+    internal OrderState Apply(OrderCancelledEvent e) =>
         this with { IsCancelled = true };
 }
 
-// Aggregate
-[AggregateDispatch]
+// Aggregate: partial, so the source generator emits ApplyEvent and OrderEventTypeRegistry
 public sealed partial class Order : Aggregate<OrderId, OrderState>
 {
     public string Status =>

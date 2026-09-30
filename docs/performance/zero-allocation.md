@@ -94,27 +94,25 @@ Why immutable?
 
 ### Event Replay Without Allocations
 
-During aggregate loading, the state is replayed without allocating:
+During aggregate loading, the state transitions themselves do not allocate:
 
 ```csharp
-public class Order : Aggregate<OrderId, OrderState>
-{
-    // Load all events for this aggregate
-    var order = new Order();
-    order.SetId(orderId);
+var repository = new AggregateRepository<Order, OrderId>(
+    eventStore,
+    () => new Order(),
+    id => new StreamId($"order-{id.Value}"));
 
-    // Replay each event
-    await foreach (var envelope in eventStore.ReadAsync(streamId, StreamPosition.Start))
-    {
-        // ApplyHistoric applies the event to state
-        // State is updated on the stack, no heap allocation
-        order.ApplyHistoric(envelope.Event, envelope.Position);
-    }
-    // After replay, order.State contains the final state (on stack)
-}
+// LoadAsync reads every event in the stream and applies each one to the state
+var loaded = await repository.LoadAsync(orderId);
+using var order = loaded.Value;
+
+// After replay, order.State contains the final state
 ```
 
-The `ApplyHistoric` method updates the internal state struct. Since it's a struct, it lives on the stack and is never allocated on the heap.
+For each replayed event, the repository calls the generated `ApplyEvent` dispatch, which returns a new
+`OrderState` value that replaces the old one. Because the state is a struct, it is stored inline in the
+aggregate object and each transition is a value copy, with no heap allocation for the state. Reading
+the events still allocates: each event is deserialized into an event object.
 
 ## Struct Sizing Guidelines
 
@@ -237,8 +235,9 @@ for (int i = 0; i < 1_000_000; i++)
 Copying during `with` expression:
 
 ```csharp
-var state = new OrderState { Total = 1000 };
-var newState = state with { IsPlaced = true };  // Copies struct + updates 1 field
+// Inside OrderState, where the private setters are accessible
+internal OrderState Apply(OrderPlacedEvent e) =>
+    this with { IsPlaced = true };  // Copies struct + updates 1 field
 // Cost: same as simple copy + field assignment = ~5 ns
 ```
 

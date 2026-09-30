@@ -807,10 +807,12 @@ services
 var sp = services.BuildServiceProvider();
 var repository = sp.GetRequiredService<IAggregateRepository<Order, OrderId>>();
 
-var order = new Order();
-order.SetId(new OrderId(Guid.NewGuid()));
+var orderId = new OrderId(Guid.NewGuid());
+using var order = new Order();
 order.Place("ORD-001", 1500m);
-await repository.SaveAsync(order);
+var saved = await repository.SaveAsync(order, orderId);
+if (saved.IsFailure)
+    throw new InvalidOperationException(saved.Error.ToString());  // e.g. [CONFLICT] on a concurrent write
 ```
 
 > `AddEventSourcing()` returns `EventSourcingBuilder`. Chain `.Use*()` calls to register store adapters.

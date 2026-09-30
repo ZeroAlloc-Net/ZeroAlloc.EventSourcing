@@ -76,7 +76,7 @@ if (result.IsSuccess)
     Console.WriteLine($"Stream: {appendResult.StreamId}");
     Console.WriteLine($"Next expected version: {appendResult.NextExpectedVersion}");
 }
-else if (result.Error == StoreError.Conflict)
+else if (result.Error.Code == "CONFLICT")
 {
     // Another process modified this stream since we loaded it
     // Reload and retry
@@ -240,39 +240,38 @@ The append-only guarantee is fundamental:
 
 ## Optimistic Locking with StreamPosition
 
-Concurrency safety is built in. When saving an aggregate, the event store checks if the stream version matches expectations:
+Concurrency safety is built in. When saving an aggregate, the repository appends its new events with the version it was loaded at as the expected version, and the event store checks that the stream is still at that version:
 
 ```csharp
 // Load aggregate from store
-var order = await repository.LoadAsync(orderId);
+var loaded = await repository.LoadAsync(orderId);
+var order = loaded.Value;
 // At this point, order.OriginalVersion = 3
 
 // Modify it
 order.Ship("TRACK-789");
-var newEvents = order.DequeueUncommitted();
 
-// Try to save
-var result = await eventStore.AppendAsync(
-    streamId,
-    newEvents,
-    expectedVersion: order.OriginalVersion  // We expect version 3
-);
+// Try to save: appends the new event with expectedVersion = order.OriginalVersion (3)
+var result = await repository.SaveAsync(order, orderId);
 
 if (result.IsSuccess)
 {
     // No other process modified this stream
-    // Version is now 4 (3 + 1 new event)
+    // Version is now 4 (3 + 1 new event): result.Value.NextExpectedVersion
 }
-else if (result.Error == StoreError.Conflict)
+else if (result.Error.Code == "CONFLICT")
 {
     // Another process appended to this stream since we loaded it
     // Our expectedVersion (3) didn't match the actual version (e.g., 4)
     // Reload and retry
-    order = await repository.LoadAsync(orderId);
+    order.Dispose();
+    order = (await repository.LoadAsync(orderId)).Value;
     order.Ship("TRACK-789");
     // Try again...
 }
 ```
+
+Calling `eventStore.AppendAsync(streamId, events, expectedVersion)` directly performs the same check and returns the same `CONFLICT` error.
 
 This pattern prevents "lost updates" — the silent data loss that happens in traditional concurrent systems.
 

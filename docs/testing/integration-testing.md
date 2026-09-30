@@ -14,6 +14,63 @@ Integration tests verify the complete event sourcing workflow: creating aggregat
 
 ## Test Infrastructure Setup
 
+### Test Domain and Serializer
+
+The fixtures below store a small `ProductAggregate`. The event store also needs an
+`IEventSerializer`; any implementation works. Tests can use a reflection-based JSON one,
+while the application uses `ZeroAllocEventSerializer` (registered by `AddEventSourcing()`):
+
+```csharp
+using System.Text.Json;
+using ZeroAlloc.EventSourcing;
+using ZeroAlloc.EventSourcing.Aggregates;
+
+public readonly record struct ProductId(Guid Value);
+
+public record ProductCreatedEvent(string Name);
+public record ProductDiscontinuedEvent();
+
+public partial struct ProductState : IAggregateState<ProductState>
+{
+    public static ProductState Initial => default;
+    public bool IsCreated { get; private set; }
+    public bool IsDiscontinued { get; private set; }
+    public string? Name { get; private set; }
+
+    internal ProductState Apply(ProductCreatedEvent e) => this with { IsCreated = true, Name = e.Name };
+    internal ProductState Apply(ProductDiscontinuedEvent _) => this with { IsDiscontinued = true };
+}
+
+// Partial, with no hand-written ApplyEvent: the source generator emits ApplyEvent
+// and ProductAggregateEventTypeRegistry
+public sealed partial class ProductAggregate : Aggregate<ProductId, ProductState>
+{
+    public void Create(string name)
+    {
+        if (State.IsCreated)
+            throw new InvalidOperationException("Product already created");
+        Raise(new ProductCreatedEvent(name));
+    }
+
+    public void Discontinue()
+    {
+        if (!State.IsCreated || State.IsDiscontinued)
+            throw new InvalidOperationException("Only an active product can be discontinued");
+        Raise(new ProductDiscontinuedEvent());
+    }
+}
+
+// Test-only serializer: reflection-based System.Text.Json
+public sealed class JsonEventSerializer : IEventSerializer
+{
+    public ReadOnlyMemory<byte> Serialize<TEvent>(TEvent @event) where TEvent : notnull
+        => JsonSerializer.SerializeToUtf8Bytes(@event, @event.GetType());
+
+    public object Deserialize(ReadOnlyMemory<byte> payload, Type eventType)
+        => JsonSerializer.Deserialize(payload.Span, eventType)!;
+}
+```
+
 ### Using In-Memory Store (Fast)
 
 ```csharp
@@ -33,7 +90,7 @@ public class IntegrationTestFixture : IAsyncLifetime
     {
         _adapter = new InMemoryEventStoreAdapter();
         var registry = new ProductAggregateEventTypeRegistry();
-        var serializer = new JsonAggregateSerializer();
+        var serializer = new JsonEventSerializer();  // your IEventSerializer, defined above
         
         _store = new EventStore(_adapter, serializer, registry);
         ProductRepository = new AggregateRepository<ProductAggregate, ProductId>(
@@ -66,8 +123,7 @@ public class ProductIntegrationTests : IClassFixture<IntegrationTestFixture>
         var productId = new ProductId(Guid.NewGuid());
         
         // Act 1: Create and save
-        var product = new ProductAggregate();
-        product.SetId(productId);
+        using var product = new ProductAggregate();
         product.Create("Test Product");
         
         var saveResult = await _fixture.ProductRepository.SaveAsync(product, productId);
@@ -78,7 +134,7 @@ public class ProductIntegrationTests : IClassFixture<IntegrationTestFixture>
         
         // Assert
         loadResult.IsSuccess.Should().BeTrue();
-        var loaded = loadResult.Value;
+        using var loaded = loadResult.Value;
         loaded.State.IsCreated.Should().BeTrue();
         loaded.State.Name.Should().Be("Test Product");
         loaded.Version.Value.Should().Be(1);
@@ -91,8 +147,7 @@ public class ProductIntegrationTests : IClassFixture<IntegrationTestFixture>
         var productId = new ProductId(Guid.NewGuid());
         
         // Act: Create, modify, discontinue
-        var product = new ProductAggregate();
-        product.SetId(productId);
+        using var product = new ProductAggregate();
         product.Create("Gadget");
         await _fixture.ProductRepository.SaveAsync(product, productId);
         
@@ -100,7 +155,7 @@ public class ProductIntegrationTests : IClassFixture<IntegrationTestFixture>
         var secondSave = await _fixture.ProductRepository.SaveAsync(product, productId);
         
         // Act: Load and verify all events applied
-        var loaded = (await _fixture.ProductRepository.LoadAsync(productId)).Value;
+        using var loaded = (await _fixture.ProductRepository.LoadAsync(productId)).Value;
         
         // Assert
         secondSave.IsSuccess.Should().BeTrue();
@@ -116,6 +171,7 @@ public class ProductIntegrationTests : IClassFixture<IntegrationTestFixture>
 ```csharp
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
+using Microsoft.Data.SqlClient;
 using Xunit;
 using ZeroAlloc.EventSourcing.SqlServer; // or PostgreSQL
 
@@ -142,8 +198,9 @@ public class DatabaseFixture : IAsyncLifetime
             .WithPortBinding(1433, 1433)
             .WithWaitStrategy(
                 Wait.ForUnixContainer()
-                    .UntilCommandSucceeds("sh", "-c", 
-                        "echo hello | sqlcmd -S localhost -U sa -P YourPassword123! -d master")
+                    .UntilCommandIsCompleted(
+                        "/opt/mssql-tools18/bin/sqlcmd", "-C", "-S", "localhost",
+                        "-U", "sa", "-P", "YourPassword123!", "-Q", "SELECT 1")
             )
             .Build();
         
@@ -163,47 +220,25 @@ public class DatabaseFixture : IAsyncLifetime
     
     private async Task InitializeDatabaseAsync()
     {
-        // Create database tables
-        using var connection = new SqlConnection(_connectionString);
-        await connection.OpenAsync();
-        
-        using var command = connection.CreateCommand();
-        command.CommandText = @"
-            IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = 'EventStore')
-            BEGIN
-                CREATE DATABASE EventStore;
-            END
-        ";
-        
-        await command.ExecuteNonQueryAsync();
-        
-        // Create event stream table
-        var setupConnection = new SqlConnection(_connectionString + ";Database=EventStore");
-        await setupConnection.OpenAsync();
-        
-        using var setupCommand = setupConnection.CreateCommand();
-        setupCommand.CommandText = @"
-            IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'EventStreams')
-            BEGIN
-                CREATE TABLE EventStreams (
-                    StreamId NVARCHAR(255) PRIMARY KEY,
-                    Version BIGINT NOT NULL,
-                    Timestamp DATETIME2 NOT NULL DEFAULT GETUTCDATE()
-                );
-                
-                CREATE TABLE Events (
-                    StreamId NVARCHAR(255) NOT NULL,
-                    Position BIGINT NOT NULL,
-                    EventType NVARCHAR(255) NOT NULL,
-                    Data NVARCHAR(MAX) NOT NULL,
-                    Timestamp DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
-                    PRIMARY KEY (StreamId, Position),
-                    FOREIGN KEY (StreamId) REFERENCES EventStreams(StreamId)
-                );
-            END
-        ";
-        
-        await setupCommand.ExecuteNonQueryAsync();
+        // Create the database
+        await using (var connection = new SqlConnection(_connectionString))
+        {
+            await connection.OpenAsync();
+
+            await using var command = connection.CreateCommand();
+            command.CommandText = @"
+                IF NOT EXISTS (SELECT 1 FROM sys.databases WHERE name = 'EventStore')
+                BEGIN
+                    CREATE DATABASE EventStore;
+                END
+            ";
+            await command.ExecuteNonQueryAsync();
+        }
+
+        _connectionString += ";Database=EventStore";
+
+        // Create the adapter's own tables, if they do not exist yet
+        await new SqlServerEventStoreAdapter(_connectionString).EnsureSchemaAsync();
     }
 }
 
@@ -223,7 +258,7 @@ public class SqlServerIntegrationTests
         // Arrange: Create repository with real database
         var adapter = new SqlServerEventStoreAdapter(_databaseFixture.ConnectionString);
         var registry = new ProductAggregateEventTypeRegistry();
-        var serializer = new JsonAggregateSerializer();
+        var serializer = new JsonEventSerializer();  // your IEventSerializer, defined above
         var store = new EventStore(adapter, serializer, registry);
         
         var repository = new AggregateRepository<ProductAggregate, ProductId>(
@@ -234,8 +269,7 @@ public class SqlServerIntegrationTests
         var productId = new ProductId(Guid.NewGuid());
         
         // Act: Create and save
-        var product = new ProductAggregate();
-        product.SetId(productId);
+        using var product = new ProductAggregate();
         product.Create($"Product-{Guid.NewGuid()}");
         
         var saveResult = await repository.SaveAsync(product, productId);
@@ -248,7 +282,8 @@ public class SqlServerIntegrationTests
         
         // Assert: Loaded from database
         loadResult.IsSuccess.Should().BeTrue();
-        loadResult.Value.State.Name.Should().StartWith("Product-");
+        using var loaded = loadResult.Value;
+        loaded.State.Name.Should().StartWith("Product-");
     }
 }
 ```
@@ -285,25 +320,57 @@ public partial struct OrderState : IAggregateState<OrderState>
 
 public sealed partial class Order : Aggregate<OrderId, OrderState>
 {
-    public void PlaceOrder(string orderId, decimal total) =>
+    public void PlaceOrder(string orderId, decimal total)
+    {
+        if (total <= 0)
+            throw new ArgumentException("Total must be positive");
+
         Raise(new OrderPlacedEvent(orderId, total));
-    
-    public void ConfirmOrder() =>
+    }
+
+    public void ConfirmOrder()
+    {
+        if (!State.IsPlaced || State.IsConfirmed)
+            throw new InvalidOperationException("Only a placed, unconfirmed order can be confirmed");
+
         Raise(new OrderConfirmedEvent());
-    
+    }
+
     public void ShipOrder(string tracking) =>
         Raise(new OrderShippedEvent(tracking));
-    
+
     public void SetId(OrderId id) => Id = id;
-    
-    protected override OrderState ApplyEvent(OrderState state, object @event) => @event switch
-    {
-        OrderPlacedEvent e => state.Apply(e),
-        OrderConfirmedEvent e => state.Apply(e),
-        OrderShippedEvent e => state.Apply(e),
-        _ => state
-    };
 }
+```
+
+`Order` is `partial` and does not write `ApplyEvent` by hand, so the source generator emits both
+the `ApplyEvent` switch and the `OrderEventTypeRegistry` the event store needs. A hand-written
+`ApplyEvent` turns both off.
+
+The repository builder is shared by all test classes on this page:
+
+```csharp
+internal static class TestRepositories
+{
+    public static AggregateRepository<Order, OrderId> BuildOrderRepository()
+        => BuildOrderRepository(out _);
+
+    public static AggregateRepository<Order, OrderId> BuildOrderRepository(out IEventStore store)
+    {
+        var adapter = new InMemoryEventStoreAdapter();
+        var registry = new OrderEventTypeRegistry();       // source-generated for Order
+        var serializer = new JsonEventSerializer();       // your IEventSerializer, defined above
+        store = new EventStore(adapter, serializer, registry);
+
+        return new AggregateRepository<Order, OrderId>(
+            store,
+            () => new Order(),
+            id => new StreamId($"order-{id.Value}"));
+    }
+}
+
+// In each test file:
+// using static TestRepositories;
 ```
 
 ### Test Class
@@ -454,32 +521,20 @@ public class OrderIntegrationTests : IClassFixture<IntegrationTestFixture>
     }
     
     [Fact]
-    public async Task LoadNonExistentOrder_ReturnsFailure()
+    public async Task LoadNonExistentOrder_ReturnsFreshAggregate()
     {
         // Arrange
         var orderId = new OrderId(Guid.NewGuid());
         var repository = BuildOrderRepository();
-        
+
         // Act
         var result = await repository.LoadAsync(orderId);
-        
-        // Assert
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("NOT_FOUND");
-    }
-    
-    // Helper
-    private AggregateRepository<Order, OrderId> BuildOrderRepository()
-    {
-        var adapter = new InMemoryEventStoreAdapter();
-        var registry = new OrderAggregateEventTypeRegistry();
-        var serializer = new JsonAggregateSerializer();
-        var store = new EventStore(adapter, serializer, registry);
-        
-        return new AggregateRepository<Order, OrderId>(
-            store,
-            () => new Order(),
-            id => new StreamId($"order-{id.Value}"));
+
+        // Assert: a stream with no events loads as a new aggregate, not as an error
+        result.IsSuccess.Should().BeTrue();
+        using var order = result.Value;
+        order.Version.Should().Be(StreamPosition.Start);
+        order.State.IsPlaced.Should().BeFalse();
     }
 }
 ```
@@ -497,39 +552,51 @@ public class SnapshotIntegrationTests : IClassFixture<IntegrationTestFixture>
     }
     
     [Fact]
-    public async Task SnapshotOptimization_SkipsEarlyEvents_LoadsFaster()
+    public async Task SnapshotLoad_RestoresSnapshotAndReplaysTheTail()
     {
-        // Arrange: Create order with many events
+        // Arrange: a repository that writes a snapshot on every save
         var orderId = new OrderId(Guid.NewGuid());
-        var repository = BuildSnapshotRepository();
+        var innerRepository = BuildOrderRepository(out var eventStore);
         var snapshotStore = new InMemorySnapshotStore<OrderState>();
-        
-        var order = new Order();
-        order.SetId(orderId);
-        order.PlaceOrder("ORD-001", 100m);
-        
-        // Act 1: Save initial order
-        await repository.SaveAsync(order, orderId);
-        
-        // Act 2: Take snapshot after placed
-        await snapshotStore.WriteAsync(
-            new StreamId($"order-{orderId.Value}"),
-            new StreamPosition(1),
-            order.State);
-        
-        // Act 3: Confirm and ship (new events after snapshot)
-        var loaded = (await repository.LoadAsync(orderId)).Value;
-        loaded.ConfirmOrder();
-        loaded.ShipOrder("TRACK-123");
-        await repository.SaveAsync(loaded, orderId);
-        
-        // Act 4: Load with snapshot optimization
-        var snapshot = await snapshotStore.ReadAsync(
-            new StreamId($"order-{orderId.Value}"));
-        
-        // Assert: Snapshot contains early state
+        var repository = new SnapshotCachingRepositoryDecorator<Order, OrderId, OrderState>(
+            innerRepository: innerRepository,
+            snapshotStore: snapshotStore,
+            strategy: SnapshotLoadingStrategy.ValidateAndReplay,
+            restoreState: (o, state, pos) => o.RestoreState(state, pos),
+            eventStore: eventStore,
+            streamIdFactory: id => new StreamId($"order-{id.Value}"),
+            aggregateFactory: () => new Order(),
+            snapshotPolicy: SnapshotPolicy.Always,
+            extractState: o => o.State);
+
+        // Act 1: Save the placed order; the decorator snapshots it at position 1
+        using (var order = new Order())
+        {
+            order.PlaceOrder("ORD-001", 100m);
+            (await repository.SaveAsync(order, orderId)).IsSuccess.Should().BeTrue();
+        }
+
+        var snapshot = await snapshotStore.ReadAsync(new StreamId($"order-{orderId.Value}"));
         snapshot.Should().NotBeNull();
-        snapshot!.Value.State.IsPlaced.Should().BeTrue();
+        snapshot!.Value.Position.Should().Be(new StreamPosition(1));
+        snapshot.Value.State.IsPlaced.Should().BeTrue();
+
+        // Act 2: Append more events without going through the decorator, so no new snapshot
+        using (var loaded = (await innerRepository.LoadAsync(orderId)).Value)
+        {
+            loaded.ConfirmOrder();
+            loaded.ShipOrder("TRACK-123");
+            (await innerRepository.SaveAsync(loaded, orderId)).IsSuccess.Should().BeTrue();
+        }
+
+        // Act 3: Load through the decorator: snapshot at 1, then events 2 and 3
+        using var final = (await repository.LoadAsync(orderId)).Value;
+
+        // Assert: same result as a full replay
+        final.State.IsShipped.Should().BeTrue();
+        final.State.Total.Should().Be(100m);
+        final.Version.Value.Should().Be(3);
+        final.OriginalVersion.Value.Should().Be(3);
     }
 }
 ```
@@ -551,41 +618,40 @@ public class ProjectionIntegrationTests : IClassFixture<IntegrationTestFixture>
     {
         // Arrange
         var orderId = new OrderId(Guid.NewGuid());
-        var repository = BuildOrderRepository();
+        var repository = BuildOrderRepository(out var store);
         var projection = new OrderListProjection();
-        
+
         // Act: Create order through aggregate
-        var order = new Order();
-        order.SetId(orderId);
+        using var order = new Order();
         order.PlaceOrder("ORD-001", 99.99m);
         order.ConfirmOrder();
-        
-        await repository.SaveAsync(order, orderId);
-        
-        // Act: Simulate event delivery to projection
-        var events = new[]
-        {
-            new EventEnvelope(
-                new StreamId($"order-{orderId.Value}"),
-                new StreamPosition(1),
-                new OrderPlacedEvent("ORD-001", 99.99m),
-                EventMetadata.New("OrderPlaced")
-            ),
-            new EventEnvelope(
-                new StreamId($"order-{orderId.Value}"),
-                new StreamPosition(2),
-                new OrderConfirmedEvent(),
-                EventMetadata.New("OrderConfirmed")
-            )
-        };
-        
-        foreach (var @event in events)
-            await projection.HandleAsync(@event);
-        
+
+        (await repository.SaveAsync(order, orderId)).IsSuccess.Should().BeTrue();
+
+        // Act: Deliver the stored events to the projection
+        await foreach (var envelope in store.ReadAsync(new StreamId($"order-{orderId.Value}")))
+            await projection.HandleAsync(envelope);
+
         // Assert: Projection has correct state
         projection.Current.OrderId.Should().Be("ORD-001");
         projection.Current.Amount.Should().Be(99.99m);
+        projection.Current.IsConfirmed.Should().BeTrue();
     }
+}
+
+// The read model and its projection
+public record OrderListItem(string OrderId, decimal Amount, bool IsConfirmed);
+
+public class OrderListProjection : Projection<OrderListItem>
+{
+    public OrderListProjection() => Current = new OrderListItem("", 0m, false);
+
+    protected override OrderListItem Apply(OrderListItem current, EventEnvelope @event) => @event.Event switch
+    {
+        OrderPlacedEvent e => current with { OrderId = e.OrderId, Amount = e.Total },
+        OrderConfirmedEvent => current with { IsConfirmed = true },
+        _ => current
+    };
 }
 ```
 
@@ -688,7 +754,7 @@ public class ErrorScenarioTests : IClassFixture<IntegrationTestFixture>
     }
     
     [Fact]
-    public async Task SaveWithInvalidCommand_RaisesException()
+    public void SaveWithInvalidCommand_RaisesException()
     {
         // Arrange
         var orderId = new OrderId(Guid.NewGuid());
@@ -704,7 +770,7 @@ public class ErrorScenarioTests : IClassFixture<IntegrationTestFixture>
     }
     
     [Fact]
-    public async Task ConfirmUnplacedOrder_RaisesException()
+    public void ConfirmUnplacedOrder_RaisesException()
     {
         // Arrange
         var orderId = new OrderId(Guid.NewGuid());
@@ -720,18 +786,19 @@ public class ErrorScenarioTests : IClassFixture<IntegrationTestFixture>
     }
     
     [Fact]
-    public async Task LoadDeletedStream_ReturnsNotFound()
+    public async Task LoadMissingStream_ReturnsFreshAggregate()
     {
         // Arrange
         var orderId = new OrderId(Guid.NewGuid());
         var repository = BuildOrderRepository();
-        
+
         // Act: Try to load non-existent order
         var result = await repository.LoadAsync(orderId);
-        
-        // Assert
-        result.IsFailure.Should().BeTrue();
-        result.Error.Code.Should().Be("NOT_FOUND");
+
+        // Assert: LoadAsync does not fail for a missing stream; check the version instead
+        result.IsSuccess.Should().BeTrue();
+        using var order = result.Value;
+        order.Version.Should().Be(StreamPosition.Start);
     }
 }
 ```

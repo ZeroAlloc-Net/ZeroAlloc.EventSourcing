@@ -18,33 +18,44 @@ dotnet add package ZeroAlloc.EventSourcing.InMemory
 ## Quick Start
 
 ```csharp
-// Wire up DI
-services
-    .AddEventSourcing()
-    .UseInMemoryEventStore();
+// Define the aggregate: an ID, events, a state struct and a partial aggregate class
+public readonly record struct OrderId(Guid Value);
+public sealed record OrderPlacedEvent(decimal Total);
 
-// Define an aggregate
-public sealed class OrderAggregate : Aggregate<OrderState>
+public partial struct OrderState : IAggregateState<OrderState>
 {
-    public Result<Unit, string> Place(string orderId, decimal total)
-    {
-        if (State.Placed) return "already placed";
-        Raise(new OrderPlacedEvent(orderId, total));
-        return Unit.Value;
-    }
+    public static OrderState Initial => default;
+    public bool Placed { get; private set; }
+    public decimal Total { get; private set; }
 
-    protected override OrderState Apply(OrderState state, object @event) => @event switch
-    {
-        OrderPlacedEvent e => state with { OrderId = e.OrderId, Total = e.Total, Placed = true },
-        _ => state,
-    };
+    internal OrderState Apply(OrderPlacedEvent e) => this with { Placed = true, Total = e.Total };
 }
 
+// The source generator adds ApplyEvent and OrderEventTypeRegistry
+public sealed partial class Order : Aggregate<OrderId, OrderState>
+{
+    public void Place(decimal total)
+    {
+        if (State.Placed) throw new InvalidOperationException("Order already placed");
+        Raise(new OrderPlacedEvent(total));
+    }
+}
+
+// Wire up DI, after the serializer setup shown in Installation
+services.AddSingleton<IEventTypeRegistry, OrderEventTypeRegistry>();
+services
+    .AddEventSourcing()
+    .UseInMemoryEventStore()
+    .UseAggregateRepository<Order, OrderId>(
+        () => new Order(),
+        id => new StreamId($"order-{id.Value}"));
+
 // Use
-var repo = sp.GetRequiredService<IAggregateRepository<OrderAggregate, string>>();
-var order = new OrderAggregate();
-order.Place("order-1", 99.99m);
-await repo.SaveAsync("order-1", order, CancellationToken.None);
+var repo = sp.GetRequiredService<IAggregateRepository<Order, OrderId>>();
+var orderId = new OrderId(Guid.NewGuid());
+using var order = new Order();
+order.Place(99.99m);
+var saved = await repo.SaveAsync(order, orderId, CancellationToken.None);
 ```
 
 ## Packages

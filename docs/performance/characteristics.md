@@ -169,14 +169,12 @@ state = state with { IsPlaced = true };  // Another cheap copy
 Event envelopes are kept in memory only briefly during reads:
 
 ```csharp
-// Event is deserialized into this envelope
+// Event is deserialized into this envelope, a readonly record struct
 var envelope = new EventEnvelope(
-    streamId: "order-123",
-    position: 1,
-    @event: new OrderPlacedEvent(...),  // Heap allocated
-    timestamp: DateTimeOffset.UtcNow,
-    metadata: new EventMetadata(...)
-);
+    StreamId: new StreamId("order-123"),
+    Position: new StreamPosition(1),
+    Event: new OrderPlacedEvent("ORD-001", 99.99m),   // Heap allocated
+    Metadata: EventMetadata.New("OrderPlacedEvent")); // Event id, type, timestamp
 ```
 
 The event object itself is heap-allocated (unavoidable in C#), but is only held in memory for the duration of processing.
@@ -220,23 +218,23 @@ For a typical workload:
 For aggregates with >100 events, use snapshots to avoid replaying everything:
 
 ```csharp
-// Without snapshot: 1.9 ms to load 1000 events
-var agg = new OrderAggregate();
-await foreach (var e in eventStore.ReadAsync(streamId, StreamPosition.Start))
-{
-    agg.ApplyHistoric(e.Event, e.Position);
-}
+// Without snapshot: replays all 1000 events
+var repository = new AggregateRepository<OrderAggregate, OrderId>(
+    eventStore,
+    () => new OrderAggregate(),
+    id => new StreamId($"order-{id.Value}"));
+using var agg = (await repository.LoadAsync(orderId)).Value;
 
-// With snapshot: ~1 ms to load snapshot + ~30 μs to load remaining events
-var snapshot = await snapshotStore.LoadAsync(streamId);
-if (snapshot != null)
-{
-    agg.LoadSnapshot(snapshot);  // ~1 ms
-}
-await foreach (var e in eventStore.ReadAsync(streamId, snapshot?.Position ?? StreamPosition.Start))
-{
-    agg.ApplyHistoric(e.Event, e.Position);
-}
+// With snapshot: restores the latest snapshot, then replays only the events after it
+var snapshotRepository = new SnapshotCachingRepositoryDecorator<OrderAggregate, OrderId, OrderState>(
+    innerRepository: repository,
+    snapshotStore: snapshotStore,
+    strategy: SnapshotLoadingStrategy.TrustSnapshot,
+    restoreState: (o, state, pos) => o.RestoreState(state, pos),
+    eventStore: eventStore,
+    streamIdFactory: id => new StreamId($"order-{id.Value}"),
+    aggregateFactory: () => new OrderAggregate());
+using var fromSnapshot = (await snapshotRepository.LoadAsync(orderId)).Value;
 ```
 
 **Impact:** 2x improvement in latency for 1000-event aggregates.

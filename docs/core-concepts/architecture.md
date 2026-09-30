@@ -10,16 +10,11 @@ In event sourcing, the most expensive operation is often **loading an aggregate*
 
 ```csharp
 // Load aggregate by replaying events
-var order = new Order();
-order.SetId(orderId);
-
-// Replay 1,000 events
-await foreach (var envelope in eventStore.ReadAsync(streamId, StreamPosition.Start))
-{
-    order.ApplyHistoric(envelope.Event, envelope.Position);
-    // Each event application creates a new state
-    // If TState were a class, that's 1,000 heap allocations!
-}
+// For a stream of 1,000 events, the repository reads each one and applies it
+// to the aggregate's state. Each event application creates a new state:
+// if TState were a class, that's 1,000 heap allocations!
+var loaded = await repository.LoadAsync(orderId);
+using var order = loaded.Value;
 ```
 
 If the aggregate's state were a class, replaying 1,000 events would create 1,000 objects on the heap, triggering garbage collection and hurting performance.
@@ -55,7 +50,11 @@ public abstract class Aggregate<TId, TState> : IAggregate
 {
     public TId Id { get; protected set; }
     public TState State { get; private set; }
-    public StreamPosition Version { get; private set; }
+    public StreamPosition Version { get; private set; }          // includes unsaved events
+    public StreamPosition OriginalVersion { get; private set; }  // last persisted position
+
+    // Sets State, Version and OriginalVersion from a snapshot, on a fresh aggregate only
+    public void RestoreState(TState state, StreamPosition position) { ... }
     
     protected void Raise<TEvent>(TEvent @event) where TEvent : notnull
     {
@@ -89,7 +88,7 @@ public readonly record struct CustomerId(Guid Value);
 
 // The ID is stack-allocated, hashable, and immutable
 var id = new OrderId(Guid.NewGuid());
-var order = await repository.LoadAsync(id);
+var loaded = await repository.LoadAsync(id);
 ```
 
 **Benefits:**
@@ -155,19 +154,24 @@ Understanding struct allocation is critical:
 When you create a local variable, it lives on the stack:
 
 ```csharp
-void ProcessOrder(OrderId orderId)
+OrderState Replay(OrderState state, IEnumerable<object> events)
 {
-    var order = new Order();           // Stack allocated
-    var state = new OrderState();      // Stack allocated
-    
-    await foreach (var envelope in eventStore.ReadAsync(streamId, StreamPosition.Start))
+    // state is a local struct: it lives on the stack, not the heap
+    foreach (var @event in events)
     {
-        order.ApplyHistoric(envelope.Event, envelope.Position);
-        // order.State = ApplyEvent(state, event) creates a new struct
-        // Struct is created on the stack, not the heap
+        // Each Apply returns a new struct value, copied on the stack
+        state = @event switch
+        {
+            OrderPlacedEvent e => state.Apply(e),
+            OrderShippedEvent e => state.Apply(e),
+            _ => state
+        };
     }
+    return state;
 }
 ```
+
+This is what the repository's replay does for you on `LoadAsync`: each event goes through the aggregate's `ApplyEvent` switch and produces a new state struct.
 
 ### On the Heap (Boxed)
 
@@ -251,10 +255,10 @@ ZeroAlloc.EventSourcing is designed for single-threaded aggregate ownership:
 
 ```csharp
 // Each aggregate is owned by a single thread
-var order = await repository.LoadAsync(orderId);
+using var order = (await repository.LoadAsync(orderId)).Value;
 order.Place("ORD-001", 1500m);
 order.Confirm();
-await repository.SaveAsync(order);
+await repository.SaveAsync(order, orderId);
 
 // If another thread tries to modify the same order, it must load its own instance
 // Conflicts are detected at save time (optimistic locking)
@@ -273,16 +277,17 @@ await repository.SaveAsync(order);
 
 ```csharp
 // Thread 1
-var order1 = await repository.LoadAsync(orderId);
+using var order1 = (await repository.LoadAsync(orderId)).Value;
 order1.Ship("TRACK-123");
+var saved1 = await repository.SaveAsync(order1, orderId);
 
 // Thread 2
-var order2 = await repository.LoadAsync(orderId);  // Separate instance
+using var order2 = (await repository.LoadAsync(orderId)).Value;  // Separate instance
 order2.Confirm();
+var saved2 = await repository.SaveAsync(order2, orderId);
 
-// Both call repository.SaveAsync()
 // Whichever saves first succeeds
-// The second gets StoreError.Conflict and must retry
+// The second gets a failed result with Error.Code == "CONFLICT" and must reload and retry
 ```
 
 This model works well for most systems. For extreme concurrency, consider:
@@ -339,9 +344,9 @@ public sealed partial class Order : Aggregate<OrderId, OrderState>
     }
 }
 
-var order = await repository.LoadAsync(orderId);
+using var order = (await repository.LoadAsync(orderId)).Value;
 order.Ship("TRACK-123");
-await repository.SaveAsync(order);
+await repository.SaveAsync(order, orderId);
 ```
 
 **Tradeoffs:**
@@ -367,7 +372,7 @@ public abstract class Aggregate<TId, TState> where TId : struct where TState : s
 - Enforces value type constraints at compile time
 - Clear separation of ID and state types
 - Enables type-safe repository patterns
-- Base class provides infrastructure (Raise, ApplyHistoric, etc.)
+- Base class provides the infrastructure: protected `Raise`, public `State`, `Version`, `OriginalVersion` and `RestoreState`; the repository replays streams onto it and saves its pending events
 - Easier than interface-based approach with multiple constraint combinations
 
 ### Why Events Are Immutable
@@ -386,9 +391,9 @@ public abstract class Aggregate<TId, TState> where TId : struct where TState : s
 
 ```csharp
 // Optimistic: Load, modify, save with version check
-var order = await repository.LoadAsync(id);      // No lock acquired
-order.Ship("TRACK-123");                         // No lock held
-await repository.SaveAsync(order);               // Check version here
+using var order = (await repository.LoadAsync(id)).Value;  // No lock acquired
+order.Ship("TRACK-123");                                   // No lock held
+await repository.SaveAsync(order, id);                     // Check version here
 ```
 
 **Rationale:**
@@ -416,18 +421,20 @@ public class OrderPlacementSaga
 {
     public async Task PlaceOrder(OrderId orderId, decimal amount)
     {
-        var order = await repository.LoadAsync(orderId);
-        order.Place("ORD-001", amount);
-        await repository.SaveAsync(order);
+        using (var order = (await repository.LoadAsync(orderId)).Value)
+        {
+            order.Place("ORD-001", amount);
+            await repository.SaveAsync(order, orderId);
+        }
         
         // Separately command payment system
         var paymentResult = await paymentService.ChargeAsync(amount);
         if (!paymentResult.Success)
         {
             // Compensate: cancel the order
-            order = await repository.LoadAsync(orderId);
+            using var order = (await repository.LoadAsync(orderId)).Value;
             order.Cancel();
-            await repository.SaveAsync(order);
+            await repository.SaveAsync(order, orderId);
         }
     }
 }

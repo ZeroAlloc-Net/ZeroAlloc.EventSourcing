@@ -1,7 +1,9 @@
 using System;
-using System.Collections.Generic;
+using System.Text.Json;
 using System.Threading.Tasks;
 using ZeroAlloc.EventSourcing;
+using ZeroAlloc.EventSourcing.Aggregates;
+using ZeroAlloc.EventSourcing.InMemory;
 
 namespace ZeroAlloc.EventSourcing.Examples.GettingStarted;
 
@@ -13,6 +15,8 @@ namespace ZeroAlloc.EventSourcing.Examples.GettingStarted;
 /// 2. Maintains state (OrderState)
 /// 3. Handles commands (Place, Confirm, Ship)
 /// 4. Raises events (OrderPlaced, OrderConfirmed, etc.)
+///
+/// This file is compiled and run by the test suite, so it only uses the public API.
 /// </summary>
 
 // Step 1: Define the aggregate identity (use a value type)
@@ -29,8 +33,9 @@ public partial struct OrderState : IAggregateState<OrderState>
     public decimal Total { get; private set; }
     public string? TrackingNumber { get; private set; }
 
-    // State transitions are pure functions that create new state
-    // Use 'with' expression for immutable updates
+    // State transitions are pure functions that create new state.
+    // Use a 'with' expression for immutable updates. The methods must be internal:
+    // the source generator emits the aggregate's ApplyEvent switch from them.
     internal OrderState Apply(OrderPlacedEvent e) =>
         this with { IsPlaced = true, Total = e.Total };
 
@@ -46,7 +51,9 @@ public record OrderPlacedEvent(string OrderNumber, decimal Total);
 public record OrderConfirmedEvent;
 public record OrderShippedEvent(string TrackingNumber);
 
-// Step 4: Define the aggregate (inherits from Aggregate<TId, TState>)
+// Step 4: Define the aggregate (inherits from Aggregate<TId, TState>).
+// The class is partial: the source generator adds the ApplyEvent override, which routes
+// each event to the matching Apply method above, and an OrderEventTypeRegistry.
 public sealed partial class Order : Aggregate<OrderId, OrderState>
 {
     // Command: Place an order
@@ -57,7 +64,7 @@ public sealed partial class Order : Aggregate<OrderId, OrderState>
             throw new InvalidOperationException("Order total must be positive");
 
         // Raise an event
-        // This updates internal state but doesn't persist yet
+        // This updates state immediately but doesn't persist anything yet
         Raise(new OrderPlacedEvent(orderNumber, total));
     }
 
@@ -86,60 +93,57 @@ public sealed partial class Order : Aggregate<OrderId, OrderState>
 
         Raise(new OrderShippedEvent(trackingNumber));
     }
-
-    // Event dispatch: tells the aggregate how to apply events
-    // Pattern match on event type and call appropriate Apply method
-    protected override OrderState ApplyEvent(OrderState state, object @event) => @event switch
-    {
-        OrderPlacedEvent e => state.Apply(e),
-        OrderConfirmedEvent e => state.Apply(e),
-        OrderShippedEvent e => state.Apply(e),
-        _ => state
-    };
 }
 
 // Step 5: Use the aggregate
-public class CreateFirstAggregateExample
+public static class CreateFirstAggregateExample
 {
-    public static async Task Main()
+    public static async Task<OrderState> RunAsync()
     {
-        // Create an in-memory event store (for this example)
-        var eventStore = new InMemoryEventStore();
+        // Create an in-memory event store (for this example).
+        // OrderEventTypeRegistry is emitted by the source generator for Order.
+        var eventStore = new EventStore(
+            new InMemoryEventStoreAdapter(),
+            new JsonEventSerializer(),
+            new OrderEventTypeRegistry());
+
+        // The repository loads aggregates by replaying their stream
+        // and saves their uncommitted events with optimistic concurrency.
+        var repository = new AggregateRepository<Order, OrderId>(
+            eventStore,
+            () => new Order(),
+            id => new StreamId($"order-{id.Value}"));
 
         // Create a new order aggregate
-        var order = new Order();
         var orderId = new OrderId(Guid.NewGuid());
-        order.SetId(orderId);
+        using var order = new Order();
 
         // Execute commands
         order.Place("ORD-001", 1500m);      // Raises OrderPlacedEvent
         order.Confirm();                     // Raises OrderConfirmedEvent
         order.Ship("TRACK-ABC123");          // Raises OrderShippedEvent
 
-        // Dequeue uncommitted events (events that haven't been persisted yet)
-        var events = order.DequeueUncommitted();
-        Console.WriteLine($"Raised {events.Count} events:");
-        foreach (var @event in events)
-        {
-            Console.WriteLine($"  - {@event.GetType().Name}");
-        }
+        // Version counts every applied event, OriginalVersion only the persisted ones
+        Console.WriteLine($"Raised {order.Version.Value - order.OriginalVersion.Value} events");
 
-        // Persist to event store
-        var streamId = new StreamId($"order-{orderId.Value}");
-        var result = await eventStore.AppendAsync(streamId, events, StreamPosition.Start);
+        // Persist the uncommitted events. The repository appends them at OriginalVersion,
+        // so a concurrent writer causes a CONFLICT error instead of a lost update.
+        var result = await repository.SaveAsync(order, orderId);
 
         if (result.IsSuccess)
         {
-            Console.WriteLine($"\nSuccessfully appended {events.Count} events");
-            Console.WriteLine($"First position: {result.Value.FirstPosition}");
-            Console.WriteLine($"Last position: {result.Value.LastPosition}");
-
-            // Update version tracking for next save
-            order.AcceptVersion(result.Value.LastPosition);
+            Console.WriteLine($"\nSuccessfully saved order {orderId.Value}");
+            Console.WriteLine($"Stream version is now {result.Value.NextExpectedVersion.Value}");
         }
         else
         {
-            Console.WriteLine($"Error appending events: {result.Error}");
+            Console.WriteLine($"Error saving events: {result.Error}");
+        }
+
+        // Read the persisted events back
+        await foreach (var envelope in eventStore.ReadAsync(new StreamId($"order-{orderId.Value}")))
+        {
+            Console.WriteLine($"  - {envelope.Position.Value}: {envelope.Event.GetType().Name}");
         }
 
         // View final state
@@ -149,5 +153,18 @@ public class CreateFirstAggregateExample
         Console.WriteLine($"  IsShipped: {order.State.IsShipped}");
         Console.WriteLine($"  Total: {order.State.Total}");
         Console.WriteLine($"  TrackingNumber: {order.State.TrackingNumber}");
+
+        return order.State;
+    }
+
+    // A reflection-based JSON serializer keeps the example short. In an application, use the
+    // built-in ZeroAllocEventSerializer that AddEventSourcing() registers; it is AOT-safe.
+    private sealed class JsonEventSerializer : IEventSerializer
+    {
+        public ReadOnlyMemory<byte> Serialize<TEvent>(TEvent @event) where TEvent : notnull
+            => JsonSerializer.SerializeToUtf8Bytes(@event, @event.GetType());
+
+        public object Deserialize(ReadOnlyMemory<byte> payload, Type eventType)
+            => JsonSerializer.Deserialize(payload.Span, eventType)!;
     }
 }

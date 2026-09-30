@@ -71,33 +71,36 @@ The primary API for persisting and reading events.
 **Usage Pattern:**
 
 ```csharp
+var streamId = new StreamId($"order-{orderId.Value}");
+
 // Append events (optimistic concurrency)
 var result = await eventStore.AppendAsync(
-    streamId: orderId,
+    id: streamId,
     events: new object[] { orderPlacedEvent, orderConfirmedEvent },
     expectedVersion: StreamPosition.Start // Use 0 for new streams
 );
 
-if (result.IsError)
+if (result.IsFailure && result.Error.Code == "CONFLICT")
 {
-    // Handle StoreError.Conflict (someone else updated the stream)
+    // Someone else updated the stream: reload and retry
 }
 
 // Read all events
-await foreach (var envelope in eventStore.ReadAsync(orderId))
+await foreach (var envelope in eventStore.ReadAsync(streamId))
 {
-    Console.WriteLine($"Event {envelope.Position}: {envelope.Event}");
+    Console.WriteLine($"Event {envelope.Position.Value}: {envelope.Event}");
 }
 
-// Subscribe to new events
-var subscription = await eventStore.SubscribeAsync(
-    streamId: orderId,
-    from: StreamPosition.AtVersion(10),
+// Subscribe to events after position 10
+await using var subscription = await eventStore.SubscribeAsync(
+    id: streamId,
+    from: new StreamPosition(10),
     handler: async (envelope, ct) => {
         Console.WriteLine($"New event: {envelope.Event}");
         await Task.CompletedTask;
     }
 );
+await subscription.StartAsync();  // events are delivered once the subscription is started
 ```
 
 **See Also:**
@@ -121,19 +124,21 @@ Optimizes loading of large aggregates by storing periodic checkpoints.
 **Usage Pattern:**
 
 ```csharp
+var streamId = new StreamId($"order-{orderId.Value}");
+
 // Load snapshot (if one exists)
-var snapshot = await snapshotStore.ReadAsync(orderId);
+var snapshot = await snapshotStore.ReadAsync(streamId);
 
 if (snapshot != null)
 {
     var (position, state) = snapshot.Value;
-    // Load remaining events from position onwards
+    // Load only the events after position
     // Faster than replaying entire event history
 }
 
-// After aggregates completes, save a snapshot
+// After a successful save, write a snapshot of the saved aggregate
 await snapshotStore.WriteAsync(
-    streamId: orderId,
+    streamId: streamId,
     position: aggregate.Version,
     state: aggregate.State
 );
@@ -244,8 +249,9 @@ In-memory event store. Perfect for testing, demos, and learning.
 
 ```csharp
 var adapter = new InMemoryEventStoreAdapter();
-var serializer = new JsonEventSerializer();
-var eventStore = new EventStore(adapter, serializer);
+var serializer = new JsonEventSerializer();       // your IEventSerializer
+var registry = new OrderEventTypeRegistry();      // emitted by the source generator for Order
+var eventStore = new EventStore(adapter, serializer, registry);
 
 // Use like any other event store
 await eventStore.AppendAsync(streamId, events, version);
@@ -271,14 +277,17 @@ Production-grade PostgreSQL persistence for events and snapshots.
 **Example:**
 
 ```csharp
-var eventStoreAdapter = new PostgreSqlEventStoreAdapter("Host=localhost;Database=events");
-var snapshotStore = new PostgreSqlSnapshotStore<OrderState>("Host=localhost;Database=events");
+await using var dataSource = NpgsqlDataSource.Create("Host=localhost;Database=events");
+var eventStoreAdapter = new PostgreSqlEventStoreAdapter(dataSource);
+var snapshotStore = new PostgreSqlSnapshotStore<OrderState>(dataSource);
 
-var eventStore = new EventStore(eventStoreAdapter, serializer);
+var eventStore = new EventStore(eventStoreAdapter, serializer, registry);
 
-// Use together for optimized loading
-var snapshot = await snapshotStore.ReadAsync(orderId);
-var events = eventStore.ReadAsync(orderId, 
+// Use together for optimized loading: the snapshot, then only the events after it.
+// SnapshotCachingRepositoryDecorator does this for you.
+var streamId = new StreamId($"order-{orderId.Value}");
+var snapshot = await snapshotStore.ReadAsync(streamId);
+var events = eventStore.ReadAsync(streamId,
     from: snapshot?.Position ?? StreamPosition.Start);
 ```
 
@@ -305,7 +314,7 @@ Production-grade SQL Server persistence for events and snapshots.
 var eventStoreAdapter = new SqlServerEventStoreAdapter("Server=.;Database=events");
 var snapshotStore = new SqlServerSnapshotStore<OrderState>("Server=.;Database=events");
 
-var eventStore = new EventStore(eventStoreAdapter, serializer);
+var eventStore = new EventStore(eventStoreAdapter, serializer, registry);
 ```
 
 **See Also:**
@@ -831,19 +840,22 @@ ZeroAlloc.EventSourcing.Generators/
 
 ```csharp
 // Setup
-var adapter = new PostgreSqlEventStoreAdapter("connection");
-var serializer = new JsonEventSerializer();
-var eventStore = new EventStore(adapter, serializer);
+await using var dataSource = NpgsqlDataSource.Create("connection");
+var adapter = new PostgreSqlEventStoreAdapter(dataSource);
+var serializer = new JsonEventSerializer();       // your IEventSerializer
+var registry = new OrderEventTypeRegistry();      // emitted by the source generator for Order
+var eventStore = new EventStore(adapter, serializer, registry);
 
 // Append events
+var streamId = new StreamId($"order-{orderId.Value}");
 var result = await eventStore.AppendAsync(
-    streamId: orderId,
+    id: streamId,
     events: new object[] { @event },
     expectedVersion: StreamPosition.Start
 );
 
 // Read events
-await foreach (var envelope in eventStore.ReadAsync(orderId))
+await foreach (var envelope in eventStore.ReadAsync(streamId))
 {
     Console.WriteLine(envelope.Event);
 }
@@ -856,21 +868,18 @@ await foreach (var envelope in eventStore.ReadAsync(orderId))
 public partial struct OrderState : IAggregateState<OrderState>
 {
     public static OrderState Initial => default;
-    
-    public OrderState Apply(OrderPlacedEvent e) => this with { Amount = e.Amount };
+
+    public decimal Amount { get; private set; }
+
+    // Apply methods must be internal: the source generator builds the dispatch from them
+    internal OrderState Apply(OrderPlacedEvent e) => this with { Amount = e.Amount };
 }
 
-// Define aggregate
+// Define aggregate. The class is partial: the source generator adds the ApplyEvent
+// override and an OrderEventTypeRegistry, so there is no dispatch code to write.
 public sealed partial class Order : Aggregate<OrderId, OrderState>
 {
     public void Place(decimal amount) => Raise(new OrderPlacedEvent(amount));
-    
-    // ApplyEvent generated by source generator
-    protected override OrderState ApplyEvent(OrderState state, object @event) => @event switch
-    {
-        OrderPlacedEvent e => state.Apply(e),
-        _ => state
-    };
 }
 ```
 

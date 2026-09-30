@@ -1,8 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Threading;
 using System.Threading.Tasks;
 using ZeroAlloc.EventSourcing;
+using ZeroAlloc.EventSourcing.Aggregates;
+using ZeroAlloc.EventSourcing.InMemory;
 
 namespace ZeroAlloc.EventSourcing.Examples.Advanced;
 
@@ -13,36 +17,36 @@ namespace ZeroAlloc.EventSourcing.Examples.Advanced;
 /// They allow loading large aggregates without replaying their entire history.
 ///
 /// This example shows:
-/// 1. Simple in-memory snapshot store
-/// 2. JSON serialization of aggregate state
-/// 3. Snapshot loading patterns
-/// 4. When to take snapshots
+/// 1. A simple custom ISnapshotStore that stores state as JSON
+/// 2. Writing snapshots on save with an ISnapshotPolicy
+/// 3. Loading from a snapshot with SnapshotCachingRepositoryDecorator
+/// 4. Rebuilding a snapshot from the full event stream
+///
+/// This file is compiled and run by the test suite, so it only uses the public API.
 /// </summary>
 
-// Aggregate state (must be a struct)
+// Aggregate state (must be a struct). [JsonInclude] lets System.Text.Json
+// write the private setters when the snapshot store deserializes a snapshot.
 public partial struct AccountState : IAggregateState<AccountState>
 {
     public static AccountState Initial => default;
 
-    public decimal Balance { get; private set; }
-    public int TransactionCount { get; private set; }
-    public DateTime LastTransactionAt { get; private set; }
+    [JsonInclude] public decimal Balance { get; private set; }
+    [JsonInclude] public int TransactionCount { get; private set; }
 
     internal AccountState Apply(MoneyDepositedEvent e) => this with
     {
         Balance = Balance + e.Amount,
         TransactionCount = TransactionCount + 1,
-        LastTransactionAt = DateTime.UtcNow
     };
 
     internal AccountState Apply(MoneyWithdrawnEvent e) => this with
     {
         Balance = Balance - e.Amount,
         TransactionCount = TransactionCount + 1,
-        LastTransactionAt = DateTime.UtcNow
     };
 
-    public override string ToString() =>
+    public override readonly string ToString() =>
         $"Account: ${Balance:F2}, {TransactionCount} transactions";
 }
 
@@ -50,7 +54,7 @@ public partial struct AccountState : IAggregateState<AccountState>
 public record MoneyDepositedEvent(decimal Amount);
 public record MoneyWithdrawnEvent(decimal Amount);
 
-// Aggregate
+// Aggregate. The source generator adds ApplyEvent and AccountEventTypeRegistry.
 public sealed partial class Account : Aggregate<Guid, AccountState>
 {
     public void Deposit(decimal amount)
@@ -71,239 +75,175 @@ public sealed partial class Account : Aggregate<Guid, AccountState>
 
         Raise(new MoneyWithdrawnEvent(amount));
     }
-
-    protected override AccountState ApplyEvent(AccountState state, object @event) => @event switch
-    {
-        MoneyDepositedEvent e => state.Apply(e),
-        MoneyWithdrawnEvent e => state.Apply(e),
-        _ => state
-    };
 }
 
 /// <summary>
-/// Simple in-memory snapshot store for demonstration.
-/// In production, you'd implement with SQL Server, Redis, etc.
+/// Simple in-memory snapshot store that keeps the latest snapshot per stream as JSON.
+/// In production, you'd implement this with SQL Server, Redis, etc., or use one of the
+/// SQL snapshot stores the library ships.
 /// </summary>
-public class InMemorySnapshotStore : ISnapshotStore<AccountState>
+public sealed class JsonAccountSnapshotStore : ISnapshotStore<AccountState>
 {
     // Storage: stream ID -> (position, serialized state)
     private readonly Dictionary<string, (StreamPosition Position, string StateJson)> _snapshots = new();
+    private readonly object _lock = new();
 
-    public async ValueTask<(StreamPosition, AccountState)?> ReadAsync(
+    public int WriteCount { get; private set; }
+
+    public ValueTask<(StreamPosition Position, AccountState State)?> ReadAsync(
         StreamId streamId,
         CancellationToken ct = default)
     {
-        lock (_snapshots)
+        lock (_lock)
         {
             if (!_snapshots.TryGetValue(streamId.Value, out var snapshot))
-                return null;
+                return ValueTask.FromResult<(StreamPosition, AccountState)?>(null);
 
             // Deserialize JSON back to state
-            var state = JsonSerializer.Deserialize<AccountState>(snapshot.StateJson)!;
-            return (snapshot.Position, state);
+            var state = JsonSerializer.Deserialize<AccountState>(snapshot.StateJson);
+            return ValueTask.FromResult<(StreamPosition, AccountState)?>((snapshot.Position, state));
         }
     }
 
-    public async ValueTask WriteAsync(
+    public ValueTask WriteAsync(
         StreamId streamId,
         StreamPosition position,
         AccountState state,
         CancellationToken ct = default)
     {
-        lock (_snapshots)
+        lock (_lock)
         {
-            // Serialize state to JSON
-            var stateJson = JsonSerializer.Serialize(state);
-
-            // Store (overwrite existing)
-            _snapshots[streamId.Value] = (position, stateJson);
-
-            Console.WriteLine($"  [Snapshot] Saved {streamId.Value} at position {position}: {state}");
+            // Store (overwrite existing): only the latest snapshot is ever read
+            _snapshots[streamId.Value] = (position, JsonSerializer.Serialize(state));
+            WriteCount++;
         }
-    }
 
-    public void Clear()
-    {
-        lock (_snapshots)
-        {
-            _snapshots.Clear();
-        }
-    }
-
-    public int Count()
-    {
-        lock (_snapshots)
-        {
-            return _snapshots.Count;
-        }
-    }
-}
-
-/// <summary>
-/// Strategy for deciding when to take snapshots.
-/// </summary>
-public interface ISnapshotStrategy
-{
-    bool ShouldSnapshot(StreamPosition currentPosition, StreamPosition lastSnapshotPosition);
-}
-
-/// <summary>
-/// Snapshot every N events.
-/// </summary>
-public class CountBasedSnapshotStrategy : ISnapshotStrategy
-{
-    private readonly int _interval;
-
-    public CountBasedSnapshotStrategy(int interval = 100)
-    {
-        _interval = interval;
-    }
-
-    public bool ShouldSnapshot(StreamPosition currentPosition, StreamPosition lastSnapshotPosition)
-    {
-        var eventsSinceLastSnapshot = currentPosition.Value - lastSnapshotPosition.Value;
-        return eventsSinceLastSnapshot >= _interval;
+        Console.WriteLine($"  [Snapshot] Saved {streamId.Value} at position {position.Value}: {state}");
+        return ValueTask.CompletedTask;
     }
 }
 
 /// <summary>
 /// Usage example showing snapshot patterns.
 /// </summary>
-public class CustomSnapshotStoreExample
+public static class CustomSnapshotStoreExample
 {
-    public static async Task Main()
+    public static async Task<AccountState> RunAsync()
     {
         Console.WriteLine("=== Custom Snapshot Store Example ===\n");
 
         // Create services
-        var snapshotStore = new InMemorySnapshotStore();
-        var eventStore = new InMemoryEventStore();
-        var strategy = new CountBasedSnapshotStrategy(interval: 5);  // Snapshot every 5 events
+        var snapshotStore = new JsonAccountSnapshotStore();
+        var eventStore = new EventStore(
+            new InMemoryEventStoreAdapter(),
+            new JsonEventSerializer(),
+            new AccountEventTypeRegistry());
+
+        static StreamId StreamIdFor(Guid id) => new($"account-{id}");
+
+        var innerRepository = new AggregateRepository<Account, Guid>(
+            eventStore,
+            () => new Account(),
+            StreamIdFor);
+
+        // The decorator writes a snapshot after a save once 5 events have been appended since
+        // the last one, and loads from the latest snapshot plus the events after it.
+        var repository = new SnapshotCachingRepositoryDecorator<Account, Guid, AccountState>(
+            innerRepository: innerRepository,
+            snapshotStore: snapshotStore,
+            strategy: SnapshotLoadingStrategy.ValidateAndReplay,
+            restoreState: (account, state, position) => account.RestoreState(state, position),
+            eventStore: eventStore,
+            streamIdFactory: StreamIdFor,
+            aggregateFactory: () => new Account(),
+            snapshotPolicy: SnapshotPolicy.EveryNEvents(5),
+            extractState: account => account.State);
 
         var accountId = new Guid("00000000-0000-0000-0000-000000000001");
-        var streamId = new StreamId($"account-{accountId}");
 
         Console.WriteLine("Step 1: Create account and perform transactions\n");
 
-        // Create and modify account
-        var account = new Account();
-        account.SetId(accountId);
-
-        // Perform 12 transactions
+        // Save after every transaction, as a request handler would
         for (int i = 0; i < 12; i++)
         {
+            var loaded = await repository.LoadAsync(accountId);
+            using var account = loaded.Value;
+
             if (i % 2 == 0)
                 account.Deposit(100m);
             else
                 account.Withdraw(50m);
+
+            var saved = await repository.SaveAsync(account, accountId);
+            if (saved.IsFailure)
+                throw new InvalidOperationException(saved.Error.ToString());
         }
 
-        // Append to event store
-        var events = account.DequeueUncommitted();
-        var appendResult = await eventStore.AppendAsync(streamId, events, StreamPosition.Start);
-        account.AcceptVersion(appendResult.Value.LastPosition);
+        Console.WriteLine($"\nSnapshots written: {snapshotStore.WriteCount}\n");
 
-        Console.WriteLine($"Appended {events.Count} events to stream\n");
+        Console.WriteLine("Step 2: Load account using the latest snapshot\n");
 
-        Console.WriteLine("Step 2: Save snapshots at strategic points\n");
+        var snapshot = await snapshotStore.ReadAsync(StreamIdFor(accountId));
+        Console.WriteLine($"Latest snapshot is at position {snapshot?.Position.Value}");
 
-        // Simulate reading and snapshotting
-        var position = StreamPosition.Start - 1;
-        var lastSnapshotPosition = StreamPosition.Start - 1;
+        // Restores the snapshot state, then replays only the events after it
+        var result = await repository.LoadAsync(accountId);
+        using var fromSnapshot = result.Value;
+        Console.WriteLine($"Loaded account at version {fromSnapshot.Version.Value}: {fromSnapshot.State}");
 
-        var account2 = new Account();
-        account2.SetId(accountId);
+        Console.WriteLine("\nStep 3: Rebuild the snapshot from the full stream\n");
 
-        await foreach (var envelope in eventStore.ReadAsync(streamId, StreamPosition.Start))
-        {
-            account2.ApplyHistoric(envelope.Event, envelope.Position);
-            position = envelope.Position;
-
-            // Check if we should snapshot
-            if (strategy.ShouldSnapshot(position, lastSnapshotPosition))
-            {
-                await snapshotStore.WriteAsync(streamId, position, account2.State);
-                lastSnapshotPosition = position;
-            }
-        }
-
-        Console.WriteLine($"\nSnapshots created: {snapshotStore.Count()}\n");
-
-        Console.WriteLine("Step 3: Load account using snapshot\n");
-
-        // Load account with snapshot
-        var account3 = new Account();
-        account3.SetId(accountId);
-
-        var snapshot = await snapshotStore.ReadAsync(streamId);
-
-        if (snapshot.HasValue)
-        {
-            var (snapshotPosition, snapshotState) = snapshot.Value;
-            account3.LoadSnapshot(snapshotState);
-
-            Console.WriteLine($"Loaded from snapshot at position {snapshotPosition}");
-            Console.WriteLine($"Account state: {account3.State}\n");
-
-            // Replay remaining events (if any)
-            var remainingEvents = 0;
-            await foreach (var envelope in eventStore.ReadAsync(streamId, snapshotPosition.Next()))
-            {
-                account3.ApplyHistoric(envelope.Event, envelope.Position);
-                remainingEvents++;
-            }
-
-            Console.WriteLine($"Replayed {remainingEvents} additional events");
-            Console.WriteLine($"Final state: {account3.State}");
-        }
+        await SnapshotRebuilder.RebuildSnapshotAsync(innerRepository, snapshotStore, accountId, StreamIdFor(accountId));
 
         Console.WriteLine("\n=== Summary ===");
-        Console.WriteLine($"Total events: {events.Count}");
-        Console.WriteLine($"Snapshots: {snapshotStore.Count()}");
-        Console.WriteLine($"Final account: {account3.State}");
+        Console.WriteLine($"Snapshots written: {snapshotStore.WriteCount}");
+        Console.WriteLine($"Final account: {fromSnapshot.State}");
+
+        return fromSnapshot.State;
+    }
+
+    // A reflection-based JSON serializer keeps the example short. In an application, use the
+    // built-in ZeroAllocEventSerializer that AddEventSourcing() registers; it is AOT-safe.
+    private sealed class JsonEventSerializer : IEventSerializer
+    {
+        public ReadOnlyMemory<byte> Serialize<TEvent>(TEvent @event) where TEvent : notnull
+            => JsonSerializer.SerializeToUtf8Bytes(@event, @event.GetType());
+
+        public object Deserialize(ReadOnlyMemory<byte> payload, Type eventType)
+            => JsonSerializer.Deserialize(payload.Span, eventType)!;
     }
 }
 
 /// <summary>
-/// Advanced example: Snapshot rebuilding.
-/// When you change snapshot strategy or state structure,
-/// rebuild all snapshots by replaying events.
+/// Advanced example: snapshot rebuilding.
+/// When you change the state structure, old snapshots no longer match it. Rebuild the
+/// snapshot by replaying the full stream through the plain repository, which never reads
+/// snapshots, and writing the result.
 /// </summary>
 public static class SnapshotRebuilder
 {
-    public static async Task RebuildSnapshotsAsync(
-        IEventStore eventStore,
+    public static async Task RebuildSnapshotAsync(
+        IAggregateRepository<Account, Guid> fullReplayRepository,
         ISnapshotStore<AccountState> snapshotStore,
+        Guid accountId,
         StreamId streamId,
-        ISnapshotStrategy strategy)
+        CancellationToken ct = default)
     {
-        Console.WriteLine($"Rebuilding snapshots for {streamId}...");
+        Console.WriteLine($"Rebuilding snapshot for {streamId}...");
 
-        var account = new Account();
-        var lastSnapshotPosition = StreamPosition.Start - 1;
-        var snapshotCount = 0;
+        var loaded = await fullReplayRepository.LoadAsync(accountId, ct);
+        if (loaded.IsFailure)
+            throw new InvalidOperationException(loaded.Error.ToString());
 
-        await foreach (var envelope in eventStore.ReadAsync(streamId, StreamPosition.Start))
+        using var account = loaded.Value;
+        if (account.Version == StreamPosition.Start)
         {
-            account.ApplyHistoric(envelope.Event, envelope.Position);
-
-            // Check snapshot strategy
-            if (strategy.ShouldSnapshot(envelope.Position, lastSnapshotPosition))
-            {
-                await snapshotStore.WriteAsync(streamId, envelope.Position, account.State);
-                lastSnapshotPosition = envelope.Position;
-                snapshotCount++;
-            }
+            Console.WriteLine($"Stream {streamId} is empty; nothing to snapshot");
+            return;
         }
 
-        Console.WriteLine($"Created {snapshotCount} snapshots for {streamId}");
+        // Version is the position of the last replayed event
+        await snapshotStore.WriteAsync(streamId, account.Version, account.State, ct);
+        Console.WriteLine($"Rebuilt snapshot for {streamId} at position {account.Version.Value}");
     }
-
-    // Usage:
-    // var snapshotStore = new InMemorySnapshotStore();
-    // var eventStore = new InMemoryEventStore();
-    // var strategy = new CountBasedSnapshotStrategy(interval: 100);
-    // var streamId = new StreamId("account-123");
-    //
-    // await RebuildSnapshotsAsync(eventStore, snapshotStore, streamId, strategy);
 }
