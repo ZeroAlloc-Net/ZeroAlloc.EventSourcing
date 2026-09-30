@@ -43,8 +43,8 @@ using var reloaded = loaded.Value;
 ```
 
 Loading a stream that has no events succeeds with a fresh aggregate whose `Version` is
-`StreamPosition.Start`. The repository does not set `Id` on a loaded aggregate; keep the id you
-loaded it with.
+`StreamPosition.Start`. `LoadAsync` sets the loaded aggregate's `Id` to the id you passed, also
+for an empty stream and for a snapshot load.
 
 If you prefer a domain-specific interface for a single aggregate, wrap the generic one:
 

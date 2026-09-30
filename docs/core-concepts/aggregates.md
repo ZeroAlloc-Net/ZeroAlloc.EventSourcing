@@ -111,7 +111,7 @@ await repository.SaveAsync(order, orderId);   // Appends to stream "order-<guid>
 var loaded = await repository.LoadAsync(orderId);
 ```
 
-The repository takes the ID as an argument on every `LoadAsync` and `SaveAsync`; it does not set the aggregate's `Id` property. If your aggregate needs its own ID, set it from a command method, for example from the event that creates it.
+The repository takes the ID as an argument on every `LoadAsync` and `SaveAsync`. `LoadAsync` sets the loaded aggregate's `Id` to that ID, on every load path, including a snapshot load through `SnapshotCachingRepositoryDecorator`. A new aggregate has `Id == default` until it sets `Id` itself, for example from the command that creates it; `SaveAsync` does not set it.
 
 ## Aggregate Roots vs. Entities
 

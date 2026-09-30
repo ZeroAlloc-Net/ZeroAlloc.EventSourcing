@@ -101,8 +101,9 @@ public sealed class SnapshotCachingRepositoryDecorator<TAggregate, TId, TState> 
         if (validationResult.HasValue)
             return validationResult.Value;
 
-        // Create a fresh aggregate instance and restore snapshot state
+        // Create a fresh aggregate instance, give it the id it is loaded with, and restore snapshot state
         var aggregate = _aggregateFactory();
+        AggregateIdentity.Assign(aggregate, id);
         _restoreState(aggregate, snapshotState, snapshotPosition);
 
         // Replay events after the snapshot

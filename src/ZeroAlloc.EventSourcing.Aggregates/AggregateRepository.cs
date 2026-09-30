@@ -34,10 +34,15 @@ public sealed class AggregateRepository<TAggregate, TId> : IAggregateRepository<
     }
 
     /// <inheritdoc/>
+    /// <remarks>
+    /// An aggregate deriving from <see cref="Aggregate{TId,TState}"/> gets <paramref name="id"/> as its
+    /// <c>Id</c>, also when the stream is empty.
+    /// </remarks>
     public async ValueTask<Result<TAggregate, StoreError>> LoadAsync(TId id, CancellationToken ct = default)
     {
         var streamId = _streamIdFactory(id);
         var aggregate = _factory();
+        AggregateIdentity.Assign(aggregate, id);
 
         await foreach (var envelope in _store.ReadAsync(streamId, StreamPosition.Start, ct).ConfigureAwait(false))
             aggregate.ApplyHistoric(envelope.Event, envelope.Position);
