@@ -10,7 +10,7 @@ namespace ZeroAlloc.EventSourcing.Aggregates;
 /// </summary>
 /// <typeparam name="TId">The aggregate identifier type. Must be a value type.</typeparam>
 /// <typeparam name="TState">The aggregate state type. Must be a struct implementing <see cref="IAggregateState{TSelf}"/>.</typeparam>
-public abstract class Aggregate<TId, TState> : IAggregate, IDisposable
+public abstract class Aggregate<TId, TState> : IAggregate, IAggregateIdentity<TId>, IDisposable
     where TId : struct
     where TState : struct, IAggregateState<TState>
 {
@@ -22,6 +22,12 @@ public abstract class Aggregate<TId, TState> : IAggregate, IDisposable
     private bool _hasHistory;
 
     /// <summary>The aggregate identifier.</summary>
+    /// <remarks>
+    /// <see cref="AggregateRepository{TAggregate,TId}"/> and
+    /// <see cref="SnapshotCachingRepositoryDecorator{TAggregate,TId,TState}"/> set it to the id passed
+    /// to <c>LoadAsync</c>, so a loaded aggregate always carries the id of the stream it was loaded from.
+    /// A new aggregate keeps <c>default</c> until the aggregate sets it itself.
+    /// </remarks>
     public TId Id { get; protected set; }
 
     /// <summary>The current version — equal to the number of events applied (including uncommitted).</summary>
@@ -112,6 +118,7 @@ public abstract class Aggregate<TId, TState> : IAggregate, IDisposable
     void IAggregate.ApplyHistoric(object @event, StreamPosition position) => ApplyHistoric(@event, position);
     ReadOnlySpan<object> IAggregate.DequeueUncommitted() => DequeueUncommitted();
     void IAggregate.AcceptVersion(StreamPosition position) => AcceptVersion(position);
+    void IAggregateIdentity<TId>.AssignId(TId id) => Id = id;
 
     /// <summary>
     /// Routes an event to the correct state transition. Implemented by the source generator
