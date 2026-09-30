@@ -6,8 +6,8 @@ using ZeroAlloc.EventSourcing.InMemory;
 namespace ZeroAlloc.EventSourcing.Tests;
 
 /// <summary>
-/// A handler failure observed after the consumer's own token was cancelled is shutdown, not a
-/// failing event: the consumer stops with an <see cref="OperationCanceledException"/>, the error
+/// A handler that is still running when the consumer's token is cancelled, and then fails, is
+/// shutdown, not a failing event: the consumer stops with an <see cref="OperationCanceledException"/>, the error
 /// strategy is not applied, and the checkpoint does not move past the event, so it is handled again
 /// on the next start. A failure while running still follows the error strategy. See #422.
 /// </summary>
@@ -94,7 +94,7 @@ public class StreamConsumerShutdownTests
 
     /// <summary>
     /// A handler that honours the token with an <see cref="OperationCanceledException"/> is
-    /// shutdown too. It is rethrown as it is, not dead-lettered.
+    /// shutdown too. It is reported as a cancellation of the caller's token, not dead-lettered.
     /// </summary>
     [Fact]
     public async Task HandlerCancelledByTheConsumersToken_IsRethrownAndNotDeadLettered()

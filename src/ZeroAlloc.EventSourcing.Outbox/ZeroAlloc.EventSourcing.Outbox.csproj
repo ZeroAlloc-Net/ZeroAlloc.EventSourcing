@@ -17,6 +17,12 @@
     <None Include="README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
+  <!-- Compiled into this assembly rather than shared as an internal of ZeroAlloc.EventSourcing,
+       so this package never depends on another package's internals, see #434. -->
+  <ItemGroup>
+    <Compile Include="..\ZeroAlloc.EventSourcing\Internal\StopScope.cs" Link="Internal\StopScope.cs" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\ZeroAlloc.EventSourcing\ZeroAlloc.EventSourcing.csproj" />
     <ProjectReference Include="..\ZeroAlloc.EventSourcing.Mediator\ZeroAlloc.EventSourcing.Mediator.csproj" />

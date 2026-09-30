@@ -150,6 +150,11 @@ var subscription = await eventStore.SubscribeAsync(
 await subscription.DisposeAsync();
 ```
 
+`DisposeAsync` stops the subscription and waits for it. Whatever a handler or read that is still
+running then throws is shutdown, and `DisposeAsync` does not rethrow it. A handler or read that had
+already failed before `DisposeAsync` was called stopped the subscription, and `DisposeAsync`
+rethrows that failure.
+
 Subscriptions are useful for:
 - Building read models (projections) in real-time
 - Sending notifications to other services

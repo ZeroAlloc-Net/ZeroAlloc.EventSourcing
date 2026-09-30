@@ -382,10 +382,16 @@ catch (OperationCanceledException)
 }
 ```
 
-A handler that fails after the consumer's token was cancelled is not treated as a failing event,
-whatever it throws: the consumer stops with an `OperationCanceledException`, no retry or error
-strategy runs, and the checkpoint stays before that event, so it is handled again on the next start.
+A handler that is still running when the consumer's token is cancelled, and then fails, is not
+treated as a failing event, whatever it throws: the consumer stops with an
+`OperationCanceledException` of that token, no retry or error strategy runs, and the checkpoint stays
+before that event, so it is handled again on the next start.
 Cancellation during a retry backoff stops the consumer the same way.
+
+A handler that had already failed before the token was cancelled is a failing event, even when the
+consumer only sees the failure after the cancellation: it is retried, then handled by the error
+strategy. The handler gets a token of the consumer's own, which is cancelled when yours is, just
+after the consumer has checked whether the handler is still running.
 
 An `OperationCanceledException` the consumer did not cause, such as a handler's own timeout while
 the consumer's token is still live, is a handler failure like any other: it is retried, then
