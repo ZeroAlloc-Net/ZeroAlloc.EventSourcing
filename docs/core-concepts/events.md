@@ -270,23 +270,27 @@ public interface IEventSerializer
 The `ZeroAlloc.Serialisation` package provides `ZeroAllocEventSerializer` — a built-in
 implementation of `IEventSerializer` that uses source-generated, reflection-free dispatch.
 
-Mark your event types with `[ZeroAllocSerializable(SerializationFormat.SystemTextJson)]`, create a
-`JsonSerializerContext` for AOT-safe type metadata, then wire up DI:
+Mark your event types with `[ZeroAllocSerializable(SerializationFormat.SystemTextJson)]`, list them
+in a `JsonSerializerContext` for AOT-safe type metadata, then wire up DI with the registration
+methods the source generator emits:
 
 ```csharp
 // 1. Mark your event types with the chosen serialization format
 [ZeroAllocSerializable(SerializationFormat.SystemTextJson)]
 public record OrderPlacedEvent(string OrderId, decimal Total);
 
-// 2. Provide a JsonSerializerContext so System.Text.Json can serialize without reflection
+// 2. Provide a JsonSerializerContext so System.Text.Json can serialize without reflection.
+//    The generator reports ZASZ004 for a SystemTextJson type that no context lists.
 [JsonSerializable(typeof(OrderPlacedEvent))]
 internal partial class DomainJsonContext : JsonSerializerContext { }
 
-// 3. In your composition root
+// 3. In your composition root. The generator emits Add{EventType}Serializer() for each
+//    annotated type and AddSerializerDispatcher() for the assembly.
 services
-    .AddJsonSerializer<OrderPlacedEvent>(DomainJsonContext.Default.OrderPlacedEvent)
+    .AddOrderPlacedEventSerializer()
     .AddSerializerDispatcher()  // generated at compile time — no reflection
-    .AddEventSourcing();        // registers IEventSerializer → ZeroAllocEventSerializer
+    .AddEventSourcing()         // registers IEventSerializer → ZeroAllocEventSerializer
+    .UseInMemoryEventStore();   // swap for .UsePostgreSqlEventStore(cs) or .UseSqlServerEventStore(cs) in production
 ```
 
 `AddSerializerDispatcher()` is emitted by the `ZeroAlloc.Serialisation` source generator: a

@@ -2,7 +2,7 @@
 
 ## Scenario: How Do I Persist Events and Snapshots to a Database?
 
-ZeroAlloc.EventSourcing supports both PostgreSQL and SQL Server for storing events and snapshots. This guide covers setup, configuration, performance tuning, and deployment strategies.
+ZeroAlloc.EventSourcing supports both PostgreSQL and SQL Server for storing events and snapshots. This guide covers setup, configuration, performance tuning, and deployment strategies. A SQLite adapter ships in `ZeroAlloc.EventSourcing.Sqlite` as well.
 
 ## PostgreSQL Setup and Configuration
 
@@ -16,26 +16,32 @@ dotnet add package ZeroAlloc.EventSourcing.PostgreSql
 
 ### Basic Configuration
 
-For EventTypeRegistry definition, see building-aggregates.md:
+For the event type registry and the serializer, see [Building Aggregates](./building-aggregates.md)
+and [Events](../core-concepts/events.md):
 
 ```csharp
-using ZeroAlloc.EventSourcing.PostgreSql;
+using Npgsql;
 using ZeroAlloc.EventSourcing;
+using ZeroAlloc.EventSourcing.PostgreSql;
 
-var connectionString = "Host=localhost;Database=EventStore;User=postgres;Password=password";
+var connectionString = "Host=localhost;Database=EventStore;Username=postgres;Password=password";
 
-// Create adapter
-var adapter = new PostgreSqlEventStoreAdapter(connectionString);
+// The adapter takes an NpgsqlDataSource, which owns the connection pool: create one per
+// database and keep it for the lifetime of the application
+var dataSource = NpgsqlDataSource.Create(connectionString);
+var adapter = new PostgreSqlEventStoreAdapter(dataSource);
+
+// Create the event_store table if it does not exist; safe to run on every start
+await adapter.EnsureSchemaAsync();
 
 // Create event store
-var registry = new OrderEventTypeRegistry();  // See building-aggregates.md
-var serializer = new JsonEventSerializer();
+var registry = new OrderEventTypeRegistry();  // generated for your Order aggregate
 var eventStore = new EventStore(adapter, serializer, registry);
 ```
 
 ### Connection Pooling
 
-PostgreSQL uses connection pooling by default. Configure for high throughput:
+PostgreSQL uses connection pooling by default; the `NpgsqlDataSource` owns the pool. Configure it for high throughput:
 
 ```csharp
 var connectionString = new NpgsqlConnectionStringBuilder
@@ -44,7 +50,7 @@ var connectionString = new NpgsqlConnectionStringBuilder
     Database = "EventStore",
     Username = "postgres",
     Password = "password",
-    
+
     // Connection pooling
     MaxPoolSize = 100,           // Max connections
     MinPoolSize = 10,            // Min connections
@@ -52,56 +58,61 @@ var connectionString = new NpgsqlConnectionStringBuilder
     ConnectionIdleLifetime = 300 // Idle connection timeout (seconds)
 }.ConnectionString;
 
-var adapter = new PostgreSqlEventStoreAdapter(connectionString);
+var adapter = new PostgreSqlEventStoreAdapter(NpgsqlDataSource.Create(connectionString));
 ```
 
 ### Schema Creation
 
-Schemas are created automatically on first use. Or create manually:
+`EnsureSchemaAsync()` creates the table below if it does not exist, and migrates tables created by
+older versions. Run it at startup or in your deployment; the dependency-injection registrations do
+not run it for you.
 
 ```sql
--- EventStore table
-CREATE TABLE event_store (
-    stream_id TEXT NOT NULL,
-    position BIGINT NOT NULL,
-    event_type TEXT NOT NULL,
-    event_data BYTEA NOT NULL,
-    metadata JSONB,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+CREATE TABLE IF NOT EXISTS event_store (
+    stream_id       TEXT          NOT NULL,
+    position        BIGINT        NOT NULL,
+    global_position BIGSERIAL     NOT NULL,
+    event_type      TEXT          NOT NULL,
+    event_id        UUID          NOT NULL,
+    occurred_at     TIMESTAMPTZ   NOT NULL,
+    correlation_id  UUID          NULL,
+    causation_id    UUID          NULL,
+    payload         BYTEA         NOT NULL,
     PRIMARY KEY (stream_id, position)
 );
 
--- Indexes for performance
-CREATE INDEX idx_event_store_stream ON event_store(stream_id, position);
-CREATE INDEX idx_event_store_created ON event_store(created_at);
-CREATE INDEX idx_event_store_type ON event_store(event_type);
+CREATE INDEX IF NOT EXISTS event_store_global_position_idx ON event_store (global_position);
+```
 
--- SnapshotStore table
-CREATE TABLE snapshot_store (
-    stream_id TEXT NOT NULL PRIMARY KEY,
-    position BIGINT NOT NULL,
-    state BYTEA NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+The snapshot, checkpoint, projection and dead-letter stores in `ZeroAlloc.EventSourcing.Sql` each
+have their own `EnsureSchemaAsync()`. The snapshot table:
+
+```sql
+CREATE TABLE IF NOT EXISTS snapshots (
+    stream_id   VARCHAR(255)   NOT NULL,
+    position    BIGINT         NOT NULL,
+    state_type  VARCHAR(500)   NOT NULL,
+    payload     BYTEA          NOT NULL,
+    created_at  TIMESTAMPTZ    NOT NULL,
+    PRIMARY KEY (stream_id)
 );
-
-CREATE INDEX idx_snapshot_created ON snapshot_store(created_at);
 ```
 
 ### Connection String Patterns
 
 **Local Development:**
 ```
-Host=localhost;Database=EventStore;User=postgres;Password=password
+Host=localhost;Database=EventStore;Username=postgres;Password=password
 ```
 
 **Staging:**
 ```
-Host=staging-db.example.com;Database=EventStore;User=app_user;Password=SecurePassword123;SslMode=Require
+Host=staging-db.example.com;Database=EventStore;Username=app_user;Password=SecurePassword123;SSL Mode=Require
 ```
 
 **Production:**
 ```
-Host=prod-db.example.com;Database=EventStore;User=app_user;Password=SecurePassword123;SslMode=Require;Application Name=EventSourcingApp
+Host=prod-db.example.com;Database=EventStore;Username=app_user;Password=SecurePassword123;SSL Mode=Require;Application Name=EventSourcingApp
 ```
 
 ## SQL Server Setup and Configuration
@@ -116,20 +127,20 @@ dotnet add package ZeroAlloc.EventSourcing.SqlServer
 
 ### Basic Configuration
 
-For EventTypeRegistry definition, see building-aggregates.md:
-
 ```csharp
-using ZeroAlloc.EventSourcing.SqlServer;
 using ZeroAlloc.EventSourcing;
+using ZeroAlloc.EventSourcing.SqlServer;
 
-var connectionString = "Server=localhost;Database=EventStore;User=sa;Password=YourPassword123";
+var connectionString = "Server=localhost;Database=EventStore;User Id=sa;Password=YourPassword123;TrustServerCertificate=true";
 
 // Create adapter
 var adapter = new SqlServerEventStoreAdapter(connectionString);
 
+// Create the dbo.event_store table if it does not exist; safe to run on every start
+await adapter.EnsureSchemaAsync();
+
 // Create event store
-var registry = new OrderEventTypeRegistry();  // See building-aggregates.md
-var serializer = new JsonEventSerializer();
+var registry = new OrderEventTypeRegistry();  // generated for your Order aggregate
 var eventStore = new EventStore(adapter, serializer, registry);
 ```
 
@@ -144,13 +155,13 @@ var connectionString = new SqlConnectionStringBuilder
     InitialCatalog = "EventStore",
     UserID = "sa",
     Password = "YourPassword123",
-    
+
     // Connection pooling
     Pooling = true,
-    Max Pool Size = 100,
-    Min Pool Size = 10,
-    Connection Timeout = 30,
-    Connection Lifetime = 300
+    MaxPoolSize = 100,
+    MinPoolSize = 10,
+    ConnectTimeout = 30,       // Connection timeout (seconds)
+    LoadBalanceTimeout = 300   // Connection lifetime in the pool (seconds)
 }.ConnectionString;
 
 var adapter = new SqlServerEventStoreAdapter(connectionString);
@@ -158,34 +169,27 @@ var adapter = new SqlServerEventStoreAdapter(connectionString);
 
 ### Schema Creation
 
-SQL Server requires explicit schema creation. Use provided script or create manually:
+`EnsureSchemaAsync()` creates the table below if it does not exist, and migrates tables created by
+older versions:
 
 ```sql
--- EventStore table
-CREATE TABLE [dbo].[EventStore] (
-    [StreamId] NVARCHAR(450) NOT NULL,
-    [Position] BIGINT NOT NULL,
-    [EventType] NVARCHAR(255) NOT NULL,
-    [EventData] VARBINARY(MAX) NOT NULL,
-    [Metadata] NVARCHAR(MAX),
-    [CreatedAt] DATETIME2 DEFAULT GETUTCDATE(),
-    PRIMARY KEY CLUSTERED ([StreamId], [Position])
+CREATE TABLE dbo.event_store (
+    stream_id       NVARCHAR(255)     NOT NULL,
+    position        BIGINT            NOT NULL,
+    global_position BIGINT            IDENTITY(1,1) NOT NULL,
+    event_type      NVARCHAR(500)     NOT NULL,
+    event_id        UNIQUEIDENTIFIER  NOT NULL,
+    occurred_at     DATETIMEOFFSET    NOT NULL,
+    correlation_id  UNIQUEIDENTIFIER  NULL,
+    causation_id    UNIQUEIDENTIFIER  NULL,
+    payload         VARBINARY(MAX)    NOT NULL,
+    CONSTRAINT PK_event_store PRIMARY KEY (stream_id, position)
 );
 
--- Indexes for performance
-CREATE NONCLUSTERED INDEX [idx_event_created] ON [dbo].[EventStore]([CreatedAt]);
-CREATE NONCLUSTERED INDEX [idx_event_type] ON [dbo].[EventStore]([EventType]);
-
--- SnapshotStore table
-CREATE TABLE [dbo].[SnapshotStore] (
-    [StreamId] NVARCHAR(450) NOT NULL PRIMARY KEY,
-    [Position] BIGINT NOT NULL,
-    [State] VARBINARY(MAX) NOT NULL,
-    [CreatedAt] DATETIME2 DEFAULT GETUTCDATE()
-);
-
-CREATE NONCLUSTERED INDEX [idx_snapshot_created] ON [dbo].[SnapshotStore]([CreatedAt]);
+CREATE INDEX event_store_global_position_idx ON dbo.event_store (global_position);
 ```
+
+The snapshot table, `dbo.snapshots`, has the same columns as the PostgreSQL one.
 
 ### Connection String Patterns
 
@@ -196,17 +200,21 @@ Server=(local);Database=EventStore;Integrated Security=true;Encrypt=false
 
 **Staging:**
 ```
-Server=staging-db.example.com;Database=EventStore;User=app_user;Password=SecurePassword123;Encrypt=true;TrustServerCertificate=false
+Server=staging-db.example.com;Database=EventStore;User Id=app_user;Password=SecurePassword123;Encrypt=true;TrustServerCertificate=false
 ```
 
 **Production:**
 ```
-Server=prod-db.example.com;Database=EventStore;User=app_user;Password=SecurePassword123;Encrypt=true;TrustServerCertificate=false;Application Name=EventSourcingApp
+Server=prod-db.example.com;Database=EventStore;User Id=app_user;Password=SecurePassword123;Encrypt=true;TrustServerCertificate=false;Application Name=EventSourcingApp
 ```
 
 ## Serialization Strategies
 
-### JSON Serialization (Recommended)
+The adapters store whatever bytes the `IEventSerializer` produces. The recommended serializer is the
+AOT-safe `ZeroAllocEventSerializer`; see [Events](../core-concepts/events.md). The serializers below
+are alternatives.
+
+### JSON Serialization
 
 ```csharp
 public class JsonEventSerializer : IEventSerializer
@@ -217,12 +225,12 @@ public class JsonEventSerializer : IEventSerializer
         WriteIndented = false,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
-    
+
     public ReadOnlyMemory<byte> Serialize<TEvent>(TEvent @event) where TEvent : notnull
     {
-        return JsonSerializer.SerializeToUtf8Bytes(@event, Options);
+        return JsonSerializer.SerializeToUtf8Bytes(@event, @event.GetType(), Options);
     }
-    
+
     public object Deserialize(ReadOnlyMemory<byte> payload, Type eventType)
     {
         return JsonSerializer.Deserialize(payload.Span, eventType, Options)
@@ -230,6 +238,9 @@ public class JsonEventSerializer : IEventSerializer
     }
 }
 ```
+
+This one uses reflection; under NativeAOT, use `ZeroAllocEventSerializer` or pass `JsonTypeInfo`
+from a source-generated `JsonSerializerContext`.
 
 **Advantages:**
 - Human-readable (useful for debugging)
@@ -249,12 +260,12 @@ public class MessagePackEventSerializer : IEventSerializer
 {
     public ReadOnlyMemory<byte> Serialize<TEvent>(TEvent @event) where TEvent : notnull
     {
-        return MessagePackSerializer.Serialize(@event);
+        return MessagePackSerializer.Serialize(@event.GetType(), @event);
     }
-    
+
     public object Deserialize(ReadOnlyMemory<byte> payload, Type eventType)
     {
-        return MessagePackSerializer.Deserialize(eventType, payload.Span)
+        return MessagePackSerializer.Deserialize(eventType, payload)
             ?? throw new InvalidOperationException("Deserialization failed");
     }
 }
@@ -276,33 +287,31 @@ Compress large events:
 public class CompressedEventSerializer : IEventSerializer
 {
     private readonly IEventSerializer _inner;
-    
+
     public CompressedEventSerializer(IEventSerializer inner)
     {
         _inner = inner;
     }
-    
+
     public ReadOnlyMemory<byte> Serialize<TEvent>(TEvent @event) where TEvent : notnull
     {
         var uncompressed = _inner.Serialize(@event);
-        
-        using var source = new MemoryStream(uncompressed.ToArray());
+
         using var target = new MemoryStream();
-        
         using (var gzip = new GZipStream(target, CompressionMode.Compress))
         {
-            source.CopyTo(gzip);
+            gzip.Write(uncompressed.Span);
         }
-        
+
         return target.ToArray();
     }
-    
+
     public object Deserialize(ReadOnlyMemory<byte> payload, Type eventType)
     {
         using var source = new MemoryStream(payload.ToArray());
         using var gzip = new GZipStream(source, CompressionMode.Decompress);
         using var target = new MemoryStream();
-        
+
         gzip.CopyTo(target);
         return _inner.Deserialize(target.ToArray(), eventType);
     }
@@ -313,20 +322,14 @@ public class CompressedEventSerializer : IEventSerializer
 
 ### Essential Indexes
 
-All adapters include default indexes:
+The schemas above include the indexes the adapters need:
 
-**PostgreSQL:**
-```sql
-CREATE INDEX idx_event_store_stream ON event_store(stream_id, position);
-CREATE INDEX idx_event_store_created ON event_store(created_at);
-CREATE INDEX idx_event_store_type ON event_store(event_type);
-```
+- the primary key on `(stream_id, position)`, which serves stream reads and rejects a second writer
+  at the same position;
+- `event_store_global_position_idx` on `global_position`, which serves reads of `StreamId.Global`.
 
-**SQL Server:**
-```sql
-CREATE NONCLUSTERED INDEX [idx_event_created] ON [dbo].[EventStore]([CreatedAt]);
-CREATE NONCLUSTERED INDEX [idx_event_type] ON [dbo].[EventStore]([EventType]);
-```
+Add indexes for your own ad-hoc queries, for example on `event_type` or `occurred_at`, if you run
+them often.
 
 ### Query Analysis
 
@@ -334,36 +337,36 @@ Analyze slow queries:
 
 **PostgreSQL:**
 ```sql
--- Find slow queries
-SELECT 
+-- Find slow queries (requires the pg_stat_statements extension)
+SELECT
     query,
     calls,
-    mean_time,
-    max_time
+    mean_exec_time,
+    max_exec_time
 FROM pg_stat_statements
-WHERE query LIKE '%event%'
-ORDER BY mean_time DESC;
+WHERE query LIKE '%event_store%'
+ORDER BY mean_exec_time DESC;
 
 -- EXPLAIN ANALYZE to understand query plan
 EXPLAIN ANALYZE
-SELECT * FROM event_store 
-WHERE stream_id = 'order-123' 
+SELECT * FROM event_store
+WHERE stream_id = 'order-123'
 ORDER BY position;
 ```
 
 **SQL Server:**
 ```sql
 -- Find slow queries
-SELECT 
-    query_hash,
-    statement_text,
-    execution_count,
-    total_elapsed_time / 1000 as total_ms,
-    total_elapsed_time / execution_count / 1000 as avg_ms
-FROM sys.dm_exec_query_stats
-CROSS APPLY sys.dm_exec_sql_text(sql_handle)
-WHERE statement_text LIKE '%EventStore%'
-ORDER BY total_elapsed_time DESC;
+SELECT
+    qs.query_hash,
+    st.text AS statement_text,
+    qs.execution_count,
+    qs.total_elapsed_time / 1000 AS total_ms,
+    qs.total_elapsed_time / qs.execution_count / 1000 AS avg_ms
+FROM sys.dm_exec_query_stats qs
+CROSS APPLY sys.dm_exec_sql_text(qs.sql_handle) st
+WHERE st.text LIKE '%event_store%'
+ORDER BY qs.total_elapsed_time DESC;
 ```
 
 ## Backup and Disaster Recovery
@@ -385,7 +388,7 @@ pg_restore -h localhost -U postgres -d EventStore backup.dump
 **SQL Server:**
 ```sql
 -- Full backup
-BACKUP DATABASE [EventStore] 
+BACKUP DATABASE [EventStore]
 TO DISK = N'D:\Backups\EventStore.bak'
 WITH FORMAT, MEDIANAME = 'EventStoreBackup';
 
@@ -395,172 +398,144 @@ FROM DISK = N'D:\Backups\EventStore.bak'
 WITH REPLACE;
 ```
 
-### Point-in-Time Recovery
+For point-in-time recovery, use the database's own tools: PostgreSQL WAL archiving, or SQL Server
+full recovery model with log backups.
 
-Implement event archival for fast recovery:
+### Archiving Streams
+
+Copy streams to a second event store, for example a cheaper database for closed orders:
 
 ```csharp
 public class EventArchiver
 {
     private readonly IEventStore _live;
     private readonly IEventStore _archive;
-    
-    public async Task ArchiveOldEvents(StreamId streamId, DateTime before)
+
+    public EventArchiver(IEventStore live, IEventStore archive)
     {
-        // Copy old events to archive
-        await foreach (var envelope in _live.ReadAsync(streamId, StreamPosition.Start))
+        _live = live;
+        _archive = archive;
+    }
+
+    public async Task ArchiveStreamAsync(StreamId streamId, CancellationToken ct = default)
+    {
+        // Copy the stream's events to the archive
+        var events = new List<object>();
+        await foreach (var envelope in _live.ReadAsync(streamId, StreamPosition.Start, ct))
         {
-            if (envelope.Metadata?.CreatedAt >= before)
-                break;
-            
-            await _archive.AppendAsync(
-                streamId,
-                new[] { envelope.Event },
-                envelope.Position);
+            events.Add(envelope.Event);
         }
-        
-        // Delete from live (keep recent events)
-        await _live.DeleteRangeAsync(streamId, StreamPosition.Start, before);
+
+        // The archive gives the events new metadata: event IDs and timestamps are not copied
+        var result = await _archive.AppendAsync(streamId, events.ToArray(), StreamPosition.Start, ct);
+        if (!result.IsSuccess)
+            throw new InvalidOperationException(result.Error.ToString());  // e.g. [CONFLICT]: already archived
     }
 }
 ```
+
+The event store is append-only: the library has no API to delete events. Removing archived events
+from the live table is a database operation, and anything that still points into the stream, such
+as a snapshot, a checkpoint or a projection, has to be cleaned up with it.
 
 ## Data Migration and Versioning
 
 ### Schema Evolution
 
-When adding new columns, use migrations:
-
-**PostgreSQL:**
-```sql
--- Add column
-ALTER TABLE event_store ADD COLUMN IF NOT EXISTS metadata_version INT DEFAULT 1;
-
--- Create new index
-CREATE INDEX IF NOT EXISTS idx_event_metadata_version 
-ON event_store(metadata_version);
-```
-
-**SQL Server:**
-```sql
--- Add column
-IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS 
-               WHERE TABLE_NAME = 'EventStore' AND COLUMN_NAME = 'MetadataVersion')
-BEGIN
-    ALTER TABLE [dbo].[EventStore] ADD [MetadataVersion] INT DEFAULT 1;
-END
-
--- Create index
-IF NOT EXISTS (SELECT * FROM sys.indexes 
-               WHERE name = 'idx_metadata_version')
-BEGIN
-    CREATE NONCLUSTERED INDEX [idx_metadata_version] 
-    ON [dbo].[EventStore]([MetadataVersion]);
-END
-```
+The adapters own their table layout. `EnsureSchemaAsync()` creates it and migrates tables created by
+older versions; for example it adds and backfills `global_position` in tables that predate global
+reads. Don't change the adapter tables yourself; keep your own data in your own tables.
 
 ### Event Migration
 
-Migrate events when changing event structure:
+Don't rewrite stored events when an event's shape changes. Register an upcaster: events are
+upgraded as they are read.
 
 ```csharp
-public class EventMigration
-{
-    public async Task MigrateOrderPlacedEvents(IEventStore eventStore)
-    {
-        var migratedCount = 0;
-        
-        // Read old events
-        await foreach (var envelope in eventStore.ReadAllAsync())
-        {
-            if (envelope.Event is not OrderPlacedEvent_V1 oldEvent)
-                continue;
-            
-            // Convert to new version
-            var newEvent = new OrderPlacedEvent_V2(
-                OrderId: oldEvent.OrderId,
-                Total: oldEvent.Total,
-                CustomerId: oldEvent.CustomerId ?? "Unknown",
-                PlacedAt: envelope.Metadata?.CreatedAt ?? DateTime.UtcNow
-            );
-            
-            // Note: In practice, use event upcasting in ApplyEvent
-            // Don't actually modify the event store
-            migratedCount++;
-        }
-        
-        Console.WriteLine($"Migrated {migratedCount} events");
-    }
-}
+// The old shape stays readable: keep it, and its entry in the event type registry
+public record OrderPlacedEvent_V1(string OrderId, decimal Total);
+public record OrderPlacedEvent_V2(string OrderId, decimal Total, string CustomerId);
+services
+    .AddEventSourcing()
+    .UseSqlServerEventStore(connectionString)
+    // Every V1 event read from the store is handed to your code as V2
+    .AddUpcaster<OrderPlacedEvent_V1, OrderPlacedEvent_V2>(
+        old => new OrderPlacedEvent_V2(old.OrderId, old.Total, CustomerId: "unknown"));
 ```
 
 ## Monitoring and Observability
 
 ### Query Logging
 
-Log slow queries:
+Log slow appends by decorating the adapter:
 
 ```csharp
 public class LoggingEventStoreAdapter : IEventStoreAdapter
 {
     private readonly IEventStoreAdapter _inner;
     private readonly ILogger<LoggingEventStoreAdapter> _logger;
-    
-    public async Task AppendAsync(
-        StreamId streamId,
-        IReadOnlyList<object> events,
-        StreamPosition expectedVersion)
+
+    public LoggingEventStoreAdapter(IEventStoreAdapter inner, ILogger<LoggingEventStoreAdapter> logger)
+    {
+        _inner = inner;
+        _logger = logger;
+    }
+
+    public async ValueTask<Result<AppendResult, StoreError>> AppendAsync(
+        StreamId id,
+        ReadOnlyMemory<RawEvent> events,
+        StreamPosition expectedVersion,
+        CancellationToken ct = default)
     {
         var stopwatch = Stopwatch.StartNew();
-        
+
         try
         {
-            await _inner.AppendAsync(streamId, events, expectedVersion);
+            var result = await _inner.AppendAsync(id, events, expectedVersion, ct);
             stopwatch.Stop();
-            
+
             if (stopwatch.ElapsedMilliseconds > 100)
             {
                 _logger.LogWarning(
                     "Slow append: {StreamId} took {Ms}ms",
-                    streamId.Value,
+                    id.Value,
                     stopwatch.ElapsedMilliseconds);
             }
+
+            return result;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Append failed for {StreamId}", streamId.Value);
+            _logger.LogError(ex, "Append failed for {StreamId}", id.Value);
             throw;
         }
     }
+
+    public IAsyncEnumerable<RawEvent> ReadAsync(StreamId id, StreamPosition from, CancellationToken ct = default)
+        => _inner.ReadAsync(id, from, ct);
+
+    public ValueTask<IEventSubscription> SubscribeAsync(
+        StreamId id,
+        StreamPosition from,
+        Func<RawEvent, CancellationToken, ValueTask> handler,
+        CancellationToken ct = default)
+        => _inner.SubscribeAsync(id, from, handler, ct);
 }
 ```
 
 ### Monitoring Metrics
 
-Track database health:
+Register health checks for the stores:
 
 ```csharp
-public class EventStoreMetrics
-{
-    private readonly IEventStore _eventStore;
-    private readonly IMetricsCollector _metrics;
-    
-    public async Task ReportMetrics()
-    {
-        // Event count
-        var eventCount = await _eventStore.CountAsync();
-        _metrics.Gauge("events.total_count", eventCount);
-        
-        // Stream count
-        var streamCount = await _eventStore.CountStreamsAsync();
-        _metrics.Gauge("events.stream_count", streamCount);
-        
-        // Database size
-        var size = await _eventStore.GetDatabaseSizeAsync();
-        _metrics.Gauge("events.database_size_bytes", size);
-    }
-}
+services.AddHealthChecks()
+    .AddPostgreSqlEventStore(dataSource)               // ZeroAlloc.EventSourcing.Sql
+    .AddSqlServerEventStore(sqlServerConnectionString); // ZeroAlloc.EventSourcing.SqlServer
 ```
+
+The library has no counters for the number of events, streams or the database size; query the
+database for them, for example `SELECT count(*) FROM event_store` and
+`SELECT count(DISTINCT stream_id) FROM event_store`.
 
 ## Testing with Testcontainers
 
@@ -569,56 +544,53 @@ Use Testcontainers for integration tests:
 ### PostgreSQL with Testcontainers
 
 ```csharp
+using System.Text;
+using Npgsql;
 using Testcontainers.PostgreSql;
 using Xunit;
+using ZeroAlloc.EventSourcing;
+using ZeroAlloc.EventSourcing.PostgreSql;
 
 public class PostgreSqlEventStoreTests : IAsyncLifetime
 {
-    private PostgreSqlContainer _container = null!;
-    private IEventStore _eventStore = null!;
-    
+    private readonly PostgreSqlContainer _container = new PostgreSqlBuilder("postgres:16-alpine").Build();
+    private NpgsqlDataSource _dataSource = null!;
+    private PostgreSqlEventStoreAdapter _adapter = null!;
+
     public async Task InitializeAsync()
     {
-        _container = new PostgreSqlBuilder()
-            .WithDatabase("eventstore")
-            .WithUsername("postgres")
-            .WithPassword("password")
-            .Build();
-        
         await _container.StartAsync();
-        
-        var connectionString = _container.GetConnectionString();
-        var adapter = new PostgreSqlEventStoreAdapter(connectionString);
-        var registry = new OrderEventTypeRegistry();
-        var serializer = new JsonEventSerializer();
-        
-        _eventStore = new EventStore(adapter, serializer, registry);
+
+        _dataSource = NpgsqlDataSource.Create(_container.GetConnectionString());
+        _adapter = new PostgreSqlEventStoreAdapter(_dataSource);
+        await _adapter.EnsureSchemaAsync();
     }
-    
+
     public async Task DisposeAsync()
     {
-        await _container.StopAsync();
-        _container.Dispose();
+        await _dataSource.DisposeAsync();
+        await _container.DisposeAsync();
     }
-    
+
     [Fact]
     public async Task AppendAsync_SavesEvents()
     {
-        // Arrange
+        // Arrange: the adapter stores serialized events; EventStore creates these for you
         var streamId = new StreamId("test-stream");
-        var events = new[] { new OrderPlacedEvent("ORD-001", 1500m) };
-        
+        var raw = new RawEvent(StreamPosition.Start, "OrderPlaced", Encoding.UTF8.GetBytes("{}"), EventMetadata.New("OrderPlaced"));
+
         // Act
-        await _eventStore.AppendAsync(streamId, events, StreamPosition.Start);
-        
+        var appended = await _adapter.AppendAsync(streamId, new[] { raw }, StreamPosition.Start);
+
         // Assert
-        var result = await _eventStore.ReadAsync(streamId, StreamPosition.Start);
+        Assert.True(appended.IsSuccess);
+
         var count = 0;
-        await foreach (var _ in result)
+        await foreach (var _ in _adapter.ReadAsync(streamId, StreamPosition.Start))
         {
             count++;
         }
-        
+
         Assert.Equal(1, count);
     }
 }
@@ -627,51 +599,46 @@ public class PostgreSqlEventStoreTests : IAsyncLifetime
 ### SQL Server with Testcontainers
 
 ```csharp
+using System.Text;
 using Testcontainers.MsSql;
 using Xunit;
+using ZeroAlloc.EventSourcing;
+using ZeroAlloc.EventSourcing.SqlServer;
 
 public class SqlServerEventStoreTests : IAsyncLifetime
 {
-    private MsSqlContainer _container = null!;
-    private IEventStore _eventStore = null!;
-    
+    private readonly MsSqlContainer _container = new MsSqlBuilder("mcr.microsoft.com/mssql/server:2022-latest").Build();
+    private SqlServerEventStoreAdapter _adapter = null!;
+
     public async Task InitializeAsync()
     {
-        _container = new MsSqlBuilder()
-            .WithPassword("YourPassword123!")
-            .Build();
-        
         await _container.StartAsync();
-        
-        var connectionString = _container.GetConnectionString();
-        var adapter = new SqlServerEventStoreAdapter(connectionString);
-        var registry = new OrderEventTypeRegistry();
-        var serializer = new JsonEventSerializer();
-        
-        _eventStore = new EventStore(adapter, serializer, registry);
+
+        _adapter = new SqlServerEventStoreAdapter(_container.GetConnectionString());
+        await _adapter.EnsureSchemaAsync();
     }
-    
+
     public async Task DisposeAsync()
     {
-        await _container.StopAsync();
-        _container.Dispose();
+        await _container.DisposeAsync();
     }
-    
+
     [Fact]
     public async Task AppendAsync_SavesEvents()
     {
         var streamId = new StreamId("test-stream");
-        var events = new[] { new OrderPlacedEvent("ORD-001", 1500m) };
-        
-        await _eventStore.AppendAsync(streamId, events, StreamPosition.Start);
-        
-        var result = await _eventStore.ReadAsync(streamId, StreamPosition.Start);
+        var raw = new RawEvent(StreamPosition.Start, "OrderPlaced", Encoding.UTF8.GetBytes("{}"), EventMetadata.New("OrderPlaced"));
+
+        var appended = await _adapter.AppendAsync(streamId, new[] { raw }, StreamPosition.Start);
+
+        Assert.True(appended.IsSuccess);
+
         var count = 0;
-        await foreach (var _ in result)
+        await foreach (var _ in _adapter.ReadAsync(streamId, StreamPosition.Start))
         {
             count++;
         }
-        
+
         Assert.Equal(1, count);
     }
 }
@@ -693,7 +660,7 @@ public class EventStoreAdapterFactory : IEventStoreAdapterFactory
     {
         return dbType switch
         {
-            DatabaseType.PostgreSql => new PostgreSqlEventStoreAdapter(connectionString),
+            DatabaseType.PostgreSql => new PostgreSqlEventStoreAdapter(NpgsqlDataSource.Create(connectionString)),
             DatabaseType.SqlServer => new SqlServerEventStoreAdapter(connectionString),
             _ => throw new ArgumentException($"Unknown database type: {dbType}")
         };
@@ -710,25 +677,16 @@ public enum DatabaseType
 ### DI Configuration
 
 ```csharp
-var services = new ServiceCollection();
+// dbType and connectionString come from your configuration, e.g.
+// Enum.Parse<DatabaseType>(config["Database:Type"]) and config.GetConnectionString("EventStore")
 
-// Load config
-var config = new ConfigurationBuilder()
-    .AddJsonFile("appsettings.json")
-    .Build();
-
-var dbType = Enum.Parse<DatabaseType>(config["Database:Type"]);
-var connectionString = config.GetConnectionString("EventStore");
-
-// Register adapter based on config
-services.AddScoped<IEventStoreAdapter>(sp =>
-{
-    var factory = sp.GetRequiredService<IEventStoreAdapterFactory>();
-    return factory.CreateAdapter(dbType, connectionString);
-});
+// Register the adapter based on config. A singleton: the adapter holds the connection pool
+services.AddSingleton<IEventStoreAdapterFactory, EventStoreAdapterFactory>();
+services.AddSingleton<IEventStoreAdapter>(sp =>
+    sp.GetRequiredService<IEventStoreAdapterFactory>().CreateAdapter(dbType, connectionString));
 
 // Register event store
-services.AddScoped<IEventStore>(sp =>
+services.AddSingleton<IEventStore>(sp =>
     new EventStore(
         sp.GetRequiredService<IEventStoreAdapter>(),
         new JsonEventSerializer(),
@@ -781,35 +739,29 @@ services.AddScoped<IAggregateRepository<Order, OrderId>>(sp =>
 // PostgreSQL
 services
     .AddSingleton<IEventTypeRegistry, OrderEventTypeRegistry>()
-    .AddJsonSerializer<OrderPlacedEvent>(DomainJsonContext.Default.OrderPlacedEvent)
-    .AddSerializerDispatcher()
+    .AddSingleton<IEventSerializer, JsonEventSerializer>()  // or ZeroAlloc.Serialisation, see events.md
     .AddEventSourcing()
-    .UsePostgreSqlEventStore("Host=localhost;Database=EventStore;User=postgres;Password=password")
-    .UsePostgreSqlSnapshotStore<OrderState>("Host=localhost;Database=EventStore;User=postgres;Password=password")
-    .UseAggregateRepository<Order, OrderId>(
-        () => new Order(),
-        id => new StreamId($"order-{id.Value}"))
-    .Services  // back to IServiceCollection if you need to register non-builder services
-    .AddSingleton<OrderProjection>();
-
-// SQL Server
-services
-    .AddSingleton<IEventTypeRegistry, OrderEventTypeRegistry>()
-    .AddJsonSerializer<OrderPlacedEvent>(DomainJsonContext.Default.OrderPlacedEvent)
-    .AddSerializerDispatcher()
-    .AddEventSourcing()
-    .UseSqlServerEventStore("Server=localhost;Database=EventStore;Trusted_Connection=True")
-    .UseSqlServerSnapshotStore<OrderState>("Server=localhost;Database=EventStore;Trusted_Connection=True")
+    .UsePostgreSqlEventStore("Host=localhost;Database=EventStore;Username=postgres;Password=password")
+    .UsePostgreSqlSnapshotStore<OrderState>("Host=localhost;Database=EventStore;Username=postgres;Password=password")
     .UseAggregateRepository<Order, OrderId>(
         () => new Order(),
         id => new StreamId($"order-{id.Value}"));
 
+// SQL Server: the same, with
+//     .UseSqlServerEventStore(cs)
+//     .UseSqlServerSnapshotStore<OrderState>(cs)
+
 var sp = services.BuildServiceProvider();
+
+// The registrations do not create tables: create them once at startup
+await ((PostgreSqlEventStoreAdapter)sp.GetRequiredService<IEventStoreAdapter>()).EnsureSchemaAsync();
+await ((PostgreSqlSnapshotStore<OrderState>)sp.GetRequiredService<ISnapshotStore<OrderState>>()).EnsureSchemaAsync();
+
 var repository = sp.GetRequiredService<IAggregateRepository<Order, OrderId>>();
 
 var orderId = new OrderId(Guid.NewGuid());
 using var order = new Order();
-order.Place("ORD-001", 1500m);
+order.Place("alice");
 var saved = await repository.SaveAsync(order, orderId);
 if (saved.IsFailure)
     throw new InvalidOperationException(saved.Error.ToString());  // e.g. [CONFLICT] on a concurrent write
@@ -824,7 +776,7 @@ Effective SQL adapter usage requires:
 
 1. **Choose database** — PostgreSQL for Linux, SQL Server for Windows
 2. **Configure connection pooling** — 10-100 connections depending on load
-3. **Create indexes** — Essential for query performance
+3. **Create the schema** — Run `EnsureSchemaAsync()` at startup or deployment
 4. **Choose serialization** — JSON for flexibility, binary for performance
 5. **Monitor performance** — Track slow queries and database size
 6. **Plan for growth** — Archival and partitioning for large databases
@@ -834,5 +786,5 @@ Effective SQL adapter usage requires:
 ## Next Steps
 
 - **[Performance Guide](../performance.md)** — Detailed benchmarking and tuning
-- **[Deployment Guide](../advanced/deployment.md)** — Production deployment patterns
-- **[Monitoring Guide](../advanced/monitoring.md)** — Observability and alerting
+- **[Deployment Guide](../DEPLOYMENT.md)** — Production deployment patterns
+- **[Snapshots Usage](./snapshots-usage.md)** — Snapshot stores and loading strategies

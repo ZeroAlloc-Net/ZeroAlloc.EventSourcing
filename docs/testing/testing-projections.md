@@ -574,40 +574,45 @@ public class ProjectionRebuildingTests
 
 ## Testing with Mocked Dependencies
 
-If your projection depends on external services:
+If your projection depends on external services, substitute them in the test. `Apply` is
+synchronous, so a projection that awaits a service does the lookup in an override of the virtual
+`HandleAsync`. The example uses NSubstitute; any mocking library works.
 
 ```csharp
+public sealed record Order(string OrderId, string CustomerName, string Status);
+
+public sealed record EnrichedOrderReadModel(string OrderId, decimal Amount, string? CustomerName, string? Status);
+
 public interface IOrderService
 {
-    Task<Order> GetOrderAsync(string orderId);
+    Task<Order?> GetOrderAsync(string orderId);
 }
 
 public sealed class EnrichedOrderProjection : Projection<EnrichedOrderReadModel>
 {
     private readonly IOrderService _orderService;
-    
+
     public EnrichedOrderProjection(IOrderService orderService)
     {
         _orderService = orderService;
         Current = new EnrichedOrderReadModel(string.Empty, 0m, null, null);
     }
-    
-    protected override async ValueTask<EnrichedOrderReadModel> ApplyAsync(
-        EnrichedOrderReadModel current,
-        EventEnvelope @event)
+
+    // Apply is synchronous, so the lookup happens in HandleAsync, which is async and virtual
+    public override async ValueTask HandleAsync(EventEnvelope @event, CancellationToken ct = default)
     {
         if (@event.Event is OrderPlacedEvent e)
         {
             var order = await _orderService.GetOrderAsync(e.OrderId);
-            return new EnrichedOrderReadModel(
-                e.OrderId,
-                e.Amount,
-                order?.CustomerName,
-                order?.Status);
+            Current = new EnrichedOrderReadModel(e.OrderId, e.Amount, order?.CustomerName, order?.Status);
+            return;
         }
-        
-        return current;
+
+        await base.HandleAsync(@event, ct);
     }
+
+    protected override EnrichedOrderReadModel Apply(EnrichedOrderReadModel current, EventEnvelope @event)
+        => current;
 }
 
 public class EnrichedOrderProjectionTests
@@ -616,22 +621,26 @@ public class EnrichedOrderProjectionTests
     public async Task HandleAsync_WithMockedService_EnrichesData()
     {
         // Arrange
-        var mockService = new Mock<IOrderService>();
-        mockService.Setup(s => s.GetOrderAsync("ORD-001"))
-            .ReturnsAsync(new Order { OrderId = "ORD-001", CustomerName = "John Doe" });
-        
-        var projection = new EnrichedOrderProjection(mockService.Object);
+        var orderService = Substitute.For<IOrderService>();
+        orderService.GetOrderAsync("ORD-001")
+            .Returns(new Order("ORD-001", "John Doe", "Placed"));
+
+        var projection = new EnrichedOrderProjection(orderService);
         var @event = new OrderPlacedEvent("ORD-001", 100m);
-        
+
         // Act
         await projection.HandleAsync(ProjectionTestHelper.MakeEnvelope(@event));
-        
+
         // Assert
         projection.Current.CustomerName.Should().Be("John Doe");
-        mockService.Verify(s => s.GetOrderAsync("ORD-001"), Times.Once);
+        await orderService.Received(1).GetOrderAsync("ORD-001");
     }
 }
 ```
+
+A lookup makes the read model depend on what the service returns at the time the event is
+handled, so rebuilding the projection later can give a different result. Where you can, carry the
+data in the event instead.
 
 ## Best Practices
 

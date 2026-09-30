@@ -208,35 +208,42 @@ var orders = await Task.WhenAll(
 
 ## 3. Projection Optimization
 
-### Strategy 3A: Filter Events in Projections
-
-Apply filters to avoid processing irrelevant events:
+The examples in this section use these events and read model:
 
 ```csharp
-public class OrderProjection : Projection
+public record OrderPlacedEvent(string OrderId, string CustomerId, decimal Total);
+public record OrderShippedEvent(string OrderId, DateTimeOffset ShippedAt);
+public record CustomerRenamedEvent(string CustomerId, string Name);
+
+public sealed record OrderReadModel(string OrderId, decimal Total, bool IsShipped);
+```
+
+### Strategy 3A: Filter Events in Projections
+
+Apply filters to avoid processing irrelevant events. `FilteredProjection<TReadModel>` calls
+`IncludeEvent` first and skips `Apply` for the events it rejects:
+
+```csharp
+public class OrderProjection : FilteredProjection<ImmutableDictionary<string, OrderReadModel>>
 {
-    private readonly Dictionary<OrderId, OrderReadModel> _models = new();
-
-    public override async ValueTask<bool> ApplyAsync(EventEnvelope envelope)
+    public OrderProjection()
     {
-        // Only process order events
-        if (envelope.Event is not OrderEvent orderEvent)
-            return false;
-
-        // Apply to read model
-        switch (orderEvent)
-        {
-            case OrderPlacedEvent e:
-                _models[e.OrderId] = new OrderReadModel { OrderId = e.OrderId, Total = e.Total };
-                break;
-            case OrderShippedEvent e:
-                if (_models.TryGetValue(e.OrderId, out var model))
-                    model.IsShipped = true;
-                break;
-        }
-
-        return true;
+        Current = ImmutableDictionary<string, OrderReadModel>.Empty;
     }
+
+    // Only order events reach Apply; everything else is skipped before any work is done
+    protected override bool IncludeEvent(EventEnvelope @event)
+        => @event.Event is OrderPlacedEvent or OrderShippedEvent;
+
+    protected override ImmutableDictionary<string, OrderReadModel> Apply(
+        ImmutableDictionary<string, OrderReadModel> current,
+        EventEnvelope @event) => @event.Event switch
+    {
+        OrderPlacedEvent e => current.SetItem(e.OrderId, new OrderReadModel(e.OrderId, e.Total, IsShipped: false)),
+        OrderShippedEvent e when current.TryGetValue(e.OrderId, out var model) =>
+            current.SetItem(e.OrderId, model with { IsShipped = true }),
+        _ => current
+    };
 }
 ```
 
@@ -247,35 +254,53 @@ public class OrderProjection : Projection
 Update read models in batches instead of individually:
 
 ```csharp
-// INEFFICIENT: Update after each event
-public override async ValueTask<bool> ApplyAsync(EventEnvelope envelope)
+// INEFFICIENT: Write the read model after each event
+public class EveryEventOrderTotalsProjection : Projection<ImmutableDictionary<string, decimal>>
 {
-    UpdateReadModel(envelope);
-    await projectionStore.SaveAsync("order-projection", JsonSerializer.Serialize(_readModel));
-    return true;
-}
+    private readonly IProjectionStore _projectionStore;
 
-// EFFICIENT: Batch writes
-public class BatchedOrderProjection : Projection
-{
-    private int _eventsSinceLastSave = 0;
-    private const int BATCH_SIZE = 100;
-
-    public override async ValueTask<bool> ApplyAsync(EventEnvelope envelope)
+    public EveryEventOrderTotalsProjection(IProjectionStore projectionStore)
     {
-        UpdateReadModel(envelope);
-        _eventsSinceLastSave++;
+        _projectionStore = projectionStore;
+        Current = ImmutableDictionary<string, decimal>.Empty;
+    }
 
-        if (_eventsSinceLastSave >= BATCH_SIZE)
-        {
-            await projectionStore.SaveAsync("order-projection", JsonSerializer.Serialize(_readModel));
-            _eventsSinceLastSave = 0;
-        }
+    protected override ImmutableDictionary<string, decimal> Apply(
+        ImmutableDictionary<string, decimal> current,
+        EventEnvelope @event)
+        => @event.Event is OrderPlacedEvent e ? current.SetItem(e.OrderId, e.Total) : current;
 
-        return true;
+    public override async ValueTask HandleAsync(EventEnvelope @event, CancellationToken ct = default)
+    {
+        await base.HandleAsync(@event, ct);
+        await _projectionStore.SaveAsync("order-totals", JsonSerializer.Serialize(Current), ct);
     }
 }
+// EFFICIENT: Batch writes; BatchedProjection calls FlushBatchAsync once per 100 events
+public class BatchedOrderTotalsProjection : BatchedProjection<ImmutableDictionary<string, decimal>>
+{
+    private readonly IProjectionStore _projectionStore;
+
+    public BatchedOrderTotalsProjection(IProjectionStore projectionStore)
+        : base(batchSize: 100)
+    {
+        _projectionStore = projectionStore;
+        Current = ImmutableDictionary<string, decimal>.Empty;
+    }
+
+    protected override bool IncludeEvent(EventEnvelope @event) => @event.Event is OrderPlacedEvent;
+
+    protected override ImmutableDictionary<string, decimal> Apply(
+        ImmutableDictionary<string, decimal> current,
+        EventEnvelope @event)
+        => @event.Event is OrderPlacedEvent e ? current.SetItem(e.OrderId, e.Total) : current;
+
+    protected override async ValueTask FlushBatchAsync(IReadOnlyList<EventEnvelope> batch, CancellationToken ct = default)
+        => await _projectionStore.SaveAsync("order-totals", JsonSerializer.Serialize(Current), ct);
+}
 ```
+
+Call `FlushAsync()` when a run ends, to write the last partial batch.
 
 **Impact:** Reduces write operations by 100x. Trade-off: durability (if system crashes, last batch is lost).
 
@@ -284,36 +309,43 @@ public class BatchedOrderProjection : Projection
 Instead of one monolithic projection, use multiple specialized ones:
 
 ```csharp
-// MONOLITHIC: One projection for all queries
-public class OrderProjection : Projection
-{
-    private class OrderModel
-    {
-        public OrderId Id { get; set; }
-        public decimal Total { get; set; }
-        public bool IsShipped { get; set; }
-        public int LineItemCount { get; set; }
-        public DateTime CreatedAt { get; set; }
-        public string CustomerName { get; set; }
-        public List<string> Tags { get; set; }
-        // ... 20 more fields
-    }
-}
+// MONOLITHIC: One read model for all queries
+public sealed record OrderModel(
+    string OrderId,
+    decimal Total,
+    bool IsShipped,
+    int LineItemCount,
+    DateTimeOffset CreatedAt,
+    string CustomerName,
+    IReadOnlyList<string> Tags);  // ... 20 more fields
 
 // SPECIALIZED: Multiple projections, each optimized for one query
-public class OrderTotalsProjection : Projection  // For: "Sum of all orders"
+public class OrderTotalsProjection : Projection<decimal>  // For: "Sum of all orders"
 {
-    private Dictionary<OrderId, decimal> _totals = new();
+    protected override decimal Apply(decimal current, EventEnvelope @event)
+        => @event.Event is OrderPlacedEvent e ? current + e.Total : current;
 }
 
-public class ShippingProjection : Projection  // For: "Which orders shipped today?"
+public class ShippingProjection : Projection<ImmutableList<(string OrderId, DateTimeOffset ShippedAt)>>  // For: "Which orders shipped today?"
 {
-    private List<(OrderId, DateTime)> _shipped = new();
+    public ShippingProjection() => Current = [];
+
+    protected override ImmutableList<(string OrderId, DateTimeOffset ShippedAt)> Apply(
+        ImmutableList<(string OrderId, DateTimeOffset ShippedAt)> current,
+        EventEnvelope @event)
+        => @event.Event is OrderShippedEvent e ? current.Add((e.OrderId, e.ShippedAt)) : current;
 }
 
-public class CustomersProjection : Projection  // For: "Orders by customer"
+public class CustomersProjection : Projection<ImmutableDictionary<string, ImmutableList<string>>>  // For: "Orders by customer"
 {
-    private Dictionary<CustomerId, List<OrderId>> _customerOrders = new();
+    public CustomersProjection() => Current = ImmutableDictionary<string, ImmutableList<string>>.Empty;
+
+    protected override ImmutableDictionary<string, ImmutableList<string>> Apply(
+        ImmutableDictionary<string, ImmutableList<string>> current,
+        EventEnvelope @event)
+        => @event.Event is OrderPlacedEvent e
+            ? current.SetItem(e.CustomerId, (current.GetValueOrDefault(e.CustomerId) ?? []).Add(e.OrderId))
+            : current;
 }
 ```
 
@@ -403,30 +435,30 @@ public class PartitionedOrderRepository
 Keep frequently-accessed projections in memory:
 
 ```csharp
-public class InMemoryOrderProjection : IOrderProjection
+/// <summary>
+/// Keeps today's orders in memory. One thread feeds events; any number of threads query.
+/// Current is an immutable dictionary that each event replaces as a whole, so a query never
+/// sees a half-applied update and needs no lock.
+/// </summary>
+public class InMemoryOrderProjection : Projection<ImmutableDictionary<string, OrderReadModel>>
 {
-    private readonly ConcurrentDictionary<OrderId, OrderReadModel> _cache = new();
-
-    public async ValueTask<bool> ApplyAsync(EventEnvelope envelope)
+    public InMemoryOrderProjection()
     {
-        switch (envelope.Event)
-        {
-            case OrderPlacedEvent e:
-                _cache[e.OrderId] = new OrderReadModel { Id = e.OrderId, Total = e.Total };
-                break;
-            case OrderShippedEvent e:
-                if (_cache.TryGetValue(e.OrderId, out var model))
-                    model.IsShipped = true;
-                break;
-        }
-        return true;
+        Current = ImmutableDictionary<string, OrderReadModel>.Empty;
     }
 
-    public OrderReadModel? GetOrder(OrderId id)
+    protected override ImmutableDictionary<string, OrderReadModel> Apply(
+        ImmutableDictionary<string, OrderReadModel> current,
+        EventEnvelope @event) => @event.Event switch
     {
-        _cache.TryGetValue(id, out var model);
-        return model;
-    }
+        OrderPlacedEvent e => current.SetItem(e.OrderId, new OrderReadModel(e.OrderId, e.Total, IsShipped: false)),
+        OrderShippedEvent e when current.TryGetValue(e.OrderId, out var model) =>
+            current.SetItem(e.OrderId, model with { IsShipped = true }),
+        _ => current
+    };
+
+    public OrderReadModel? GetOrder(string orderId)
+        => Current.GetValueOrDefault(orderId);
 }
 ```
 

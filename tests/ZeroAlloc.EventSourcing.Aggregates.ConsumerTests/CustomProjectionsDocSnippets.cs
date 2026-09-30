@@ -1,21 +1,14 @@
-# Advanced Projection Patterns
+using System.Collections.Immutable;
+using System.Text.Json;
+using Microsoft.Extensions.Logging;
+using ZeroAlloc.EventSourcing;
 
-**Version:** 1.0  
-**Last Updated:** 2026-04-04
+// The C# in docs/advanced/custom-projections.md, copied as it appears there between
+// "--- snippet ---" markers and compiled against the public API. CustomProjectionsDocTests runs
+// it. When a snippet changes in the docs, change it here as well. See issue #410.
+namespace ZeroAlloc.EventSourcing.Aggregates.ConsumerTests.CustomProjectionsDocs;
 
-## Overview
-
-Projections transform events into read models optimized for queries. This guide covers advanced patterns beyond the basics.
-
-Every projection derives from `Projection<TReadModel>`: it overrides the protected `Apply`, which
-takes the current read model and an event and returns the new read model, and it is fed events
-through `HandleAsync`. The read models below are immutable, so `Apply` stays a pure function and a
-replay always rebuilds the same state. `Current` starts at `default(TReadModel)`, so each projection
-sets a starting value in its constructor.
-
-The examples share these events:
-
-```csharp
+// --- snippet: "The Events in This Guide" ---
 public record OrderLine(string ProductId, int Quantity, decimal Price);
 public record OrderPlacedEvent(string OrderId, string CustomerId, decimal Total, IReadOnlyList<OrderLine> LineItems);
 public record OrderShippedEvent(string OrderId, string CustomerEmail, string TrackingNumber);
@@ -26,14 +19,9 @@ public record StockReleasedEvent(string ProductId, int Quantity);
 public record DamagedStockEvent(string ProductId, int Quantity);
 
 public sealed record OrderReadModel(string OrderId, decimal Total);
-```
+// --- end snippet ---
 
-## Pattern 1: Filtered Projections
-
-Only process events matching criteria. `FilteredProjection<TReadModel>` asks `IncludeEvent` first
-and applies only the events it accepts:
-
-```csharp
+// --- snippet: "Pattern 1: Filtered Projections" ---
 public class HighValueOrdersProjection : FilteredProjection<ImmutableDictionary<string, OrderReadModel>>
 {
     private const decimal HighValueThreshold = 10_000m;
@@ -63,18 +51,9 @@ public class HighValueOrdersProjection : FilteredProjection<ImmutableDictionary<
     public OrderReadModel? GetHighValueOrder(string orderId)
         => Current.GetValueOrDefault(orderId);
 }
-```
+// --- end snippet ---
 
-**Benefits:**
-- Smaller read model (only high-value orders)
-- Faster queries (filtered data)
-- Lower memory usage
-
-## Pattern 2: Composite Projections
-
-Multiple read models from same event stream:
-
-```csharp
+// --- snippet: "Pattern 2: Composite Projections" ---
 /// <summary>
 /// One projection can handle multiple read models.
 /// Updates all models from single event.
@@ -127,18 +106,9 @@ public class OrderCompositeProjection : Projection<OrderStatistics>
     public IReadOnlyList<(string OrderId, DateTimeOffset PlacedAt)> GetRecentOrders()
         => Current.RecentOrders;
 }
-```
+// --- end snippet ---
 
-**Benefits:**
-- Single event stream processed once
-- Multiple queries from one model
-- Consistent snapshot point
-
-## Pattern 3: Stateful Projections
-
-Maintain complex state across events:
-
-```csharp
+// --- snippet: "Pattern 3: Stateful Projections" ---
 public sealed record InventoryState(int OnHand, int Reserved, int Damaged)
 {
     public static InventoryState Empty { get; } = new(0, 0, 0);
@@ -181,22 +151,9 @@ public class InventoryProjection : Projection<ImmutableDictionary<string, Invent
     public bool CanReserve(string productId, int quantity)
         => GetInventory(productId) is { } state && state.Available >= quantity;
 }
-```
+// --- end snippet ---
 
-A projection records what happened; it cannot reject an event that is already in the store. Enforce
-rules such as "never reserve more than is available" in the aggregate that raises
-`StockReservedEvent`, and use the projection to answer the question, as `CanReserve` does.
-
-**Benefits:**
-- Tracks multiple dimensions (on-hand, reserved, damaged)
-- Answers availability queries without loading an aggregate
-- Single source of truth for inventory queries
-
-## Pattern 4: Denormalized Projections
-
-Flatten nested data for efficient queries:
-
-```csharp
+// --- snippet: "Pattern 4: Denormalized Projections" ---
 /// <summary>Flat view: one row per line item.</summary>
 public sealed record LineItemView(string OrderId, string ProductId, int Quantity, decimal Price, string OrderStatus)
 {
@@ -241,19 +198,9 @@ public class OrderLineItemProjection : Projection<ImmutableList<LineItemView>>
     public List<LineItemView> GetOrderLineItems(string orderId)
         => Current.Where(li => li.OrderId == orderId).ToList();
 }
-```
+// --- end snippet ---
 
-**Benefits:**
-- Optimized for queries (single table, no joins)
-- Pre-aggregated data (e.g., total per product)
-- Faster than querying events directly
-
-## Pattern 5: Batched Projections
-
-Improve performance with batching. `BatchedProjection<TReadModel>` applies every included event at
-once and calls `FlushBatchAsync` each time a batch is full:
-
-```csharp
+// --- snippet: "Pattern 5: Batched Projections" ---
 /// <summary>
 /// Updates the read model on every event, but writes it to the store once per batch.
 /// Trade-off: durability for performance.
@@ -283,34 +230,9 @@ public class OrderTotalsBatchedProjection : BatchedProjection<ImmutableDictionar
         await _store.SaveAsync("order-totals", JsonSerializer.Serialize(Current), ct);
     }
 }
-```
+// --- end snippet ---
 
-Usage: flush the last partial batch when a run ends.
-
-```csharp
-var projection = new OrderTotalsBatchedProjection(projectionStore);
-await foreach (var envelope in eventStore.ReadAsync(StreamId.Global))
-{
-    await projection.HandleAsync(envelope);
-}
-
-// Write the last, partial batch
-await projection.FlushAsync();
-```
-
-`JsonSerializer.Serialize` uses reflection; under NativeAOT, pass a `JsonTypeInfo` from a
-source-generated `JsonSerializerContext` instead.
-
-**Benefits:**
-- Far fewer writes (one per batch)
-- Lower database load
-- Trade-off: the events since the last flush are applied in memory only until the next flush
-
-## Pattern 6: Projection Composition
-
-Combine multiple projections:
-
-```csharp
+// --- snippet: "Pattern 6: Projection Composition" ---
 /// <summary>
 /// Combines the results of other projections; it does not handle events itself.
 /// </summary>
@@ -335,15 +257,9 @@ public class DashboardProjection
             AvailableInventory: _inventoryProjection.GetInventory(productId)?.Available ?? 0);
     }
 }
-```
+// --- end snippet ---
 
-## Pattern 7: Event-Driven Side Effects
-
-Trigger external actions from events. Don't do it from a projection: a projection is rebuilt by
-replaying every event, and a rebuild would repeat every action. Use a stream consumer handler,
-which checkpoints the events it has handled:
-
-```csharp
+// --- snippet: "Pattern 7: Event-Driven Side Effects" ---
 public interface IEmailService
 {
     Task SendAsync(string to, string subject, string body, CancellationToken ct);
@@ -375,24 +291,9 @@ public class OrderShippingNotificationHandler
         }
     }
 }
-```
+// --- end snippet ---
 
-Wire it to a `StreamConsumer`:
-
-```csharp
-// The consumer checkpoints what it handled, so a restart does not send an email twice
-var consumer = new StreamConsumer(eventStore, checkpointStore, consumerId: "shipping-emails");
-await consumer.ConsumeAsync(handler.HandleAsync, ct);
-```
-
-**Caution:** Side effects must be idempotent (safe to run multiple times): after a crash the consumer
-redelivers the events since its last checkpoint.
-
-## Pattern 8: Time-Windowed Projections
-
-Track events within time windows:
-
-```csharp
+// --- snippet: "Pattern 8: Time-Windowed Projections" ---
 /// <summary>
 /// Projection that groups orders by the week they were placed in.
 /// </summary>
@@ -429,14 +330,9 @@ public class WeeklyOrdersProjection : Projection<ImmutableDictionary<DateOnly, I
     public decimal GetWeekRevenue(DateTimeOffset dayInWeek)
         => GetWeekOrders(dayInWeek).Sum(o => o.Total);
 }
-```
+// --- end snippet ---
 
-## Pattern 9: Projection State Snapshots
-
-Save projection state periodically, with the position it was taken at, so a restart resumes from
-there:
-
-```csharp
+// --- snippet: "Pattern 9: Projection State Snapshots" ---
 /// <summary>The read model, with the position of the last event applied to it.</summary>
 public sealed record OrderTotals(ImmutableDictionary<string, decimal> Totals, long LastPosition)
 {
@@ -482,28 +378,9 @@ public class PersistentOrderTotalsProjection : Projection<OrderTotals>
         return new StreamPosition(Current.LastPosition);
     }
 }
-```
+// --- end snippet ---
 
-Usage:
-
-```csharp
-var projection = new PersistentOrderTotalsProjection(projectionStore);
-
-// Resume after the last saved position instead of replaying everything
-var resumeAfter = await projection.LoadAsync();
-await foreach (var envelope in eventStore.ReadAsync(new StreamId("orders"), resumeAfter))
-{
-    await projection.HandleAsync(envelope);
-}
-
-await projection.SaveAsync();
-```
-
-## Pattern 10: Error Handling in Projections
-
-Handle errors gracefully by overriding `HandleAsync`:
-
-```csharp
+// --- snippet: "Pattern 10: Error Handling in Projections" ---
 public class ResilientOrderTotalsProjection : Projection<ImmutableDictionary<string, decimal>>
 {
     private readonly ILogger _logger;
@@ -544,69 +421,48 @@ public class ResilientOrderTotalsProjection : Projection<ImmutableDictionary<str
         return ex is InvalidDataException or FormatException;
     }
 }
-```
+// --- end snippet ---
 
-A skipped event is lost to this projection. When a projection is driven by a `StreamConsumer`,
-`ErrorHandlingStrategy.DeadLetter` keeps the failed event in an `IDeadLetterStore` for review
-instead.
-
-## Comparison: Patterns for Different Scenarios
-
-| Pattern | Use Case | Complexity | Performance |
-|---------|----------|-----------|-------------|
-| Filtered | Only care about subset of events | Low | High (small model) |
-| Composite | Multiple read models needed | Medium | High (single scan) |
-| Stateful | Complex state transitions | High | Medium |
-| Denormalized | Flat queries needed | Medium | High (pre-joined) |
-| Batched | High throughput writes | Medium | Very High |
-| Composed | Combining multiple projections | Medium | Low (multiple reads) |
-| Side Effects | Trigger external actions | High | Medium |
-| Time-Windowed | Time-based analysis | Medium | Medium |
-| Persistent | Resume from checkpoint | High | Medium |
-| Resilient | Fault tolerance needed | High | Medium |
-
-## Testing Projections
-
-`Apply` is protected; test a projection through `HandleAsync` and its query methods:
-
-```csharp
-[Fact]
-public async Task HandleAsync_BuildsReadModel()
+public static class CustomProjectionsUsage
 {
-    var projection = new OrderCompositeProjection();
+    public static async Task BatchedUsage(IEventStore eventStore, IProjectionStore projectionStore)
+    {
+        // --- snippet: "Pattern 5" usage ---
+        var projection = new OrderTotalsBatchedProjection(projectionStore);
+        await foreach (var envelope in eventStore.ReadAsync(StreamId.Global))
+        {
+            await projection.HandleAsync(envelope);
+        }
 
-    var envelope = new EventEnvelope(
-        new StreamId("order-123"),
-        new StreamPosition(1),
-        new OrderPlacedEvent("order-123", "customer-1", 1000m, []),
-        EventMetadata.New(nameof(OrderPlacedEvent)));
+        // Write the last, partial batch
+        await projection.FlushAsync();
+        // --- end snippet ---
+    }
 
-    await projection.HandleAsync(envelope);
+    public static async Task PersistentUsage(IEventStore eventStore, IProjectionStore projectionStore)
+    {
+        // --- snippet: "Pattern 9" usage ---
+        var projection = new PersistentOrderTotalsProjection(projectionStore);
 
-    Assert.Equal(1, projection.GetOrderCount("customer-1"));
-    Assert.Equal(1000m, projection.GetTotalRevenue("customer-1"));
+        // Resume after the last saved position instead of replaying everything
+        var resumeAfter = await projection.LoadAsync();
+        await foreach (var envelope in eventStore.ReadAsync(new StreamId("orders"), resumeAfter))
+        {
+            await projection.HandleAsync(envelope);
+        }
+
+        await projection.SaveAsync();
+        // --- end snippet ---
+    }
+
+    public static async Task SideEffectWiring(
+        IEventStore eventStore, ICheckpointStore checkpointStore, OrderShippingNotificationHandler handler, CancellationToken ct)
+    {
+        // --- snippet: "Pattern 7" usage ---
+        // The consumer checkpoints what it handled, so a restart does not send an email twice
+        var consumer = new StreamConsumer(eventStore, checkpointStore, consumerId: "shipping-emails");
+        await consumer.ConsumeAsync(handler.HandleAsync, ct);
+        // --- end snippet ---
+    }
 }
-```
 
-## Summary
-
-Advanced projection patterns enable:
-
-1. **Filtered projections** — Reduce read model size
-2. **Composite projections** — Multiple models from one stream
-3. **Stateful projections** — Complex state machines
-4. **Denormalized projections** — Pre-joined queries
-5. **Batched projections** — High throughput
-6. **Composed projections** — Combine multiple projections
-7. **Side effects** — Trigger external actions
-8. **Time-windowed** — Temporal analysis
-9. **Persistent** — Survive restarts
-10. **Resilient** — Handle errors gracefully
-
-Choose patterns based on your query patterns and performance requirements.
-
-## Next Steps
-
-- **[Custom Event Stores](./custom-event-store.md)** — Custom storage backends
-- **[Plugin Architecture](./plugin-architecture.md)** — Building extensible systems
-- **[Core Concepts: Projections](../core-concepts/projections.md)** — Projection fundamentals
