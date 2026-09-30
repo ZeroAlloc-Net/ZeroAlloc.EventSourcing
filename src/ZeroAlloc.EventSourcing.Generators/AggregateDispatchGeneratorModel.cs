@@ -12,6 +12,7 @@ namespace ZeroAlloc.EventSourcing.Generators;
 internal sealed class AggregateInfo
 {
     public AggregateInfo(
+        string hintPrefix,
         string @namespace,
         string className,
         string stateTypeName,
@@ -19,6 +20,7 @@ internal sealed class AggregateInfo
         IReadOnlyList<string> eventTypeNames,
         IReadOnlyList<string> eventTypeFullNames)
     {
+        HintPrefix = hintPrefix;
         Namespace = @namespace;
         ClassName = className;
         StateTypeName = stateTypeName;
@@ -28,6 +30,8 @@ internal sealed class AggregateInfo
         EventTypeFullNames = eventTypeFullNames;
     }
 
+    /// <summary>Unique per type; see <see cref="PartialTypeDeclarations.HintPrefix"/>.</summary>
+    public string HintPrefix { get; }
     public string Namespace { get; }
     public string ClassName { get; }
     public string StateTypeName { get; }
@@ -39,6 +43,7 @@ internal sealed class AggregateInfo
     // Without it, reference equality causes the source output step to re-run on every keystroke.
     public override bool Equals(object? obj)
         => obj is AggregateInfo other
+            && HintPrefix == other.HintPrefix
             && Namespace == other.Namespace
             && ClassName == other.ClassName
             && StateTypeName == other.StateTypeName
@@ -49,6 +54,7 @@ internal sealed class AggregateInfo
     public override int GetHashCode()
     {
         var hash = 17;
+        hash = hash * 31 + HintPrefix.GetHashCode();
         hash = hash * 31 + Namespace.GetHashCode();
         hash = hash * 31 + ClassName.GetHashCode();
         hash = hash * 31 + StateTypeName.GetHashCode();

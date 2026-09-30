@@ -1,9 +1,9 @@
 using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 
 namespace ZeroAlloc.EventSourcing.Generators;
 
@@ -21,38 +21,31 @@ public sealed class ProjectionDispatchGenerator : IIncrementalGenerator
     {
         var projections = context.SyntaxProvider
             .CreateSyntaxProvider(
-                predicate: static (node, _) => IsPartialClassWithBaseSyntax(node),
-                transform: static (ctx, _) => GetProjectionInfoPublic(ctx))
+                predicate: static (node, _) => PartialTypeDeclarations.IsPartialClassWithBaseSyntax(node),
+                transform: static (ctx, ct) => GetProjectionInfoPublic(ctx, ct))
             .Where(static info => info is not null)
             .Select(static (info, _) => info!);
 
         context.RegisterSourceOutput(projections, static (ctx, info) =>
         {
             var source = EmitApplyTyped(info);
-            // Qualify the hint name with the namespace to avoid collisions when two projections share a short name.
-            var hint = string.IsNullOrEmpty(info.Namespace)
-                ? $"{info.ClassName}.ApplyTyped.g.cs"
-                : $"{info.Namespace}.{info.ClassName}.ApplyTyped.g.cs";
-            ctx.AddSource(hint, source);
+            ctx.AddSource($"{info.HintPrefix}.ApplyTyped.g.cs", source);
         });
     }
-
-    /// <summary>Syntactic predicate: returns true for partial class declarations with a base type list.</summary>
-    private static bool IsPartialClassWithBaseSyntax(SyntaxNode node)
-        => node is ClassDeclarationSyntax cls
-            && cls.Modifiers.Any(m => m.IsKind(SyntaxKind.PartialKeyword))
-            && cls.BaseList?.Types.Count > 0;
 
     /// <summary>
     /// Semantic transform: returns a <see cref="ProjectionInfo"/> for classes that inherit
     /// <c>Projection&lt;TReadModel&gt;</c> and have <c>Apply(TReadModel, TEvent)</c> methods.
-    /// Returns <c>null</c> for non-projection classes or those without Apply methods.
+    /// Returns <c>null</c> for non-projection classes, for those without Apply methods, and for every
+    /// declaration of a partial class except its primary one, so that a class split over several
+    /// declarations is emitted once.
     /// </summary>
-    private static ProjectionInfo? GetProjectionInfoPublic(GeneratorSyntaxContext ctx)
+    private static ProjectionInfo? GetProjectionInfoPublic(GeneratorSyntaxContext ctx, CancellationToken cancellationToken)
     {
         var cls = (ClassDeclarationSyntax)ctx.Node;
-        var symbol = ctx.SemanticModel.GetDeclaredSymbol(cls) as INamedTypeSymbol;
+        var symbol = ctx.SemanticModel.GetDeclaredSymbol(cls, cancellationToken) as INamedTypeSymbol;
         if (symbol is null) return null;
+        if (!PartialTypeDeclarations.IsPrimaryDeclaration(cls, symbol, cancellationToken)) return null;
 
         // Walk base types to find Projection<TReadModel>
         var baseType = symbol.BaseType;
@@ -96,6 +89,7 @@ public sealed class ProjectionDispatchGenerator : IIncrementalGenerator
             : symbol.ContainingNamespace.ToDisplayString();
 
         return new ProjectionInfo(
+            PartialTypeDeclarations.HintPrefix(symbol),
             ns,
             symbol.Name,
             readModelType.Name,

@@ -23,6 +23,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/ZeroAlloc.EventSourcing.Aggregates.ConsumerTests/ZeroAlloc.EventSourcing.Aggregates.ConsumerTests.csproj" />
     <Project Path="tests/ZeroAlloc.EventSourcing.Aggregates.Tests/ZeroAlloc.EventSourcing.Aggregates.Tests.csproj" />
+    <Project Path="tests/ZeroAlloc.EventSourcing.Generators.Tests/ZeroAlloc.EventSourcing.Generators.Tests.csproj" />
     <Project Path="tests/ZeroAlloc.EventSourcing.InMemory.Tests/ZeroAlloc.EventSourcing.InMemory.Tests.csproj" />
     <Project Path="tests/ZeroAlloc.EventSourcing.Kafka.Tests/ZeroAlloc.EventSourcing.Kafka.Tests.csproj" />
     <Project Path="tests/ZeroAlloc.EventSourcing.Mediator.Generator.Tests/ZeroAlloc.EventSourcing.Mediator.Generator.Tests.csproj" />
