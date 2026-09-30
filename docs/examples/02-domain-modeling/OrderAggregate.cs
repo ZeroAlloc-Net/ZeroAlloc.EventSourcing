@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using ZeroAlloc.EventSourcing;
+using ZeroAlloc.EventSourcing.Aggregates;
 
 namespace ZeroAlloc.EventSourcing.Examples.DomainModeling;
 
@@ -11,6 +11,13 @@ namespace ZeroAlloc.EventSourcing.Examples.DomainModeling;
 /// 3. State machine pattern (order must follow a sequence)
 /// 4. Collection handling (line items)
 /// 5. Value objects within state
+///
+/// The example is split over three files, one concern each:
+/// - OrderAggregate.cs (this file): identities, value objects and the aggregate's commands
+/// - OrderState.cs: the state and how each event changes it
+/// - OrderEvents.cs: the events
+///
+/// The files are compiled and run by the test suite, so they only use the public API.
 /// </summary>
 
 // Domain value types
@@ -24,84 +31,9 @@ public record LineItem(ProductId ProductId, int Quantity, decimal UnitPrice)
     public decimal Total => Quantity * UnitPrice;
 }
 
-// Aggregate state
-public partial struct OrderState : IAggregateState<OrderState>
-{
-    public static OrderState Initial => default;
-
-    // Identification
-    public CustomerId CustomerId { get; private set; }
-    public string OrderNumber { get; private set; }
-
-    // Status flags (state machine)
-    public bool IsPlaced { get; private set; }
-    public bool IsConfirmed { get; private set; }
-    public bool IsPaid { get; private set; }
-    public bool IsShipped { get; private set; }
-    public bool IsCancelled { get; private set; }
-
-    // Content
-    public List<LineItem> LineItems { get; private set; }
-    public decimal Total => CalculateTotal();
-
-    // Audit trail
-    public DateTime PlacedAt { get; private set; }
-    public DateTime? ConfirmedAt { get; private set; }
-    public DateTime? ShippedAt { get; private set; }
-
-    // Shipping
-    public string? TrackingNumber { get; private set; }
-
-    private decimal CalculateTotal() => LineItems?.Sum(l => l.Total) ?? 0;
-
-    // Event application methods
-    internal OrderState Apply(OrderPlacedEvent e)
-    {
-        var newState = this with
-        {
-            OrderNumber = e.OrderNumber,
-            CustomerId = e.CustomerId,
-            IsPlaced = true,
-            PlacedAt = DateTime.UtcNow,
-            LineItems = new List<LineItem>(e.LineItems)
-        };
-        return newState;
-    }
-
-    internal OrderState Apply(OrderConfirmedEvent _) =>
-        this with
-        {
-            IsConfirmed = true,
-            ConfirmedAt = DateTime.UtcNow
-        };
-
-    internal OrderState Apply(PaymentProcessedEvent _) =>
-        this with { IsPaid = true };
-
-    internal OrderState Apply(OrderShippedEvent e) =>
-        this with
-        {
-            IsShipped = true,
-            ShippedAt = DateTime.UtcNow,
-            TrackingNumber = e.TrackingNumber
-        };
-
-    internal OrderState Apply(OrderCancelledEvent _) =>
-        this with { IsCancelled = true };
-}
-
-// Events
-public record OrderPlacedEvent(
-    string OrderNumber,
-    CustomerId CustomerId,
-    IReadOnlyList<LineItem> LineItems);
-
-public record OrderConfirmedEvent;
-public record PaymentProcessedEvent(decimal Amount);
-public record OrderShippedEvent(string TrackingNumber);
-public record OrderCancelledEvent;
-
-// Aggregate
+// Aggregate. The class is partial: the source generator adds the ApplyEvent override, which
+// routes each event to the matching internal Apply method on OrderState, and an
+// OrderEventTypeRegistry for the event store.
 public sealed partial class Order : Aggregate<OrderId, OrderState>
 {
     /// <summary>
@@ -217,15 +149,4 @@ public sealed partial class Order : Aggregate<OrderId, OrderState>
         // For simplicity, we just cancel here
         Raise(new OrderCancelledEvent());
     }
-
-    // Event dispatch
-    protected override OrderState ApplyEvent(OrderState state, object @event) => @event switch
-    {
-        OrderPlacedEvent e => state.Apply(e),
-        OrderConfirmedEvent e => state.Apply(e),
-        PaymentProcessedEvent e => state.Apply(e),
-        OrderShippedEvent e => state.Apply(e),
-        OrderCancelledEvent e => state.Apply(e),
-        _ => state
-    };
 }

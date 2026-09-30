@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using ZeroAlloc.EventSourcing;
+using ZeroAlloc.EventSourcing.Aggregates;
 
 namespace ZeroAlloc.EventSourcing.Examples.DomainModeling;
 
@@ -17,10 +17,10 @@ namespace ZeroAlloc.EventSourcing.Examples.DomainModeling;
 /// </summary>
 
 /// <summary>
-/// Extended OrderState with more features.
+/// The Order aggregate's state.
 /// This represents everything we know about an order at a point in time.
 /// </summary>
-public partial struct OrderState : IAggregateState<OrderState>
+public struct OrderState : IAggregateState<OrderState>
 {
     // ===== Identity =====
 
@@ -105,7 +105,7 @@ public partial struct OrderState : IAggregateState<OrderState>
             OrderNumber = e.OrderNumber,
             CustomerId = e.CustomerId,
             IsPlaced = true,
-            PlacedAt = DateTime.UtcNow,
+            PlacedAt = e.OccurredAt,
             LineItems = new List<LineItem>(e.LineItems)
         };
 
@@ -213,9 +213,9 @@ public partial struct OrderState : IAggregateState<OrderState>
         if (state.IsShipped && !state.IsPaid)
             throw new InvalidOperationException("Cannot be shipped without being paid");
 
-        // Invariant 4: Can't be both cancelled and anything else
-        if (state.IsCancelled && (state.IsConfirmed || state.IsPaid || state.IsShipped))
-            throw new InvalidOperationException("Cancelled order cannot have other states");
+        // Invariant 4: A shipped order cannot be cancelled
+        if (state.IsCancelled && state.IsShipped)
+            throw new InvalidOperationException("Cancelled order cannot be shipped");
 
         // Invariant 5: Must have at least one line item if placed
         if (state.IsPlaced && (state.LineItems == null || state.LineItems.Count == 0))

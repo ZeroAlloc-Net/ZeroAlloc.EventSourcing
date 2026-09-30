@@ -29,18 +29,20 @@
   </ItemGroup>
 
   <!--
-    The runnable examples under docs/examples are compiled here, against the public API only, so
-    they cannot call internal members or drift from the real signatures. See issue #390.
+    Every C# file under docs/examples is compiled here, against the public API only, so the
+    examples cannot call internal members or drift from the real signatures. A new example file
+    is picked up without changing this list. See issues #390 and #402.
   -->
   <ItemGroup>
-    <Compile Include="..\..\docs\examples\01-getting-started\*.cs" Link="DocsExamples\01-getting-started\%(Filename)%(Extension)" />
-    <Compile Include="..\..\docs\examples\03-testing\TestingAggregates.cs" Link="DocsExamples\03-testing\%(Filename)%(Extension)" />
-    <Compile Include="..\..\docs\examples\04-advanced\CustomSnapshotStore.cs" Link="DocsExamples\04-advanced\%(Filename)%(Extension)" />
+    <Compile Include="..\..\docs\examples\**\*.cs" Link="DocsExamples\%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\ZeroAlloc.EventSourcing.Aggregates\ZeroAlloc.EventSourcing.Aggregates.csproj" />
     <ProjectReference Include="..\..\src\ZeroAlloc.EventSourcing.InMemory\ZeroAlloc.EventSourcing.InMemory.csproj" />
+    <!-- Referenced only so the README snippets for these packages compile. -->
+    <ProjectReference Include="..\..\src\ZeroAlloc.EventSourcing.Kafka\ZeroAlloc.EventSourcing.Kafka.csproj" />
+    <ProjectReference Include="..\..\src\ZeroAlloc.EventSourcing.Telemetry\ZeroAlloc.EventSourcing.Telemetry.csproj" />
     <ProjectReference Include="..\..\src\ZeroAlloc.EventSourcing.Generators\ZeroAlloc.EventSourcing.Generators.csproj"
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="false" />

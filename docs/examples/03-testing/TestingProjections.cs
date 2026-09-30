@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Linq;
 using System.Threading.Tasks;
 using Xunit;
@@ -12,10 +13,12 @@ namespace ZeroAlloc.EventSourcing.Examples.Testing;
 ///
 /// Projections transform events into read models for queries.
 /// Testing projections is also straightforward because:
-/// 1. Projections are pure functions (event -> updated model)
+/// 1. Apply is a pure function (current read model + event -> new read model)
 /// 2. No state management complexity
 /// 3. No database needed - test with in-memory models
 /// 4. Can test with synthetic events, no need to create full aggregates
+///
+/// This file is compiled and its tests run by the test suite, so it only uses the public API.
 /// </summary>
 
 // ===== Domain Model =====
@@ -26,12 +29,9 @@ public record StockReceivedEvent(ProductId ProductId, int Quantity);
 public record StockReservedEvent(ProductId ProductId, int Quantity);
 public record StockReleasedEvent(ProductId ProductId, int Quantity);
 
-// Read model: Current inventory levels
-public class InventoryReadModel
+// Read model: Current inventory level of one product
+public sealed record InventoryReadModel(ProductId ProductId, int QuantityOnHand, int QuantityReserved)
 {
-    public ProductId ProductId { get; set; }
-    public int QuantityOnHand { get; set; }
-    public int QuantityReserved { get; set; }
     public int AvailableQuantity => QuantityOnHand - QuantityReserved;
 
     public override string ToString() =>
@@ -41,49 +41,44 @@ public class InventoryReadModel
 
 // ===== PROJECTION IMPLEMENTATION =====
 
-public class InventoryProjection : Projection
+/// <summary>
+/// Projects stock events into one <see cref="InventoryReadModel"/> per product. The read model of
+/// the projection is the immutable map of all of them.
+/// </summary>
+public sealed class InventoryProjection : Projection<ImmutableDictionary<ProductId, InventoryReadModel>>
 {
-    private readonly Dictionary<ProductId, InventoryReadModel> _inventory = new();
-
-    public override async ValueTask<bool> ApplyAsync(EventEnvelope envelope)
+    public InventoryProjection()
     {
-        switch (envelope.Event)
-        {
-            case StockReceivedEvent e:
-                var model = GetOrCreateModel(e.ProductId);
-                model.QuantityOnHand += e.Quantity;
-                return true;
-
-            case StockReservedEvent e:
-                model = GetOrCreateModel(e.ProductId);
-                model.QuantityReserved += e.Quantity;
-                return true;
-
-            case StockReleasedEvent e:
-                model = GetOrCreateModel(e.ProductId);
-                model.QuantityReserved -= e.Quantity;
-                return true;
-
-            default:
-                return false;
-        }
+        // Projection<T>.Current starts at default, which is null for a class: start empty instead.
+        Current = ImmutableDictionary<ProductId, InventoryReadModel>.Empty;
     }
 
-    private InventoryReadModel GetOrCreateModel(ProductId productId)
+    protected override ImmutableDictionary<ProductId, InventoryReadModel> Apply(
+        ImmutableDictionary<ProductId, InventoryReadModel> current,
+        EventEnvelope envelope)
+        => envelope.Event switch
+        {
+            StockReceivedEvent e => Update(current, e.ProductId, m => m with { QuantityOnHand = m.QuantityOnHand + e.Quantity }),
+            StockReservedEvent e => Update(current, e.ProductId, m => m with { QuantityReserved = m.QuantityReserved + e.Quantity }),
+            StockReleasedEvent e => Update(current, e.ProductId, m => m with { QuantityReserved = m.QuantityReserved - e.Quantity }),
+            // Events the projection does not handle leave the read model unchanged
+            _ => current
+        };
+
+    private static ImmutableDictionary<ProductId, InventoryReadModel> Update(
+        ImmutableDictionary<ProductId, InventoryReadModel> current,
+        ProductId productId,
+        Func<InventoryReadModel, InventoryReadModel> change)
     {
-        if (!_inventory.ContainsKey(productId))
-            _inventory[productId] = new InventoryReadModel { ProductId = productId };
-        return _inventory[productId];
+        var model = current.GetValueOrDefault(productId) ?? new InventoryReadModel(productId, 0, 0);
+        return current.SetItem(productId, change(model));
     }
 
     public InventoryReadModel? GetInventory(ProductId productId)
-    {
-        _inventory.TryGetValue(productId, out var model);
-        return model;
-    }
+        => Current.GetValueOrDefault(productId);
 
     public List<InventoryReadModel> GetAll()
-        => _inventory.Values.ToList();
+        => Current.Values.ToList();
 }
 
 // ===== PROJECTION TESTS =====
@@ -96,7 +91,7 @@ public class ProjectionTestingExamples
     /// Test that a single event is correctly applied to the projection.
     /// </summary>
     [Fact]
-    public async Task ApplyAsync_WithStockReceivedEvent_UpdatesInventory()
+    public async Task HandleAsync_WithStockReceivedEvent_UpdatesInventory()
     {
         // Arrange
         var projection = new InventoryProjection();
@@ -105,18 +100,14 @@ public class ProjectionTestingExamples
         var @event = new StockReceivedEvent(productId, 100);
         var envelope = new EventEnvelope(
             new StreamId($"product-{productId.Value}"),
-            StreamPosition.Start,
+            new StreamPosition(1),
             @event,
-            DateTimeOffset.UtcNow,
-            new EventMetadata()
-        );
+            EventMetadata.New(nameof(StockReceivedEvent)));
 
         // Act
-        var applied = await projection.ApplyAsync(envelope);
+        await projection.HandleAsync(envelope);
 
         // Assert
-        Assert.True(applied);
-
         var model = projection.GetInventory(productId);
         Assert.NotNull(model);
         Assert.Equal(100, model!.QuantityOnHand);
@@ -131,7 +122,7 @@ public class ProjectionTestingExamples
     /// This simulates replaying a stream of events.
     /// </summary>
     [Fact]
-    public async Task ApplyAsync_WithMultipleEvents_BuildsCompleteModel()
+    public async Task HandleAsync_WithMultipleEvents_BuildsCompleteModel()
     {
         // Arrange
         var projection = new InventoryProjection();
@@ -146,13 +137,7 @@ public class ProjectionTestingExamples
         };
 
         // Act
-        var position = StreamPosition.Start;
-        foreach (var @event in events)
-        {
-            var envelope = CreateEnvelope(productId, @event, position);
-            await projection.ApplyAsync(envelope);
-            position = position.Next();
-        }
+        await ApplyEvents(projection, events);
 
         // Assert
         var model = projection.GetInventory(productId);
@@ -168,7 +153,7 @@ public class ProjectionTestingExamples
     /// Test that projection correctly handles events for multiple products.
     /// </summary>
     [Fact]
-    public async Task ApplyAsync_WithMultipleProducts_MaintainsIndependentModels()
+    public async Task HandleAsync_WithMultipleProducts_MaintainsIndependentModels()
     {
         // Arrange
         var projection = new InventoryProjection();
@@ -184,22 +169,7 @@ public class ProjectionTestingExamples
         };
 
         // Act
-        var position = StreamPosition.Start;
-        foreach (var @event in events)
-        {
-            // Route event to correct stream
-            var productId = @event switch
-            {
-                StockReceivedEvent e => e.ProductId,
-                StockReservedEvent e => e.ProductId,
-                StockReleasedEvent e => e.ProductId,
-                _ => new ProductId(Guid.Empty)
-            };
-
-            var envelope = CreateEnvelope(productId, @event, position);
-            await projection.ApplyAsync(envelope);
-            position = position.Next();
-        }
+        await ApplyEvents(projection, events);
 
         // Assert: Each product has independent model
         var model1 = projection.GetInventory(product1);
@@ -219,57 +189,48 @@ public class ProjectionTestingExamples
     /// Test that projection correctly ignores events it doesn't care about.
     /// </summary>
     [Fact]
-    public async Task ApplyAsync_WithUnrelatedEvent_ReturnsFalse()
+    public async Task HandleAsync_WithUnrelatedEvent_LeavesReadModelUnchanged()
     {
         // Arrange
         var projection = new InventoryProjection();
-        var productId = new ProductId(Guid.NewGuid());
+        var before = projection.Current;
 
-        // Some event the projection doesn't understand
-        var unknownEvent = new UnknownEvent();
-
-        var envelope = CreateEnvelope(productId, unknownEvent, StreamPosition.Start);
-
-        // Act
-        var applied = await projection.ApplyAsync(envelope);
+        // Act: Some event the projection doesn't understand
+        await ApplyEvents(projection, new object[] { new UnknownEvent() });
 
         // Assert
-        Assert.False(applied);  // Projection returns false for unknown events
-        Assert.Null(projection.GetInventory(productId));  // No model created
+        Assert.Same(before, projection.Current);  // Apply returned the read model it was given
+        Assert.Empty(projection.GetAll());         // No model created
     }
 
-    // ===== Test 5: Idempotency =====
+    // ===== Test 5: Duplicate Delivery =====
 
     /// <summary>
-    /// Test that applying the same event multiple times produces the same result.
-    /// This is important because projections may receive duplicate events.
+    /// Test what happens when the same event is delivered twice.
+    /// A projection may see duplicates, for example after a consumer restarts from its last
+    /// checkpoint. This projection is not idempotent: it counts the stock twice. Store the
+    /// last applied position with the read model and skip older events if that matters.
     /// </summary>
     [Fact]
-    public async Task ApplyAsync_IsIdempotent()
+    public async Task HandleAsync_SameEventTwice_IsAppliedTwice()
     {
         // Arrange
         var projection1 = new InventoryProjection();
         var projection2 = new InventoryProjection();
         var productId = new ProductId(Guid.NewGuid());
 
-        var @event = new StockReceivedEvent(productId, 100);
-        var envelope = CreateEnvelope(productId, @event, StreamPosition.Start);
+        var envelope = CreateEnvelope(new StockReceivedEvent(productId, 100), new StreamPosition(1));
 
         // Act: Apply event once
-        await projection1.ApplyAsync(envelope);
+        await projection1.HandleAsync(envelope);
 
         // Act: Apply same event twice
-        await projection2.ApplyAsync(envelope);
-        await projection2.ApplyAsync(envelope);
+        await projection2.HandleAsync(envelope);
+        await projection2.HandleAsync(envelope);
 
-        // Assert: Results should differ (projection2 applied twice)
-        // This is actually testing that projection is NOT idempotent by default
-        // In production, you'd want to make projections idempotent
-        var model1 = projection1.GetInventory(productId);
-        var model2 = projection2.GetInventory(productId);
-
-        Assert.Equal(100, model1!.QuantityOnHand);
-        Assert.Equal(200, model2!.QuantityOnHand);  // Applied twice!
+        // Assert: projection2 counted the duplicate
+        Assert.Equal(100, projection1.GetInventory(productId)!.QuantityOnHand);
+        Assert.Equal(200, projection2.GetInventory(productId)!.QuantityOnHand);
     }
 
     // ===== Test 6: Projection State Query =====
@@ -285,7 +246,7 @@ public class ProjectionTestingExamples
         var projection = new InventoryProjection();
         var productId = new ProductId(Guid.NewGuid());
 
-        await ApplyEvents(projection, new[]
+        await ApplyEvents(projection, new object[]
         {
             new StockReceivedEvent(productId, 100),
             new StockReservedEvent(productId, 30),
@@ -322,7 +283,7 @@ public class ProjectionTestingExamples
     /// Test a realistic scenario with multiple operations.
     /// </summary>
     [Fact]
-    public async Task ApplyAsync_WithRealisticScenario()
+    public async Task HandleAsync_WithRealisticScenario()
     {
         // Arrange: Simulating warehouse operations
         var projection = new InventoryProjection();
@@ -364,67 +325,48 @@ public class ProjectionTestingExamples
         Assert.Equal(550, model.AvailableQuantity);
     }
 
-    // ===== Test 8: Performance =====
+    // ===== Test 8: Volume =====
 
     /// <summary>
-    /// Test that projection can handle large volumes of events.
+    /// Test that projection can handle large volumes of events. Measure speed with a benchmark
+    /// rather than a timing assertion, which fails at random on a busy build machine.
     /// </summary>
     [Fact]
-    public async Task ApplyAsync_Performance_HandlesLargeVolumes()
+    public async Task HandleAsync_HandlesLargeVolumes()
     {
         // Arrange
         var projection = new InventoryProjection();
         var productId = new ProductId(Guid.NewGuid());
-        var eventCount = 10_000;
+        const int eventCount = 10_000;
 
-        var events = new List<object>();
-        for (int i = 0; i < eventCount; i++)
-        {
-            events.Add(new StockReceivedEvent(productId, 1));
-        }
+        var events = Enumerable.Range(0, eventCount)
+            .Select(_ => (object)new StockReceivedEvent(productId, 1))
+            .ToList();
 
-        // Act: Measure time to process 10,000 events
-        var startTime = DateTime.UtcNow;
+        // Act
         await ApplyEvents(projection, events);
-        var elapsed = DateTime.UtcNow - startTime;
 
-        // Assert: Should be very fast (< 1 second for 10k events)
-        Assert.True(elapsed.TotalSeconds < 1, $"Too slow: {elapsed.TotalSeconds}s for {eventCount} events");
-
-        var model = projection.GetInventory(productId);
-        Assert.Equal(eventCount, model!.QuantityOnHand);
+        // Assert
+        Assert.Equal(eventCount, projection.GetInventory(productId)!.QuantityOnHand);
     }
 
     // ===== Helper Methods =====
 
-    private EventEnvelope CreateEnvelope(ProductId productId, object @event, StreamPosition position)
-    {
-        return new EventEnvelope(
-            new StreamId($"product-{productId.Value}"),
+    private static EventEnvelope CreateEnvelope(object @event, StreamPosition position)
+        => new(
+            new StreamId("inventory"),
             position,
             @event,
-            DateTimeOffset.UtcNow,
-            new EventMetadata()
-        );
-    }
+            EventMetadata.New(@event.GetType().Name));
 
-    private async Task ApplyEvents(InventoryProjection projection, IEnumerable<object> events)
+    // Delivers the events in order, at positions 1, 2, 3... as a stream would
+    private static async Task ApplyEvents(InventoryProjection projection, IEnumerable<object> events)
     {
         var position = StreamPosition.Start;
-        var productId = new ProductId(Guid.NewGuid());
-
         foreach (var @event in events)
         {
-            if (@event is StockReceivedEvent sre)
-                productId = sre.ProductId;
-            else if (@event is StockReservedEvent srev)
-                productId = srev.ProductId;
-            else if (@event is StockReleasedEvent sle)
-                productId = sle.ProductId;
-
-            var envelope = CreateEnvelope(productId, @event, position);
-            await projection.ApplyAsync(envelope);
             position = position.Next();
+            await projection.HandleAsync(CreateEnvelope(@event, position));
         }
     }
 }
