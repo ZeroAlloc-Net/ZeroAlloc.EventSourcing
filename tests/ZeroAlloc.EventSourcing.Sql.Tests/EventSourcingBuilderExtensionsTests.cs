@@ -16,6 +16,7 @@ public class EventSourcingBuilderExtensionsTests
     {
         var services = new ServiceCollection();
         services.AddSingleton(Substitute.For<ISerializerDispatcher>());
+        services.AddSingleton(Substitute.For<IEventTypeRegistry>());
         return services;
     }
 
@@ -144,6 +145,19 @@ public class EventSourcingBuilderExtensionsTests
 
         var provider = services.BuildServiceProvider();
         provider.GetRequiredService<IDeadLetterStore>().Should().BeOfType<PostgreSqlDeadLetterStore>();
+    }
+
+    // The store deserializes on read, so it needs the registry; the factory resolves it.
+    [Fact]
+    public void UsePostgreSqlDeadLetterStore_WithoutRegistry_FailsToResolve()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(Substitute.For<ISerializerDispatcher>());
+        services.AddEventSourcing().UsePostgreSqlDeadLetterStore(FakePgCs);
+
+        var provider = services.BuildServiceProvider();
+        var act = () => provider.GetRequiredService<IDeadLetterStore>();
+        act.Should().Throw<InvalidOperationException>().WithMessage($"*{nameof(IEventTypeRegistry)}*");
     }
 
     [Fact]
@@ -277,6 +291,19 @@ public class EventSourcingBuilderExtensionsTests
 
         var provider = services.BuildServiceProvider();
         provider.GetRequiredService<IDeadLetterStore>().Should().BeOfType<SqlServerDeadLetterStore>();
+    }
+
+    // The store deserializes on read, so it needs the registry; the factory resolves it.
+    [Fact]
+    public void UseSqlServerDeadLetterStore_WithoutRegistry_FailsToResolve()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton(Substitute.For<ISerializerDispatcher>());
+        services.AddEventSourcing().UseSqlServerDeadLetterStore(FakeSsCs);
+
+        var provider = services.BuildServiceProvider();
+        var act = () => provider.GetRequiredService<IDeadLetterStore>();
+        act.Should().Throw<InvalidOperationException>().WithMessage($"*{nameof(IEventTypeRegistry)}*");
     }
 
     [Fact]

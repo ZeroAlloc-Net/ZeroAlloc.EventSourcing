@@ -13,13 +13,38 @@ public sealed class PostgreSqlDeadLetterStore : IDeadLetterStore
 {
     private readonly NpgsqlDataSource _dataSource;
     private readonly IEventSerializer _serializer;
+    private readonly IEventTypeRegistry? _registry;
 
     /// <summary>
     /// Initializes a new instance of <see cref="PostgreSqlDeadLetterStore"/>.
     /// </summary>
     /// <param name="dataSource">The <see cref="NpgsqlDataSource"/> to use for connections.</param>
+    /// <param name="serializer">The serializer that writes event payloads and reads them back.</param>
+    /// <param name="registry">
+    /// Maps the stored event type name to the CLR type that <see cref="ReadAllAsync"/> deserializes
+    /// the payload into.
+    /// </param>
+    /// <exception cref="ArgumentNullException">Thrown if any parameter is null.</exception>
+    public PostgreSqlDeadLetterStore(NpgsqlDataSource dataSource, IEventSerializer serializer, IEventTypeRegistry registry)
+    {
+        _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
+        _serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
+        _registry = registry ?? throw new ArgumentNullException(nameof(registry));
+    }
+
+    /// <summary>
+    /// Initializes a new instance of <see cref="PostgreSqlDeadLetterStore"/> that reads back the
+    /// serialized payload instead of the event object.
+    /// </summary>
+    /// <remarks>
+    /// Obsolete: <see cref="ReadAllAsync"/> puts the stored payload bytes in
+    /// <see cref="EventEnvelope.Event"/>, where the in-memory store puts the event object, so replay
+    /// code cannot treat the stores alike.
+    /// </remarks>
+    /// <param name="dataSource">The <see cref="NpgsqlDataSource"/> to use for connections.</param>
     /// <param name="serializer">The serializer used to convert event payloads to bytes.</param>
     /// <exception cref="ArgumentNullException">Thrown if either parameter is null.</exception>
+    [Obsolete(DeadLetterPayload.ObsoleteConstructor, DiagnosticId = DeadLetterPayload.ObsoleteConstructorId)]
     public PostgreSqlDeadLetterStore(NpgsqlDataSource dataSource, IEventSerializer serializer)
     {
         _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
@@ -105,7 +130,17 @@ public sealed class PostgreSqlDeadLetterStore : IDeadLetterStore
         await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Reads all dead-letter entries in the order they were written. Each envelope holds the
+    /// event object, deserialized into the type the registry maps the stored event type name to.
+    /// A store built with the obsolete constructor, which has no registry, returns the serialized
+    /// payload as a <see cref="byte"/> array instead.
+    /// </summary>
+    /// <param name="ct">A cancellation token.</param>
+    /// <exception cref="InvalidOperationException">
+    /// An entry's event type is not registered in the <see cref="IEventTypeRegistry"/>. The message
+    /// names the event type, stream id and position of that entry.
+    /// </exception>
     public async IAsyncEnumerable<DeadLetterEntry> ReadAllAsync([EnumeratorCancellation] CancellationToken ct = default)
     {
         #pragma warning disable MA0004
@@ -141,7 +176,8 @@ public sealed class PostgreSqlDeadLetterStore : IDeadLetterStore
             Guid? causationId = await reader.IsDBNullAsync(11, ct).ConfigureAwait(false) ? null : reader.GetGuid(11);
 
             var metadata = new EventMetadata(eventId, eventType, occurredAt, correlationId, causationId);
-            var envelope = new EventEnvelope(new StreamId(streamId), new StreamPosition(position), payload, metadata);
+            var @event = DeadLetterPayload.Deserialize(_serializer, _registry, eventType, payload, streamId, position);
+            var envelope = new EventEnvelope(new StreamId(streamId), new StreamPosition(position), @event, metadata);
 
             yield return new DeadLetterEntry(envelope, consumerId, exceptionType, exceptionMessage, failedAt);
         }

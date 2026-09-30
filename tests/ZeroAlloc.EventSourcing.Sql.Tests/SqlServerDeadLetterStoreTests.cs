@@ -9,15 +9,18 @@ using ZeroAlloc.EventSourcing.Tests;
 namespace ZeroAlloc.EventSourcing.Sql.Tests;
 
 [Collection(SqlServerCollection.Name)]
-public sealed class SqlServerDeadLetterStoreTests(SqlServerContainerFixture fixture) : DeadLetterStoreContractTests, IAsyncLifetime
+public sealed class SqlServerDeadLetterStoreTests(SqlServerContainerFixture fixture) : SerializingDeadLetterStoreContractTests, IAsyncLifetime
 {
+    private const string NonLatinEventType = "注文Created";
+
     private TestDatabase _database = null!;
     private SqlServerDeadLetterStore _store = null!;
 
     public async Task InitializeAsync()
     {
         _database = await fixture.CreateDatabaseAsync().ConfigureAwait(false);
-        _store = new SqlServerDeadLetterStore(_database.GetConnectionString(), new JsonEventSerializer());
+        _store = new SqlServerDeadLetterStore(
+            _database.GetConnectionString(), new JsonEventSerializer(), new DeadLetterTestEventTypeRegistry(NonLatinEventType));
         await _store.EnsureSchemaAsync().ConfigureAwait(false);
     }
 
@@ -27,6 +30,34 @@ public sealed class SqlServerDeadLetterStoreTests(SqlServerContainerFixture fixt
     }
 
     protected override IDeadLetterStore CreateStore() => _store;
+
+    [Fact]
+    public void Constructor_NullRegistry_Throws()
+    {
+        var act = () => new SqlServerDeadLetterStore(_database.GetConnectionString(), new JsonEventSerializer(), null!);
+        act.Should().Throw<ArgumentNullException>().WithParameterName("registry");
+    }
+
+    // The obsolete constructor keeps its behaviour until the next major removes it: without a
+    // registry it cannot resolve the event type, so it reads back the stored payload bytes.
+    [Fact]
+    public async Task ObsoleteConstructor_ReadsBackThePayloadBytes()
+    {
+#pragma warning disable ZAES004
+        var store = new SqlServerDeadLetterStore(_database.GetConnectionString(), new JsonEventSerializer());
+#pragma warning restore ZAES004
+        var envelope = new EventEnvelope(
+            new StreamId("s"), new StreamPosition(1), new DeadLetterTestEvent("o", 1),
+            new EventMetadata(Guid.NewGuid(), "UnregisteredEvent", DateTimeOffset.UtcNow, null, null));
+        await store.WriteAsync("consumer-1", envelope, new InvalidOperationException("boom"));
+
+        var results = new List<DeadLetterEntry>();
+        await foreach (var e in store.ReadAllAsync())
+            results.Add(e);
+
+        var payload = results.Should().ContainSingle().Which.Envelope.Event.Should().BeOfType<byte[]>().Subject;
+        JsonSerializer.Deserialize<DeadLetterTestEvent>(payload).Should().Be(new DeadLetterTestEvent("o", 1));
+    }
 
     [Fact]
     public async Task EnsureSchemaAsync_UpgradesTableFromBeforeMetadataColumns()
@@ -52,7 +83,8 @@ public sealed class SqlServerDeadLetterStoreTests(SqlServerContainerFixture fixt
                 );
                 INSERT INTO dbo.dead_letters
                     (consumer_id, stream_id, position, event_type, payload, exception_type, exception_message, failed_at)
-                VALUES ('legacy', 's', 1, 'Old', 0x7B7D, 'Exception', 'old', @failed_at);
+                VALUES ('legacy', 's', 1, 'DeadLetterTestEvent',
+                        CAST('{"OrderId":"legacy","Quantity":1}' AS VARBINARY(MAX)), 'Exception', 'old', @failed_at);
                 """;
             cmd.Parameters.AddWithValue("@failed_at", failedAt);
             await cmd.ExecuteNonQueryAsync();
@@ -61,8 +93,8 @@ public sealed class SqlServerDeadLetterStoreTests(SqlServerContainerFixture fixt
         await _store.EnsureSchemaAsync();
         await _store.EnsureSchemaAsync();
 
-        var metadata = new EventMetadata(Guid.NewGuid(), "New", failedAt, Guid.NewGuid(), null);
-        var envelope = new EventEnvelope(new StreamId("s"), new StreamPosition(2), new object(), metadata);
+        var metadata = new EventMetadata(Guid.NewGuid(), DeadLetterTestEvent.TypeName, failedAt, Guid.NewGuid(), null);
+        var envelope = new EventEnvelope(new StreamId("s"), new StreamPosition(2), new DeadLetterTestEvent("new", 2), metadata);
         await _store.WriteAsync("current", envelope, new InvalidOperationException("new"));
 
         var results = new List<DeadLetterEntry>();
@@ -72,6 +104,7 @@ public sealed class SqlServerDeadLetterStoreTests(SqlServerContainerFixture fixt
         results.Should().HaveCount(2);
         results[0].Envelope.Metadata.EventId.Should().Be(Guid.Empty, "the row predates the event_id column");
         results[0].Envelope.Metadata.OccurredAt.Should().Be(failedAt);
+        results[0].Envelope.Event.Should().Be(new DeadLetterTestEvent("legacy", 1));
         results[1].Envelope.Metadata.Should().Be(metadata);
     }
 
@@ -82,8 +115,8 @@ public sealed class SqlServerDeadLetterStoreTests(SqlServerContainerFixture fixt
     [Fact]
     public async Task NonLatinStrings_RoundTrip()
     {
-        var metadata = new EventMetadata(Guid.NewGuid(), "注文Created", DateTimeOffset.UtcNow, null, null);
-        var envelope = new EventEnvelope(new StreamId(SqlServerSchemaInspector.ChinaId), new StreamPosition(1), new object(), metadata);
+        var metadata = new EventMetadata(Guid.NewGuid(), NonLatinEventType, DateTimeOffset.UtcNow, null, null);
+        var envelope = new EventEnvelope(new StreamId(SqlServerSchemaInspector.ChinaId), new StreamPosition(1), new DeadLetterTestEvent("non-latin", 1), metadata);
 
         await _store.WriteAsync(SqlServerSchemaInspector.JapanId, envelope, new 例外Exception());
 
@@ -94,7 +127,7 @@ public sealed class SqlServerDeadLetterStoreTests(SqlServerContainerFixture fixt
         var entry = results.Should().ContainSingle().Subject;
         entry.ConsumerId.Should().Be(SqlServerSchemaInspector.JapanId);
         entry.Envelope.StreamId.Value.Should().Be(SqlServerSchemaInspector.ChinaId);
-        entry.Envelope.Metadata.EventType.Should().Be("注文Created");
+        entry.Envelope.Metadata.EventType.Should().Be(NonLatinEventType);
         entry.ExceptionType.Should().Be(nameof(例外Exception));
     }
 
@@ -124,7 +157,7 @@ public sealed class SqlServerDeadLetterStoreTests(SqlServerContainerFixture fixt
         await CreateLegacyTableAsync(connectionString);
 
         await Task.WhenAll(Enumerable.Range(0, 8).Select(_ =>
-            new SqlServerDeadLetterStore(connectionString, new JsonEventSerializer()).EnsureSchemaAsync().AsTask()));
+            new SqlServerDeadLetterStore(connectionString, new JsonEventSerializer(), new DeadLetterTestEventTypeRegistry()).EnsureSchemaAsync().AsTask()));
 
         await AssertMigratedAsync(connectionString);
     }
@@ -144,8 +177,8 @@ public sealed class SqlServerDeadLetterStoreTests(SqlServerContainerFixture fixt
 
     private async Task NonLatinStrings_RoundTripAfterLegacyRowAsync()
     {
-        var metadata = new EventMetadata(Guid.NewGuid(), "注文Created", DateTimeOffset.UtcNow, null, null);
-        var envelope = new EventEnvelope(new StreamId(SqlServerSchemaInspector.ChinaId), new StreamPosition(1), new object(), metadata);
+        var metadata = new EventMetadata(Guid.NewGuid(), NonLatinEventType, DateTimeOffset.UtcNow, null, null);
+        var envelope = new EventEnvelope(new StreamId(SqlServerSchemaInspector.ChinaId), new StreamPosition(1), new DeadLetterTestEvent("non-latin", 1), metadata);
         await _store.WriteAsync(SqlServerSchemaInspector.JapanId, envelope, new 例外Exception());
 
         var results = new List<DeadLetterEntry>();
@@ -154,9 +187,10 @@ public sealed class SqlServerDeadLetterStoreTests(SqlServerContainerFixture fixt
 
         results.Should().HaveCount(2);
         results[0].ConsumerId.Should().Be("legacy");
+        results[0].Envelope.Event.Should().Be(new DeadLetterTestEvent("legacy", 1));
         results[1].ConsumerId.Should().Be(SqlServerSchemaInspector.JapanId);
         results[1].Envelope.StreamId.Value.Should().Be(SqlServerSchemaInspector.ChinaId);
-        results[1].Envelope.Metadata.EventType.Should().Be("注文Created");
+        results[1].Envelope.Metadata.EventType.Should().Be(NonLatinEventType);
         results[1].ExceptionType.Should().Be(nameof(例外Exception));
     }
 
@@ -183,7 +217,8 @@ public sealed class SqlServerDeadLetterStoreTests(SqlServerContainerFixture fixt
                 ON dbo.dead_letters (consumer_id, failed_at DESC) INCLUDE (stream_id);
             INSERT INTO dbo.dead_letters
                 (consumer_id, stream_id, position, event_type, payload, exception_type, exception_message, failed_at)
-            VALUES ('legacy', 's', 1, 'Old', 0x7B7D, 'Exception', 'old', SYSDATETIMEOFFSET());
+            VALUES ('legacy', 's', 1, 'DeadLetterTestEvent',
+                        CAST('{"OrderId":"legacy","Quantity":1}' AS VARBINARY(MAX)), 'Exception', 'old', SYSDATETIMEOFFSET());
             """);
 
     private sealed class 例外Exception() : Exception("non-Latin exception type");

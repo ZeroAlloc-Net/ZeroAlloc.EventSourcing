@@ -1,1 +1,3 @@
 #nullable enable
+ZeroAlloc.EventSourcing.Sql.PostgreSqlDeadLetterStore.PostgreSqlDeadLetterStore(Npgsql.NpgsqlDataSource! dataSource, ZeroAlloc.EventSourcing.IEventSerializer! serializer, ZeroAlloc.EventSourcing.IEventTypeRegistry! registry) -> void
+ZeroAlloc.EventSourcing.Sql.SqlServerDeadLetterStore.SqlServerDeadLetterStore(string! connectionString, ZeroAlloc.EventSourcing.IEventSerializer! serializer, ZeroAlloc.EventSourcing.IEventTypeRegistry! registry) -> void

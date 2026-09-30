@@ -12,14 +12,43 @@ public sealed class SqlServerDeadLetterStore : IDeadLetterStore
 {
     private readonly string _connectionString;
     private readonly IEventSerializer _serializer;
+    private readonly IEventTypeRegistry? _registry;
 
     /// <summary>
     /// Initializes a new instance of <see cref="SqlServerDeadLetterStore"/>.
     /// </summary>
     /// <param name="connectionString">A valid SQL Server connection string.</param>
+    /// <param name="serializer">The serializer that writes event payloads and reads them back.</param>
+    /// <param name="registry">
+    /// Maps the stored event type name to the CLR type that <see cref="ReadAllAsync"/> deserializes
+    /// the payload into.
+    /// </param>
+    /// <exception cref="ArgumentException">Thrown if <paramref name="connectionString"/> is null, empty, or whitespace-only.</exception>
+    /// <exception cref="ArgumentNullException">
+    /// Thrown if <paramref name="serializer"/> or <paramref name="registry"/> is null.
+    /// </exception>
+    public SqlServerDeadLetterStore(string connectionString, IEventSerializer serializer, IEventTypeRegistry registry)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
+        _connectionString = connectionString;
+        _serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
+        _registry = registry ?? throw new ArgumentNullException(nameof(registry));
+    }
+
+    /// <summary>
+    /// Initializes a new instance of <see cref="SqlServerDeadLetterStore"/> that reads back the
+    /// serialized payload instead of the event object.
+    /// </summary>
+    /// <remarks>
+    /// Obsolete: <see cref="ReadAllAsync"/> puts the stored payload bytes in
+    /// <see cref="EventEnvelope.Event"/>, where the in-memory store puts the event object, so replay
+    /// code cannot treat the stores alike.
+    /// </remarks>
+    /// <param name="connectionString">A valid SQL Server connection string.</param>
     /// <param name="serializer">The serializer used to convert event payloads to bytes.</param>
     /// <exception cref="ArgumentException">Thrown if <paramref name="connectionString"/> is null, empty, or whitespace-only.</exception>
     /// <exception cref="ArgumentNullException">Thrown if <paramref name="serializer"/> is null.</exception>
+    [Obsolete(DeadLetterPayload.ObsoleteConstructor, DiagnosticId = DeadLetterPayload.ObsoleteConstructorId)]
     public SqlServerDeadLetterStore(string connectionString, IEventSerializer serializer)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
@@ -130,7 +159,17 @@ public sealed class SqlServerDeadLetterStore : IDeadLetterStore
         await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
-    /// <inheritdoc/>
+    /// <summary>
+    /// Reads all dead-letter entries in the order they were written. Each envelope holds the
+    /// event object, deserialized into the type the registry maps the stored event type name to.
+    /// A store built with the obsolete constructor, which has no registry, returns the serialized
+    /// payload as a <see cref="byte"/> array instead.
+    /// </summary>
+    /// <param name="ct">A cancellation token.</param>
+    /// <exception cref="InvalidOperationException">
+    /// An entry's event type is not registered in the <see cref="IEventTypeRegistry"/>. The message
+    /// names the event type, stream id and position of that entry.
+    /// </exception>
     public async IAsyncEnumerable<DeadLetterEntry> ReadAllAsync([EnumeratorCancellation] CancellationToken ct = default)
     {
         using var conn = new SqlConnection(_connectionString);
@@ -167,7 +206,8 @@ public sealed class SqlServerDeadLetterStore : IDeadLetterStore
             Guid? causationId = await reader.IsDBNullAsync(11, ct).ConfigureAwait(false) ? null : reader.GetGuid(11);
 
             var metadata = new EventMetadata(eventId, eventType, occurredAt, correlationId, causationId);
-            var envelope = new EventEnvelope(new StreamId(streamId), new StreamPosition(position), payload, metadata);
+            var @event = DeadLetterPayload.Deserialize(_serializer, _registry, eventType, payload, streamId, position);
+            var envelope = new EventEnvelope(new StreamId(streamId), new StreamPosition(position), @event, metadata);
 
             yield return new DeadLetterEntry(envelope, consumerId, exceptionType, exceptionMessage, failedAt);
         }
