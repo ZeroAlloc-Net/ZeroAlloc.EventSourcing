@@ -37,6 +37,7 @@ ZeroAlloc.EventSourcing.Sql.PostgreSqlCheckpointStoreHealthCheck.PostgreSqlCheck
 ZeroAlloc.EventSourcing.Sql.PostgreSqlDeadLetterStore
 ZeroAlloc.EventSourcing.Sql.PostgreSqlDeadLetterStore.EnsureSchemaAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
 ZeroAlloc.EventSourcing.Sql.PostgreSqlDeadLetterStore.PostgreSqlDeadLetterStore(Npgsql.NpgsqlDataSource! dataSource, ZeroAlloc.EventSourcing.IEventSerializer! serializer) -> void
+ZeroAlloc.EventSourcing.Sql.PostgreSqlDeadLetterStore.PostgreSqlDeadLetterStore(Npgsql.NpgsqlDataSource! dataSource, ZeroAlloc.EventSourcing.IEventSerializer! serializer, ZeroAlloc.EventSourcing.IEventTypeRegistry! registry) -> void
 ZeroAlloc.EventSourcing.Sql.PostgreSqlDeadLetterStore.ReadAllAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<ZeroAlloc.EventSourcing.DeadLetterEntry!>!
 ZeroAlloc.EventSourcing.Sql.PostgreSqlDeadLetterStore.WriteAsync(string! consumerId, ZeroAlloc.EventSourcing.EventEnvelope envelope, System.Exception! exception, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
 ZeroAlloc.EventSourcing.Sql.PostgreSqlEventStoreHealthCheck
@@ -79,6 +80,7 @@ ZeroAlloc.EventSourcing.Sql.SqlServerDeadLetterStore
 ZeroAlloc.EventSourcing.Sql.SqlServerDeadLetterStore.EnsureSchemaAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
 ZeroAlloc.EventSourcing.Sql.SqlServerDeadLetterStore.ReadAllAsync(System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<ZeroAlloc.EventSourcing.DeadLetterEntry!>!
 ZeroAlloc.EventSourcing.Sql.SqlServerDeadLetterStore.SqlServerDeadLetterStore(string! connectionString, ZeroAlloc.EventSourcing.IEventSerializer! serializer) -> void
+ZeroAlloc.EventSourcing.Sql.SqlServerDeadLetterStore.SqlServerDeadLetterStore(string! connectionString, ZeroAlloc.EventSourcing.IEventSerializer! serializer, ZeroAlloc.EventSourcing.IEventTypeRegistry! registry) -> void
 ZeroAlloc.EventSourcing.Sql.SqlServerDeadLetterStore.WriteAsync(string! consumerId, ZeroAlloc.EventSourcing.EventEnvelope envelope, System.Exception! exception, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
 ZeroAlloc.EventSourcing.Sql.SqlServerProjectionStore
 ZeroAlloc.EventSourcing.Sql.SqlServerProjectionStore.ClearAsync(string! key, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
