@@ -40,8 +40,9 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\ZeroAlloc.EventSourcing.Aggregates\ZeroAlloc.EventSourcing.Aggregates.csproj" />
     <ProjectReference Include="..\..\src\ZeroAlloc.EventSourcing.InMemory\ZeroAlloc.EventSourcing.InMemory.csproj" />
-    <!-- Referenced only so the README snippets for these packages compile. -->
+    <!-- Referenced only so the README and docs snippets for these packages compile. -->
     <ProjectReference Include="..\..\src\ZeroAlloc.EventSourcing.Kafka\ZeroAlloc.EventSourcing.Kafka.csproj" />
+    <ProjectReference Include="..\..\src\ZeroAlloc.EventSourcing.Sql\ZeroAlloc.EventSourcing.Sql.csproj" />
     <ProjectReference Include="..\..\src\ZeroAlloc.EventSourcing.Telemetry\ZeroAlloc.EventSourcing.Telemetry.csproj" />
     <ProjectReference Include="..\..\src\ZeroAlloc.EventSourcing.Generators\ZeroAlloc.EventSourcing.Generators.csproj"
                       OutputItemType="Analyzer"
