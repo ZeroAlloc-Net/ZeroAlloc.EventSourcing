@@ -121,10 +121,18 @@ public sealed class StreamConsumer : IStreamConsumer
                 await handler(envelope, cancellationToken).ConfigureAwait(false);
                 return; // Success
             }
+            catch (Exception ex) when (cancellationToken.IsCancellationRequested)
+            {
+                // Shutdown, not a failing event: stop without retrying, skipping or
+                // dead-lettering, so the checkpoint stays before this event, see #422.
+                ThrowStopped(ex, cancellationToken);
+            }
             catch (Exception) when (attemptCount < _options.MaxRetries)
             {
                 attemptCount++;
                 var delay = _options.RetryPolicy.GetDelay(attemptCount);
+                // Shutdown during the backoff ends it with an OperationCanceledException, which
+                // leaves this method before the error strategy is reached.
                 await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex) when (attemptCount >= _options.MaxRetries)
@@ -149,5 +157,21 @@ public sealed class StreamConsumer : IStreamConsumer
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Ends processing of an event whose handler failed after <paramref name="cancellationToken"/>
+    /// was cancelled. An <see cref="OperationCanceledException"/> is rethrown as it is; any other
+    /// exception, such as the SqlException SqlClient throws for an aborted command, is wrapped
+    /// in one, so the caller sees cancellation the same way whatever the handler threw.
+    /// </summary>
+    [System.Diagnostics.CodeAnalysis.DoesNotReturn]
+    private static void ThrowStopped(Exception exception, CancellationToken cancellationToken)
+    {
+        if (exception is OperationCanceledException)
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(exception).Throw();
+
+        throw new OperationCanceledException(
+            "The consumer was stopped while the handler was running.", exception, cancellationToken);
     }
 }

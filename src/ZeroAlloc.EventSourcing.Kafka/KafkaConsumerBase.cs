@@ -227,6 +227,12 @@ public abstract class KafkaConsumerBase : IStreamConsumer, IDisposable
                 await handler(envelope, ct).ConfigureAwait(false);
                 return;
             }
+            catch (Exception ex) when (ct.IsCancellationRequested)
+            {
+                // Shutdown, not a failing event: stop without retrying, skipping or
+                // dead-lettering, so neither the offset nor the checkpoint moves past it, see #422.
+                ThrowStopped(ex, ct);
+            }
             catch (OperationCanceledException)
             {
                 throw;
@@ -235,6 +241,8 @@ public abstract class KafkaConsumerBase : IStreamConsumer, IDisposable
             {
                 attempts++;
                 var delay = _options.RetryPolicy.GetDelay(attempts);
+                // Shutdown during the backoff ends it with an OperationCanceledException, which
+                // leaves this method before the error strategy is reached.
                 await Task.Delay(delay, ct).ConfigureAwait(false);
             }
             catch (Exception ex) when (attempts >= _options.MaxRetries)
@@ -256,6 +264,21 @@ public abstract class KafkaConsumerBase : IStreamConsumer, IDisposable
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Ends processing of an event whose handler failed after <paramref name="ct"/> was cancelled.
+    /// An <see cref="OperationCanceledException"/> is rethrown as it is; any other exception is
+    /// wrapped in one, so the caller sees cancellation the same way whatever the handler threw.
+    /// </summary>
+    [System.Diagnostics.CodeAnalysis.DoesNotReturn]
+    private static void ThrowStopped(Exception exception, CancellationToken ct)
+    {
+        if (exception is OperationCanceledException)
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(exception).Throw();
+
+        throw new OperationCanceledException(
+            "The consumer was stopped while the handler was running.", exception, ct);
     }
 
     /// <inheritdoc/>

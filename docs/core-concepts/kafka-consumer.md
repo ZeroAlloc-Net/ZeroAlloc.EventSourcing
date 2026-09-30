@@ -224,6 +224,14 @@ var consumer = new KafkaConsumerGroupConsumer(options, checkpointStore, serializ
 
 Without a dead-letter store, this strategy throws `InvalidOperationException` when a message fails.
 
+### Shutdown is not a failure
+
+A handler that fails after the consumer's token was cancelled is not treated as a failing message,
+whatever it throws: the consumer stops with an `OperationCanceledException`, no retry or error
+strategy runs, and neither the offset nor the checkpoint moves past that message, so it is
+consumed again on the next start.
+Cancellation during a retry backoff stops the consumer the same way.
+
 ## Retry Policy
 
 Configure exponential backoff for transient failures:
