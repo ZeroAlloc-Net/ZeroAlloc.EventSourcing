@@ -12,14 +12,14 @@ internal sealed class ProjectionInfo
     public ProjectionInfo(
         string hintPrefix,
         string @namespace,
-        string className,
+        IReadOnlyList<string> declarationHeaders,
         string readModelType,
         string readModelTypeFullName,
         IReadOnlyList<ApplyMethodInfo> applyMethods)
     {
         HintPrefix = hintPrefix;
         Namespace = @namespace;
-        ClassName = className;
+        DeclarationHeaders = declarationHeaders;
         ReadModelType = readModelType;
         ReadModelTypeFullName = readModelTypeFullName;
         ApplyMethods = applyMethods;
@@ -28,7 +28,8 @@ internal sealed class ProjectionInfo
     /// <summary>Unique per type; see <see cref="PartialTypeDeclarations.HintPrefix"/>.</summary>
     public string HintPrefix { get; }
     public string Namespace { get; }
-    public string ClassName { get; }
+    /// <summary>The partial declarations to reopen, outermost first; see <see cref="PartialTypeDeclarations.DeclarationHeaders"/>.</summary>
+    public IReadOnlyList<string> DeclarationHeaders { get; }
     public string ReadModelType { get; }
     public string ReadModelTypeFullName { get; }
     public IReadOnlyList<ApplyMethodInfo> ApplyMethods { get; }
@@ -38,7 +39,7 @@ internal sealed class ProjectionInfo
         => obj is ProjectionInfo other
             && HintPrefix == other.HintPrefix
             && Namespace == other.Namespace
-            && ClassName == other.ClassName
+            && DeclarationHeaders.SequenceEqual(other.DeclarationHeaders)
             && ReadModelType == other.ReadModelType
             && ReadModelTypeFullName == other.ReadModelTypeFullName
             && ApplyMethods.SequenceEqual(other.ApplyMethods);
@@ -48,7 +49,8 @@ internal sealed class ProjectionInfo
         var hash = 17;
         hash = hash * 31 + HintPrefix.GetHashCode();
         hash = hash * 31 + Namespace.GetHashCode();
-        hash = hash * 31 + ClassName.GetHashCode();
+        foreach (var header in DeclarationHeaders)
+            hash = hash * 31 + header.GetHashCode();
         hash = hash * 31 + ReadModelType.GetHashCode();
         hash = hash * 31 + ReadModelTypeFullName.GetHashCode();
         foreach (var method in ApplyMethods)

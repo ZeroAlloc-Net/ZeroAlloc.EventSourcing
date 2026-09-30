@@ -14,7 +14,9 @@ internal sealed class AggregateInfo
     public AggregateInfo(
         string hintPrefix,
         string @namespace,
-        string className,
+        IReadOnlyList<string> declarationHeaders,
+        string registryName,
+        string cref,
         string stateTypeName,
         string stateTypeFullName,
         IReadOnlyList<string> eventTypeNames,
@@ -22,7 +24,9 @@ internal sealed class AggregateInfo
     {
         HintPrefix = hintPrefix;
         Namespace = @namespace;
-        ClassName = className;
+        DeclarationHeaders = declarationHeaders;
+        RegistryName = registryName;
+        Cref = cref;
         StateTypeName = stateTypeName;
         StateTypeFullName = stateTypeFullName;
         // EventTypeNames — short names (e.g. "OrderPlaced"). Used by EventTypeRegistryGenerator (Task 6).
@@ -33,7 +37,12 @@ internal sealed class AggregateInfo
     /// <summary>Unique per type; see <see cref="PartialTypeDeclarations.HintPrefix"/>.</summary>
     public string HintPrefix { get; }
     public string Namespace { get; }
-    public string ClassName { get; }
+    /// <summary>The partial declarations to reopen, outermost first; see <see cref="PartialTypeDeclarations.DeclarationHeaders"/>.</summary>
+    public IReadOnlyList<string> DeclarationHeaders { get; }
+    /// <summary>The name of the generated registry, unique per namespace; for example <c>Retail_OrderEventTypeRegistry</c>.</summary>
+    public string RegistryName { get; }
+    /// <summary>A cref to the aggregate that resolves from its namespace.</summary>
+    public string Cref { get; }
     public string StateTypeName { get; }
     public string StateTypeFullName { get; }
     public IReadOnlyList<string> EventTypeNames { get; }
@@ -45,7 +54,9 @@ internal sealed class AggregateInfo
         => obj is AggregateInfo other
             && HintPrefix == other.HintPrefix
             && Namespace == other.Namespace
-            && ClassName == other.ClassName
+            && DeclarationHeaders.SequenceEqual(other.DeclarationHeaders)
+            && RegistryName == other.RegistryName
+            && Cref == other.Cref
             && StateTypeName == other.StateTypeName
             && StateTypeFullName == other.StateTypeFullName
             && EventTypeNames.SequenceEqual(other.EventTypeNames)
@@ -56,7 +67,7 @@ internal sealed class AggregateInfo
         var hash = 17;
         hash = hash * 31 + HintPrefix.GetHashCode();
         hash = hash * 31 + Namespace.GetHashCode();
-        hash = hash * 31 + ClassName.GetHashCode();
+        hash = hash * 31 + RegistryName.GetHashCode();
         hash = hash * 31 + StateTypeName.GetHashCode();
         hash = hash * 31 + StateTypeFullName.GetHashCode();
         foreach (var name in EventTypeFullNames)

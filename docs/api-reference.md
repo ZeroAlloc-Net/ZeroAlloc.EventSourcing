@@ -399,71 +399,45 @@ public sealed partial class Order : Aggregate<OrderId, OrderState>
 
 ## Source Generators
 
-ZeroAlloc.EventSourcing includes source generators to eliminate reflection and enable compile-time dispatch of events.
-
-**Namespace:** `ZeroAlloc.EventSourcing.Generators`
+The `ZeroAlloc.EventSourcing.Generators` package emits the event dispatch and the event type
+registry at compile time, so no reflection is needed. The generators run on every `partial` class
+with a base type; no attribute is needed.
 
 ### AggregateDispatchGenerator
 
-Generates `ApplyEvent` method implementations for aggregates.
+Generates the `ApplyEvent` override of an aggregate.
 
-**What it does:**
-- Finds all `Apply` methods on `IAggregateState<TState>` implementations
-- Generates a switch expression routing each event type to the correct handler
-- Eliminates reflection; purely compiled dispatch
-
-**How to use:**
-
-1. Mark your aggregate class as `partial`:
-   ```csharp
-   public sealed partial class Order : Aggregate<OrderId, OrderState>
-   {
-       // Your command methods here (Raise events)
-   }
-   ```
-
-2. Implement state `Apply` methods:
-   ```csharp
-   public partial struct OrderState : IAggregateState<OrderState>
-   {
-       public OrderState Apply(OrderPlacedEvent e) 
-           => this with { IsPlaced = true, Amount = e.Amount };
-       
-       public OrderState Apply(OrderShippedEvent e)
-           => this with { IsShipped = true, TrackingNumber = e.TrackingNumber };
-   }
-   ```
-
-3. The generator creates:
-   ```csharp
-   // Auto-generated in Order.g.cs
-   protected override OrderState ApplyEvent(OrderState state, object @event) => @event switch
-   {
-       OrderPlacedEvent e => state.Apply(e),
-       OrderShippedEvent e => state.Apply(e),
-       _ => state
-   };
-   ```
-
-**Example Generated Code:**
+- Runs on a `partial` class that derives from `Aggregate<TId, TState>`.
+- Finds every `internal` `Apply` method with one parameter on the state struct.
+- Emits an `ApplyEvent` override with a switch expression that routes each event type to its
+  `Apply` method. Unknown events leave the state unchanged.
+- Skips an aggregate that already overrides `ApplyEvent` by hand.
 
 ```csharp
-// Input: partial aggregate with event handling
-public sealed partial class Order : Aggregate<OrderId, OrderState>
+public partial struct OrderState : IAggregateState<OrderState>
 {
-    // Your code here (methods that call Raise)
+    public static OrderState Initial => default;
+    public bool IsPlaced { get; private set; }
+
+    internal OrderState Apply(OrderPlacedEvent e) => this with { IsPlaced = true };
+    internal OrderState Apply(OrderShippedEvent e) => this;
 }
 
-// Generated: Order.g.cs
-public sealed partial class Order
+public sealed partial class Order : Aggregate<OrderId, OrderState>
 {
-    protected override OrderState ApplyEvent(OrderState state, object @event) => @event switch
-    {
-        OrderPlacedEvent e => state.Apply(e),
-        OrderConfirmedEvent e => state.Apply(e),
-        OrderShippedEvent e => state.Apply(e),
-        _ => state
-    };
+    public void Place(decimal amount) => Raise(new OrderPlacedEvent(amount));
+}
+
+// Generated: <Namespace>.Order.ApplyEvent.g.cs; type names are fully qualified in the real output
+public partial class Order
+{
+    protected override OrderState ApplyEvent(OrderState state, object @event)
+        => @event switch
+        {
+            OrderPlacedEvent __e => state.Apply(__e),
+            OrderShippedEvent __e => state.Apply(__e),
+            _ => state
+        };
 }
 ```
 
@@ -471,58 +445,20 @@ public sealed partial class Order
 
 ### ProjectionDispatchGenerator
 
-Generates `Apply` method implementations for projections.
+Generates a private `ApplyTyped` method for a projection.
 
-**What it does:**
-- Finds all handler methods on `Projection<TReadModel>` subclasses
-- Generates a switch expression routing each event type to the correct handler
-- Eliminates reflection; purely compiled dispatch
-
-**How to use:**
-
-1. Mark your projection class as `partial`:
-   ```csharp
-   public sealed partial class OrderProjection : Projection<OrderSummary>
-   {
-       // Your handlers here
-   }
-   ```
-
-2. Implement handler methods:
-   ```csharp
-   public sealed partial class OrderProjection : Projection<OrderSummary>
-   {
-       private OrderSummary Handle(OrderPlacedEvent e)
-           => new(e.OrderId, e.Amount, null);
-       
-       private OrderSummary Handle(OrderShippedEvent e)
-           => Current with { TrackingCode = e.TrackingCode };
-   }
-   ```
-
-3. The generator creates:
-   ```csharp
-   // Auto-generated in OrderProjection.g.cs
-   protected override OrderSummary Apply(OrderSummary current, EventEnvelope @event) => @event.Event switch
-   {
-       OrderPlacedEvent e => Handle(e),
-       OrderShippedEvent e => Handle(e),
-       _ => current
-   };
-   ```
-
-**Example Generated Code:**
+- Runs on a `partial` class that derives from `Projection<TReadModel>`.
+- Finds every `private` or `protected` method `TReadModel Apply(TReadModel current, TEvent e)`.
+- Emits `ApplyTyped(TReadModel current, object @event)`, which routes each event type to its
+  `Apply` overload. Call it from your `Apply(TReadModel, EventEnvelope)` override.
 
 ```csharp
-// Generated: OrderProjection.g.cs
-public sealed partial class OrderProjection
+public sealed partial class OrderSummaryProjection : Projection<OrderSummary>
 {
-    protected override OrderSummary Apply(OrderSummary current, EventEnvelope @event) => @event.Event switch
-    {
-        OrderPlacedEvent e => Handle(e),
-        OrderShippedEvent e => Handle(e),
-        _ => current
-    };
+    private OrderSummary Apply(OrderSummary current, OrderPlacedEvent e) => current with { Amount = e.Amount };
+
+    protected override OrderSummary Apply(OrderSummary current, EventEnvelope @event)
+        => ApplyTyped(current, @event.Event);
 }
 ```
 
@@ -530,20 +466,29 @@ public sealed partial class OrderProjection
 
 ### EventTypeRegistryGenerator
 
-**What it does:**
-- Scans all event types in your assembly
-- Generates a static registry mapping event type names to types
-- Enables serialization/deserialization without reflection
+Generates an `IEventTypeRegistry` for every aggregate that `AggregateDispatchGenerator` generates.
 
-**How to use:**
-
-The generator runs automatically. Access the registry:
+- Named `<Aggregate>EventTypeRegistry`, in the namespace of the aggregate: `OrderEventTypeRegistry`
+  for `Order`.
+- Maps each event type handled by an `Apply` method of the state to its short type name.
 
 ```csharp
-// Generated registry
-var eventType = EventTypeRegistry.GetType("OrderPlacedEvent"); // Compiled lookup
-var eventName = EventTypeRegistry.GetName(typeof(OrderPlacedEvent));
+var registry = new OrderEventTypeRegistry();
+var eventStore = new EventStore(adapter, serializer, registry);
 ```
+
+---
+
+### Nested and generic types
+
+An aggregate or projection can be nested in another type. The generated code goes into the nested
+type, so every containing type has to be `partial` too. The registry of a nested aggregate is
+named after the containing types as well, joined with underscores: `Retail_OrderEventTypeRegistry`
+for `Retail.Order`. A generic containing type is followed by its number of type parameters:
+`Module1_OrderEventTypeRegistry` for `Module<T>.Order`.
+
+A nested type whose containing type is not `partial`, and a generic aggregate or projection, is not
+generated; the generator reports a warning instead. See [Diagnostics](diagnostics.md).
 
 ---
 

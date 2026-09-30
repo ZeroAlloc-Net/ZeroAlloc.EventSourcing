@@ -19,9 +19,10 @@ public sealed class EventTypeRegistryGenerator : IIncrementalGenerator
             .CreateSyntaxProvider(
                 predicate: static (node, _) => PartialTypeDeclarations.IsPartialClassWithBaseSyntax(node),
                 transform: static (ctx, ct) => AggregateDispatchGenerator.GetAggregateInfoPublic(ctx, ct))
-            .Where(static info => info is not null)
-            .Select(static (info, _) => info!);
+            .Where(static result => result?.Info is not null)
+            .Select(static (result, _) => result!.Info!);
 
+        // An aggregate that is not generated gets its diagnostic from AggregateDispatchGenerator.
         context.RegisterSourceOutput(aggregates, static (ctx, info) =>
         {
             var source = EmitRegistry(info);
@@ -45,8 +46,8 @@ public sealed class EventTypeRegistryGenerator : IIncrementalGenerator
             sb.AppendLine();
         }
 
-        sb.AppendLine($"/// <summary>Source-generated <see cref=\"IEventTypeRegistry\"/> for <see cref=\"{info.ClassName}\"/>.</summary>");
-        sb.AppendLine($"public sealed class {info.ClassName}EventTypeRegistry : IEventTypeRegistry");
+        sb.AppendLine($"/// <summary>Source-generated <see cref=\"IEventTypeRegistry\"/> for <see cref=\"{info.Cref}\"/>.</summary>");
+        sb.AppendLine($"public sealed class {info.RegistryName} : IEventTypeRegistry");
         sb.AppendLine("{");
         sb.AppendLine("    private static readonly Dictionary<string, Type> _byName = new Dictionary<string, Type>");
         sb.AppendLine("    {");
