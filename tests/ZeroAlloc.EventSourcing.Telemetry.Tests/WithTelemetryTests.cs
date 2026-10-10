@@ -10,7 +10,12 @@ public class WithTelemetryTests
     private static IServiceCollection BaseServicesWithFakeRepository()
     {
         var services = new ServiceCollection();
-        services.AddSingleton(Substitute.For<IAggregateRepository<FakeAggregate, OrderId>>());
+        var repository = Substitute.For<IAggregateRepository<FakeAggregate, OrderId>>();
+        // A mocking-library proxy intercepts IAggregateRepository.Accept instead of running its
+        // default implementation, so a substitute has to forward it to the visitor itself.
+        ((IAggregateRepository)repository).Accept(Arg.Any<IAggregateRepositoryVisitor<object>>())
+            .Returns(call => call.Arg<IAggregateRepositoryVisitor<object>>().Visit(repository));
+        services.AddSingleton(repository);
         return services;
     }
 

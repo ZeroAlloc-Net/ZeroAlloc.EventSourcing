@@ -72,5 +72,11 @@ var rebuild = await ProjectionRebuildSmoke.RunAsync();
 if (rebuild != 0)
     return rebuild;
 
+// Path 5: WithTelemetry() decorating Guid-keyed repositories. The decorator used to be closed
+// with MakeGenericType, which NativeAOT cannot be relied on to do for a value-type TId.
+var telemetry = await TelemetrySmoke.RunAsync();
+if (telemetry != 0)
+    return telemetry;
+
 Console.WriteLine("AOT smoke: PASS");
 return 0;

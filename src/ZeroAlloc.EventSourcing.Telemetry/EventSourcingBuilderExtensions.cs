@@ -17,8 +17,15 @@ public static class EventSourcingBuilderExtensions
     /// <c>ZeroAlloc.EventSourcing</c> ActivitySource and Meter.
     /// </summary>
     /// <remarks>
+    /// Every <see cref="IAggregateRepository{TAggregate, TId}"/> registration made before this call
+    /// is decorated, whether it came from <c>UseAggregateRepository</c> or from a hand-written
+    /// descriptor, keyed or not, and it keeps its lifetime. The decorator is built through
+    /// <see cref="IAggregateRepository.Accept{TResult}"/>, so no generic type is constructed at run
+    /// time and the call is NativeAOT-safe.
+    /// <para>
     /// Idempotent — calling more than once on the same builder has no additional effect.
     /// Aggregate repositories registered after this call will not be instrumented.
+    /// </para>
     /// </remarks>
     /// <param name="builder">The <see cref="EventSourcingBuilder"/> to configure.</param>
     /// <returns>The same <paramref name="builder"/> instance for chaining.</returns>
@@ -32,23 +39,22 @@ public static class EventSourcingBuilderExtensions
         for (int i = 0; i < services.Count; i++)
         {
             var d = services[i];
-            if (!d.ServiceType.IsGenericType)
+            if (!d.ServiceType.IsGenericType
+                || d.ServiceType.GetGenericTypeDefinition() != typeof(IAggregateRepository<,>))
+            {
                 continue;
-            if (d.ServiceType.GetGenericTypeDefinition() != typeof(IAggregateRepository<,>))
-                continue;
+            }
 
-            var typeArgs = d.ServiceType.GetGenericArguments();
-            var proxyType = typeof(InstrumentedAggregateRepository<,>).MakeGenericType(typeArgs);
-
-            var captured = d;
-            services[i] = ServiceDescriptor.Describe(
-                d.ServiceType,
-                sp =>
-                {
-                    var inner = CreateFromDescriptor(captured, sp);
-                    return Activator.CreateInstance(proxyType, inner)!;
-                },
-                d.Lifetime);
+            services[i] = d.IsKeyedService
+                ? ServiceDescriptor.DescribeKeyed(
+                    d.ServiceType,
+                    d.ServiceKey,
+                    (sp, key) => Decorate(CreateFromKeyedDescriptor(d, sp, key)),
+                    d.Lifetime)
+                : ServiceDescriptor.Describe(
+                    d.ServiceType,
+                    sp => Decorate(CreateFromDescriptor(d, sp)),
+                    d.Lifetime);
         }
 
         return builder;
@@ -63,6 +69,15 @@ public static class EventSourcingBuilderExtensions
     public static EventSourcingBuilder UseEventSourcingTelemetry(this EventSourcingBuilder builder)
         => builder.WithTelemetry();
 
+    // The service type is IAggregateRepository<,>, so the instance always implements the
+    // non-generic IAggregateRepository and its Accept hands back the closed type arguments.
+    private static object Decorate(object inner)
+        => ((IAggregateRepository)inner).Accept(TelemetryDecoratingVisitor.Instance)
+            ?? throw new InvalidOperationException(
+                $"{inner.GetType().FullName} returned null from IAggregateRepository.Accept, so WithTelemetry() "
+                + "cannot decorate it. Accept must call visitor.Visit(this) and return its result: remove an "
+                + "override that does not, and configure a mocking-library substitute to forward Accept to the visitor.");
+
     private static object CreateFromDescriptor(ServiceDescriptor d, IServiceProvider sp)
     {
         if (d.ImplementationInstance is not null)
@@ -70,6 +85,15 @@ public static class EventSourcingBuilderExtensions
         if (d.ImplementationFactory is not null)
             return d.ImplementationFactory(sp);
         return ActivatorUtilities.CreateInstance(sp, d.ImplementationType!);
+    }
+
+    private static object CreateFromKeyedDescriptor(ServiceDescriptor d, IServiceProvider sp, object? key)
+    {
+        if (d.KeyedImplementationInstance is not null)
+            return d.KeyedImplementationInstance;
+        if (d.KeyedImplementationFactory is not null)
+            return d.KeyedImplementationFactory(sp, key);
+        return ActivatorUtilities.CreateInstance(sp, d.KeyedImplementationType!);
     }
 
     private sealed class EventSourcingTelemetryMarker { }

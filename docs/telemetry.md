@@ -30,7 +30,23 @@ services
 
 > Renamed from `UseEventSourcingTelemetry()` for consistency with the rest of the ecosystem; the old name remains as `[Obsolete]` for one minor version and delegates to `WithTelemetry()`.
 
-The extension replaces each existing `IAggregateRepository<TAggregate, TId>` registration with `InstrumentedAggregateRepository<TAggregate, TId>` wrapping the original. Any code that resolves `IAggregateRepository<,>` gets the decorated version automatically.
+The extension replaces each existing `IAggregateRepository<TAggregate, TId>` registration with `InstrumentedAggregateRepository<TAggregate, TId>` wrapping the original. Any code that resolves `IAggregateRepository<,>` gets the decorated version automatically. That covers `UseAggregateRepository` and hand-written registrations alike, such as a `SnapshotCachingRepositoryDecorator` registered with `AddScoped`; keyed registrations stay keyed, and every registration keeps its lifetime.
+
+### NativeAOT
+
+`WithTelemetry()` is NativeAOT-compatible, also for a value-type `TId` such as `Guid`. It does not build `InstrumentedAggregateRepository<TAggregate, TId>` with `MakeGenericType`. It calls `IAggregateRepository.Accept`, the non-generic base interface's visitor method. The default implementation, on `IAggregateRepository<TAggregate, TId>`, hands the visitor the repository with its closed type arguments.
+
+Every repository gets that default implementation without doing anything. A repository that re-implements `Accept` must call `visitor.Visit(this)` and return the result.
+
+### Test doubles
+
+A mocking-library proxy, such as an NSubstitute substitute or a Moq mock of `IAggregateRepository<,>`, intercepts `Accept` instead of running the default implementation. Resolving it after `WithTelemetry()` then throws an `InvalidOperationException` that says so. Either register a hand-written fake, or forward `Accept` on the substitute:
+
+```csharp
+var repository = Substitute.For<IAggregateRepository<Order, OrderId>>();
+((IAggregateRepository)repository).Accept(Arg.Any<IAggregateRepositoryVisitor<object>>())
+    .Returns(call => call.Arg<IAggregateRepositoryVisitor<object>>().Visit(repository));
+```
 
 ## What Gets Instrumented
 
