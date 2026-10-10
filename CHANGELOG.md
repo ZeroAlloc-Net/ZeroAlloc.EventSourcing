@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/compare/ZeroAlloc.EventSourcing-v1.4.0...ZeroAlloc.EventSourcing-v1.5.0) (2026-10-10)
+
+
+### Features
+
+* mark the EventSourcing packages as AOT-compatible ([#457](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/issues/457)) ([29aa1b2](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/commit/29aa1b2beb2708e05cea9c31b290593467e0d01d))
+
 ## [1.4.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/compare/ZeroAlloc.EventSourcing-v1.3.1...ZeroAlloc.EventSourcing-v1.4.0) (2026-09-30)
 
 
