@@ -2,6 +2,7 @@
 
   <PropertyGroup>
     <PackageId>ZeroAlloc.EventSourcing.Outbox</PackageId>
+    <IsAotCompatible>true</IsAotCompatible>
     <Description>At-least-once cross-aggregate event dispatch from the ZeroAlloc event store. Thin orchestration over StreamConsumer + INotificationDispatcher with type-level exclusion. Polling-based, in-process Mediator dispatch.</Description>
     <PackageTags>$(PackageTags);outbox;mediator;dispatch</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>

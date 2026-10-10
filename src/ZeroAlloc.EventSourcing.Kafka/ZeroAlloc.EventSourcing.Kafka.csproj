@@ -2,6 +2,7 @@
 
   <PropertyGroup>
     <PackageId>ZeroAlloc.EventSourcing.Kafka</PackageId>
+    <IsAotCompatible>true</IsAotCompatible>
     <Description>Kafka publish target for ZeroAlloc.EventSourcing committed events.</Description>
   </PropertyGroup>
 

@@ -2,6 +2,7 @@
 
   <PropertyGroup>
     <PackageId>ZeroAlloc.EventSourcing.PostgreSql</PackageId>
+    <IsAotCompatible>true</IsAotCompatible>
     <Description>PostgreSQL event store backend for ZeroAlloc.EventSourcing.</Description>
   </PropertyGroup>
 

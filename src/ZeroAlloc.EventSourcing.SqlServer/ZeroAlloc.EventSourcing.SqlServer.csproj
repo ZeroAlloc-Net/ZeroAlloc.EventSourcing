@@ -2,6 +2,7 @@
 
   <PropertyGroup>
     <PackageId>ZeroAlloc.EventSourcing.SqlServer</PackageId>
+    <IsAotCompatible>true</IsAotCompatible>
     <Description>SQL Server event store backend for ZeroAlloc.EventSourcing.</Description>
   </PropertyGroup>
 

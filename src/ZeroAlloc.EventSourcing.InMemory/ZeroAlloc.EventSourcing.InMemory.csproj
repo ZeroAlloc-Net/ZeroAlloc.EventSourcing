@@ -2,6 +2,7 @@
 
   <PropertyGroup>
     <PackageId>ZeroAlloc.EventSourcing.InMemory</PackageId>
+    <IsAotCompatible>true</IsAotCompatible>
     <Description>In-process event store for ZeroAlloc.EventSourcing — for tests and prototypes.</Description>
   </PropertyGroup>
 

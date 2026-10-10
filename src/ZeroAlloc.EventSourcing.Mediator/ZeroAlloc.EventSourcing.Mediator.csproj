@@ -2,6 +2,7 @@
 
   <PropertyGroup>
     <PackageId>ZeroAlloc.EventSourcing.Mediator</PackageId>
+    <IsAotCompatible>true</IsAotCompatible>
     <Description>Bridge package republishing LIVE committed ZeroAlloc.EventSourcing events through ZeroAlloc.Mediator notification dispatch. History replays are filtered out positionally by subscribing from StreamPosition.End.</Description>
     <PackageTags>$(PackageTags);mediator;bridge;notifications</PackageTags>
     <!--
