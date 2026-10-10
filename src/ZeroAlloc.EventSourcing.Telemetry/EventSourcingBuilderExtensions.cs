@@ -49,11 +49,11 @@ public static class EventSourcingBuilderExtensions
                 ? ServiceDescriptor.DescribeKeyed(
                     d.ServiceType,
                     d.ServiceKey,
-                    (sp, key) => Decorate(CreateFromKeyedDescriptor(d, sp, key)),
+                    (sp, key) => Decorate(CreateFromKeyedDescriptor(d, sp, key), d.ServiceType),
                     d.Lifetime)
                 : ServiceDescriptor.Describe(
                     d.ServiceType,
-                    sp => Decorate(CreateFromDescriptor(d, sp)),
+                    sp => Decorate(CreateFromDescriptor(d, sp), d.ServiceType),
                     d.Lifetime);
         }
 
@@ -71,14 +71,40 @@ public static class EventSourcingBuilderExtensions
 
     // The service type is IAggregateRepository<,>, so the instance always implements the
     // non-generic IAggregateRepository and its Accept hands back the closed type arguments.
-    private static object Decorate(object inner)
-        => ((IAggregateRepository)inner).Accept(TelemetryDecoratingVisitor.Instance)
-            ?? throw new InvalidOperationException(
-                $"{inner.GetType().FullName} returned null from IAggregateRepository.Accept, so WithTelemetry() "
-                + "cannot decorate it. Accept must call visitor.Visit(this) and return its result: remove an "
-                + "override that does not, and configure a mocking-library substitute to forward Accept to the visitor.");
+    private static object Decorate(object? inner, Type serviceType)
+    {
+        if (inner is null)
+        {
+            throw new InvalidOperationException(
+                $"The registration for {serviceType} returned null, so WithTelemetry() has no repository to "
+                + "decorate. Make its factory return an instance.");
+        }
 
-    private static object CreateFromDescriptor(ServiceDescriptor d, IServiceProvider sp)
+        var decorated = ((IAggregateRepository)inner).Accept(TelemetryDecoratingVisitor.Instance);
+        if (decorated is null)
+        {
+            throw new InvalidOperationException(
+                $"{inner.GetType().FullName}, registered for {serviceType}, returned null from "
+                + "IAggregateRepository.Accept, so WithTelemetry() cannot decorate it. Accept must call "
+                + "visitor.Visit(this) and return its result: remove an override that does not, and "
+                + "configure a mocking-library substitute to forward Accept to the visitor.");
+        }
+
+        // A class implementing several closed IAggregateRepository<,> interfaces visits only the
+        // one its own Accept picks, which need not be the one this registration is for.
+        if (!serviceType.IsInstanceOfType(decorated))
+        {
+            throw new InvalidOperationException(
+                $"{inner.GetType().FullName}, registered for {serviceType}, visited a different "
+                + "IAggregateRepository<,> from IAggregateRepository.Accept, so WithTelemetry() cannot "
+                + "decorate this registration. A class implementing several closed IAggregateRepository<,> "
+                + "interfaces should be registered only as the one its Accept visits.");
+        }
+
+        return decorated;
+    }
+
+    private static object? CreateFromDescriptor(ServiceDescriptor d, IServiceProvider sp)
     {
         if (d.ImplementationInstance is not null)
             return d.ImplementationInstance;
@@ -87,7 +113,7 @@ public static class EventSourcingBuilderExtensions
         return ActivatorUtilities.CreateInstance(sp, d.ImplementationType!);
     }
 
-    private static object CreateFromKeyedDescriptor(ServiceDescriptor d, IServiceProvider sp, object? key)
+    private static object? CreateFromKeyedDescriptor(ServiceDescriptor d, IServiceProvider sp, object? key)
     {
         if (d.KeyedImplementationInstance is not null)
             return d.KeyedImplementationInstance;

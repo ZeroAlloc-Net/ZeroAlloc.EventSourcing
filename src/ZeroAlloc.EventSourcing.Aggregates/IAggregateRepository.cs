@@ -11,6 +11,15 @@ namespace ZeroAlloc.EventSourcing.Aggregates;
 /// <remarks>
 /// Every <see cref="IAggregateRepository{TAggregate, TId}"/> implements this interface through a
 /// default implementation of <see cref="Accept{TResult}"/>, so implementers need not do anything.
+/// <para>
+/// The exception is a class that implements two or more closed
+/// <see cref="IAggregateRepository{TAggregate, TId}"/> interfaces, such as one repository serving
+/// two aggregate types. Each closed interface brings its own default <see cref="Accept{TResult}"/>,
+/// so the class has no most specific implementation: it no longer compiles, error CS8705, until it
+/// implements <see cref="Accept{TResult}"/> itself. A binary of such a class compiled against an
+/// earlier version throws <see cref="System.Runtime.AmbiguousImplementationException"/> when
+/// <see cref="Accept{TResult}"/> is called, which <c>WithTelemetry()</c> does on resolve.
+/// </para>
 /// </remarks>
 public interface IAggregateRepository
 {
@@ -25,6 +34,15 @@ public interface IAggregateRepository
     /// be relied on. A repository that re-implements this method must keep the contract: call
     /// <c>visitor.Visit(this)</c> exactly once and return its result.
     /// <c>WithTelemetry()</c> relies on it to decorate every registered repository.
+    /// <para>
+    /// A class implementing two or more closed <see cref="IAggregateRepository{TAggregate, TId}"/>
+    /// interfaces must implement this method itself, since the default implementations conflict:
+    /// error CS8705 at compile time, <see cref="System.Runtime.AmbiguousImplementationException"/>
+    /// at run time for a binary built against an earlier version. Its implementation has to pick
+    /// one closed interface, for example <c>visitor.Visit&lt;Order, OrderId&gt;(this)</c>, and cannot
+    /// tell which one it was resolved as. <c>WithTelemetry()</c> therefore decorates it only where it
+    /// is registered as that interface, and throws on resolve where it is registered as another.
+    /// </para>
     /// </remarks>
     /// <typeparam name="TResult">The visitor's result type.</typeparam>
     /// <param name="visitor">The visitor to call.</param>

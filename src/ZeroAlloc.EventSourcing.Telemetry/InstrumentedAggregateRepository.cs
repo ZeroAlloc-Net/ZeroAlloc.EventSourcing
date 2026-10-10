@@ -26,7 +26,12 @@ public sealed class InstrumentedAggregateRepository<TAggregate, TId> : IAggregat
     private readonly IAggregateRepository<TAggregate, TId> _inner;
 
     /// <summary>Initialises a new instance of <see cref="InstrumentedAggregateRepository{TAggregate, TId}"/> wrapping <paramref name="inner"/>.</summary>
-    public InstrumentedAggregateRepository(IAggregateRepository<TAggregate, TId> inner) => _inner = inner;
+    /// <exception cref="ArgumentNullException"><paramref name="inner"/> is <see langword="null"/>.</exception>
+    public InstrumentedAggregateRepository(IAggregateRepository<TAggregate, TId> inner)
+    {
+        ArgumentNullException.ThrowIfNull(inner);
+        _inner = inner;
+    }
 
     /// <inheritdoc />
     public async ValueTask<Result<TAggregate, StoreError>> LoadAsync(TId id, CancellationToken ct = default)

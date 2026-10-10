@@ -38,6 +38,22 @@ The extension replaces each existing `IAggregateRepository<TAggregate, TId>` reg
 
 Every repository gets that default implementation without doing anything. A repository that re-implements `Accept` must call `visitor.Visit(this)` and return the result.
 
+### One class serving several aggregates
+
+A class that implements two or more closed `IAggregateRepository<,>` interfaces inherits a default `Accept` from each one, so it has no single most specific implementation.
+
+- **Compile time.** Since this version such a class no longer compiles, with error CS8705, until it implements `IAggregateRepository.Accept` itself.
+- **Existing binaries.** A binary of such a class compiled against an earlier version still loads. It throws `AmbiguousImplementationException` when `WithTelemetry()` calls `Accept` on resolve.
+
+Its own `Accept` has to pick one closed interface:
+
+```csharp
+TResult IAggregateRepository.Accept<TResult>(IAggregateRepositoryVisitor<TResult> visitor)
+    => visitor.Visit<Order, OrderId>(this);
+```
+
+`WithTelemetry()` decorates it where it is registered as that interface. Where it is registered as another one, resolving throws an `InvalidOperationException` that names the registration. Register such a class only as the interface its `Accept` visits, or split it into one class per aggregate.
+
 ### Test doubles
 
 A mocking-library proxy, such as an NSubstitute substitute or a Moq mock of `IAggregateRepository<,>`, intercepts `Accept` instead of running the default implementation. Resolving it after `WithTelemetry()` then throws an `InvalidOperationException` that says so. Either register a hand-written fake, or forward `Accept` on the substitute:

@@ -198,6 +198,45 @@ public sealed class WithTelemetryRegistrationTests
         act.Should().Throw<InvalidOperationException>().WithMessage("*Accept*");
     }
 
+    [Fact]
+    public void WithTelemetry_FactoryReturningNull_ThrowsNamingTheServiceType()
+    {
+        var services = new ServiceCollection();
+        services.AddSingleton<IAggregateRepository<FakeAggregate, OrderId>>(_ => null!);
+        services.AddEventSourcing().WithTelemetry();
+
+        using var provider = services.BuildServiceProvider();
+        var act = () => provider.GetRequiredService<IAggregateRepository<FakeAggregate, OrderId>>();
+
+        act.Should().Throw<InvalidOperationException>()
+           .WithMessage($"*{typeof(IAggregateRepository<FakeAggregate, OrderId>)}*returned null*");
+    }
+
+    [Fact]
+    public void WithTelemetry_RepositoryForTwoAggregates_IsDecoratedAsTheInterfaceItsAcceptVisits()
+    {
+        var both = new TwoAggregateRepository();
+        var services = new ServiceCollection();
+        services.AddSingleton<IAggregateRepository<FakeAggregate, OrderId>>(both);
+        services.AddSingleton<IAggregateRepository<FakeAggregate, Guid>>(both);
+        services.AddEventSourcing().WithTelemetry();
+
+        using var provider = services.BuildServiceProvider();
+        provider.GetRequiredService<IAggregateRepository<FakeAggregate, OrderId>>()
+                .Should().BeOfType<InstrumentedAggregateRepository<FakeAggregate, OrderId>>();
+        var act = () => provider.GetRequiredService<IAggregateRepository<FakeAggregate, Guid>>();
+        act.Should().Throw<InvalidOperationException>()
+           .WithMessage($"*{typeof(IAggregateRepository<FakeAggregate, Guid>)}*visited a different*");
+    }
+
+    [Fact]
+    public void InstrumentedAggregateRepository_NullInner_Throws()
+    {
+        var act = () => new InstrumentedAggregateRepository<FakeAggregate, OrderId>(null!);
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("inner");
+    }
+
     private static IEventStore EmptyEventStore()
     {
         var store = Substitute.For<IEventStore>();
@@ -243,6 +282,27 @@ public sealed class WithTelemetryRegistrationTests
 
         public ValueTask<Result<AppendResult, StoreError>> SaveAsync(FakeAggregate aggregate, OrderId id, CancellationToken ct = default)
             => throw new NotSupportedException();
+    }
+
+    // Serves two aggregate keys, so the default Accept implementations conflict, error CS8705,
+    // and the class has to pick one itself.
+    private sealed class TwoAggregateRepository
+        : IAggregateRepository<FakeAggregate, OrderId>, IAggregateRepository<FakeAggregate, Guid>
+    {
+        public ValueTask<Result<FakeAggregate, StoreError>> LoadAsync(OrderId id, CancellationToken ct = default)
+            => throw new NotSupportedException();
+
+        public ValueTask<Result<AppendResult, StoreError>> SaveAsync(FakeAggregate aggregate, OrderId id, CancellationToken ct = default)
+            => throw new NotSupportedException();
+
+        public ValueTask<Result<FakeAggregate, StoreError>> LoadAsync(Guid id, CancellationToken ct = default)
+            => throw new NotSupportedException();
+
+        public ValueTask<Result<AppendResult, StoreError>> SaveAsync(FakeAggregate aggregate, Guid id, CancellationToken ct = default)
+            => throw new NotSupportedException();
+
+        TResult IAggregateRepository.Accept<TResult>(IAggregateRepositoryVisitor<TResult> visitor)
+            => visitor.Visit<FakeAggregate, OrderId>(this);
     }
 
     // Breaks the documented Accept contract, to check WithTelemetry fails loudly rather than
