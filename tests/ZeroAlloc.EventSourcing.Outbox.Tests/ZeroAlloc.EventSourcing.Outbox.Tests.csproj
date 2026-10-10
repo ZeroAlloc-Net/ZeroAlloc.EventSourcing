@@ -19,8 +19,8 @@
     <PackageReference Include="Microsoft.Extensions.Logging" />
     <!-- Directory.Packages.props keeps ZeroAlloc.Mediator at the 5.1.5 floor src ships with;
          the tests run against the newest major so a consumer who upgrades Mediator is covered. -->
-    <PackageReference Include="ZeroAlloc.Mediator" VersionOverride="6.3.*" />
-    <PackageReference Include="ZeroAlloc.Mediator.Generator" VersionOverride="6.3.*" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
+    <PackageReference Include="ZeroAlloc.Mediator" VersionOverride="6.4.*" />
+    <PackageReference Include="ZeroAlloc.Mediator.Generator" VersionOverride="6.4.*" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
     <PackageReference Include="Microsoft.Data.Sqlite" />
   </ItemGroup>
 
