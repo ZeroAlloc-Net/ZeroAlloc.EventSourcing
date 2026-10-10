@@ -2,6 +2,7 @@
 
   <PropertyGroup>
     <PackageId>ZeroAlloc.EventSourcing.Aggregates</PackageId>
+    <IsAotCompatible>true</IsAotCompatible>
     <Description>Aggregate base + generator-emitted Apply dispatch for ZeroAlloc.EventSourcing.</Description>
   </PropertyGroup>
 

@@ -2,6 +2,7 @@
 
   <PropertyGroup>
     <PackageId>ZeroAlloc.EventSourcing.Sqlite</PackageId>
+    <IsAotCompatible>true</IsAotCompatible>
     <Description>SQLite IEventStoreAdapter for ZeroAlloc.EventSourcing. AOT-clean via Microsoft.Data.Sqlite. Supports the * global stream via global_position column.</Description>
     <PackageTags>$(PackageTags);sqlite;adapter</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>

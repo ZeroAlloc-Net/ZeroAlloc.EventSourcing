@@ -2,6 +2,7 @@
 
   <PropertyGroup>
     <PackageId>ZeroAlloc.EventSourcing.Sql</PackageId>
+    <IsAotCompatible>true</IsAotCompatible>
     <Description>Shared SQL primitives for ZeroAlloc.EventSourcing.SqlServer and .PostgreSql backends.</Description>
   </PropertyGroup>
 
