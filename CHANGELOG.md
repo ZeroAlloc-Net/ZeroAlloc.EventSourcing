@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/compare/ZeroAlloc.EventSourcing-v1.5.0...ZeroAlloc.EventSourcing-v1.6.0) (2026-10-10)
+
+
+### Features
+
+* decorate aggregate repositories for telemetry without runtime generic construction ([40d8f19](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/commit/40d8f199524e6bbc240341066a890d61a164c18b))
+
 ## [1.5.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/compare/ZeroAlloc.EventSourcing-v1.4.0...ZeroAlloc.EventSourcing-v1.5.0) (2026-10-10)
 
 

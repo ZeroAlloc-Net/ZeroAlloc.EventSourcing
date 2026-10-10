@@ -1,5 +1,1 @@
 #nullable enable
-ZeroAlloc.EventSourcing.Aggregates.IAggregateRepository
-ZeroAlloc.EventSourcing.Aggregates.IAggregateRepository.Accept<TResult>(ZeroAlloc.EventSourcing.Aggregates.IAggregateRepositoryVisitor<TResult>! visitor) -> TResult
-ZeroAlloc.EventSourcing.Aggregates.IAggregateRepositoryVisitor<TResult>
-ZeroAlloc.EventSourcing.Aggregates.IAggregateRepositoryVisitor<TResult>.Visit<TAggregate, TId>(ZeroAlloc.EventSourcing.Aggregates.IAggregateRepository<TAggregate, TId>! repository) -> TResult
