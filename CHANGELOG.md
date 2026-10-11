@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.6.2](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/compare/ZeroAlloc.EventSourcing-v1.6.1...ZeroAlloc.EventSourcing-v1.6.2) (2026-10-11)
+
+
+### Bug Fixes
+
+* keep librdkafka bindings so the Kafka consumers run under NativeAOT ([656b473](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/commit/656b47391bc46e8541eeb5094b781d38bf38c019))
+
+
+### Performance Improvements
+
+* stop allocating on the append path ([#477](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/issues/477)) ([a77517d](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/commit/a77517d92b5072f3c97218abdcc43ef0d5bd4f78)), closes [#472](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/issues/472)
+
+
+### Tests
+
+* fail AOT smokes on every warning and smoke the SQL and Kafka adapters ([656b473](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/commit/656b47391bc46e8541eeb5094b781d38bf38c019))
+
 ## [1.6.1](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/compare/ZeroAlloc.EventSourcing-v1.6.0...ZeroAlloc.EventSourcing-v1.6.1) (2026-10-11)
 
 
