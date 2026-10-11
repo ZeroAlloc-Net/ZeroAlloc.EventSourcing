@@ -67,6 +67,15 @@ public interface IEventStoreAdapter
         StreamPosition from,
         CancellationToken ct = default);
 
+    // Reads at most 'maxCount' raw events after 'from'. StreamConsumer reads each batch with it.
+    // The default implementation stops ReadAsync after maxCount events; a database adapter
+    // overrides it to bound the query itself.
+    IAsyncEnumerable<RawEvent> ReadBatchAsync(
+        StreamId id,
+        StreamPosition from,
+        int maxCount,
+        CancellationToken ct = default) { /* default implementation */ }
+
     // Subscribes to events appended to a stream.
     ValueTask<IEventSubscription> SubscribeAsync(
         StreamId id,
@@ -98,6 +107,9 @@ Every adapter that ships with the library follows these rules, and `EventStore`,
 - **Reads exclude `from`.** `ReadAsync(id, from)` returns the events with a position greater than
   `from`, so `StreamPosition.Start` reads the whole stream and a consumer that passes its last
   checkpoint does not get that event again.
+- **Batch reads stop at `maxCount`.** `ReadBatchAsync(id, from, maxCount)` returns at most
+  `maxCount` events, with the same `from` bound; fewer means the end of the stream was reached.
+  `StreamConsumer` reads every batch this way, with `BatchSize` as `maxCount`.
 - **Metadata round-trips.** Store `RawEvent.Metadata` (event ID, type, time, correlation and
   causation IDs) and return it on reads.
 - **The global stream.** `StreamConsumer` reads `StreamId.Global` ("*") by default: all events of
@@ -215,7 +227,11 @@ when you write an adapter for another database. They follow the same shape:
 3. **Map a key violation to a conflict.** Two writers that pass the check at the same time still
    collide on the key; return `StoreError.Conflict` for that case too.
 4. **Read with `position > @from`,** ordered by position.
-5. **Store the payload as bytes** and the metadata in their own columns.
+5. **Bound batch reads in the query.** Override `ReadBatchAsync` and put `maxCount` in the query
+   (`LIMIT @limit`, `TOP (@limit)`). The default implementation stops reading after `maxCount`
+   rows, but the database has still planned, and may have produced, the whole rest of the
+   stream, on every batch.
+6. **Store the payload as bytes** and the metadata in their own columns.
 
 ### Subscriptions for a Database
 

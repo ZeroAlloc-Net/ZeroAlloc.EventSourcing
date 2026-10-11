@@ -28,4 +28,8 @@
     <ProjectReference Include="..\..\src\ZeroAlloc.EventSourcing.Sqlite\ZeroAlloc.EventSourcing.Sqlite.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="..\Shared\BoundedReadContract.cs" Link="Shared\BoundedReadContract.cs" />
+  </ItemGroup>
+
 </Project>

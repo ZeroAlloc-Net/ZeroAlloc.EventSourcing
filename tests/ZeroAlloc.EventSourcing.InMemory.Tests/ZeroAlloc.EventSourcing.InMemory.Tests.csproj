@@ -30,4 +30,8 @@
     <ProjectReference Include="..\ZeroAlloc.EventSourcing.Tests\ZeroAlloc.EventSourcing.Tests.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="..\Shared\BoundedReadContract.cs" Link="Shared\BoundedReadContract.cs" />
+  </ItemGroup>
+
 </Project>

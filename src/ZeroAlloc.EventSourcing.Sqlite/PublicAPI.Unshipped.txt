@@ -1,0 +1,1 @@
+ZeroAlloc.EventSourcing.Sqlite.SqliteEventStoreAdapter.ReadBatchAsync(ZeroAlloc.EventSourcing.StreamId id, ZeroAlloc.EventSourcing.StreamPosition from, int maxCount, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<ZeroAlloc.EventSourcing.RawEvent>!

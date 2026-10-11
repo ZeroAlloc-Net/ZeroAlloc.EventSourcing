@@ -113,11 +113,37 @@ public sealed class SqliteEventStoreAdapter : IEventStoreAdapter
         }
     }
 
+    private const string ReadColumns =
+        "SELECT position, event_type, event_id, occurred_at, correlation_id, causation_id, payload, global_position FROM event_store ";
+    private const string GlobalReadSql = ReadColumns + "WHERE global_position > @from ORDER BY global_position ASC";
+    private const string GlobalReadBatchSql = GlobalReadSql + " LIMIT @limit";
+    private const string StreamReadSql = ReadColumns + "WHERE stream_id = @streamId AND position > @from ORDER BY position ASC";
+    private const string StreamReadBatchSql = StreamReadSql + " LIMIT @limit";
+
     /// <inheritdoc/>
-    public async IAsyncEnumerable<RawEvent> ReadAsync(
+    public IAsyncEnumerable<RawEvent> ReadAsync(
         StreamId id,
         StreamPosition from,
-        [EnumeratorCancellation] CancellationToken ct = default)
+        CancellationToken ct = default)
+        => ReadCoreAsync(id, from, maxCount: null, ct);
+
+    /// <inheritdoc/>
+    /// <remarks>The query is bounded with <c>LIMIT</c>, so it reads at most <paramref name="maxCount"/> rows.</remarks>
+    public IAsyncEnumerable<RawEvent> ReadBatchAsync(
+        StreamId id,
+        StreamPosition from,
+        int maxCount,
+        CancellationToken ct = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxCount);
+        return ReadCoreAsync(id, from, maxCount, ct);
+    }
+
+    private async IAsyncEnumerable<RawEvent> ReadCoreAsync(
+        StreamId id,
+        StreamPosition from,
+        int? maxCount,
+        [EnumeratorCancellation] CancellationToken ct)
     {
         var conn = new SqliteConnection(_connectionString);
 #pragma warning disable MA0004
@@ -126,31 +152,22 @@ public sealed class SqliteEventStoreAdapter : IEventStoreAdapter
         await conn.OpenAsync(ct).ConfigureAwait(false);
 
         using var cmd = conn.CreateCommand();
+        // EXCLUSIVE `> @from` semantics: required by StreamConsumer, which checkpoints to the
+        // position of the last delivered event and re-reads from that cursor. INCLUSIVE
+        // (`>= @from`) would cause infinite re-delivery of the boundary event.
         if (id.IsGlobal)
         {
-            // EXCLUSIVE `> @from` semantics: required by StreamConsumer, which checkpoints to the
-            // position of the last delivered event and re-reads from that cursor. INCLUSIVE
-            // (`>= @from`) would cause infinite re-delivery of the boundary event.
-            cmd.CommandText = """
-                SELECT position, event_type, event_id, occurred_at, correlation_id, causation_id, payload, global_position
-                FROM event_store
-                WHERE global_position > @from
-                ORDER BY global_position ASC
-                """;
-            cmd.Parameters.AddWithValue("@from", from.Value);
+            cmd.CommandText = maxCount is null ? GlobalReadSql : GlobalReadBatchSql;
         }
         else
         {
-            // EXCLUSIVE `> @from` semantics — see global-branch comment above.
-            cmd.CommandText = """
-                SELECT position, event_type, event_id, occurred_at, correlation_id, causation_id, payload, global_position
-                FROM event_store
-                WHERE stream_id = @streamId AND position > @from
-                ORDER BY position ASC
-                """;
+            cmd.CommandText = maxCount is null ? StreamReadSql : StreamReadBatchSql;
             cmd.Parameters.AddWithValue("@streamId", id.Value);
-            cmd.Parameters.AddWithValue("@from", from.Value);
         }
+
+        cmd.Parameters.AddWithValue("@from", from.Value);
+        if (maxCount is { } limit)
+            cmd.Parameters.AddWithValue("@limit", limit);
 
         var reader = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
 #pragma warning disable MA0004

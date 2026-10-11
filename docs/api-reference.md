@@ -66,6 +66,7 @@ The primary API for persisting and reading events.
 **Key Methods:**
 - `AppendAsync(StreamId, events, expectedVersion, ct)` — Append new events with optimistic concurrency
 - `ReadAsync(StreamId, from, ct)` — Stream events from a specific position
+- `ReadBatchAsync(StreamId, from, maxCount, ct)` — Read at most `maxCount` events after a position; the adapter's query is bounded too
 - `SubscribeAsync(StreamId, from, handler, ct)` — Subscribe to new events
 
 **Usage Pattern:**
