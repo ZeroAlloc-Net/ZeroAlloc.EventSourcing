@@ -67,11 +67,69 @@ public sealed class EventStore : IEventStore
             if (!_registry.TryGetType(raw.EventType, out var type) || type is null)
                 continue; // unknown event type — skip for forward compatibility
 
-            var deserialized = _serializer.Deserialize(raw.Payload, type);
-            if (_upcasterPipeline?.TryUpcast(deserialized, out var upgraded) == true)
-                deserialized = upgraded;
-            yield return new EventEnvelope(id, raw.Position, deserialized, raw.Metadata);
+            yield return ToEnvelope(id, raw, type);
         }
+    }
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Each query the adapter runs is bounded to <paramref name="maxCount"/> rows through
+    /// <see cref="IEventStoreAdapter.ReadBatchAsync"/>. Events of a type the registry does not know
+    /// are skipped, as in <see cref="ReadAsync"/>; when that leaves the batch short, the next rows are
+    /// read, so a short batch still means the end of the stream.
+    /// </remarks>
+    public IAsyncEnumerable<EventEnvelope> ReadBatchAsync(
+        StreamId id,
+        StreamPosition from,
+        int maxCount,
+        CancellationToken ct = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxCount);
+        return ReadBatchCoreAsync(id, from, maxCount, ct);
+    }
+
+    private async IAsyncEnumerable<EventEnvelope> ReadBatchCoreAsync(
+        StreamId id,
+        StreamPosition from,
+        int maxCount,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        var yielded = 0;
+        while (true)
+        {
+            var requested = maxCount - yielded;
+            var pageStart = from;
+            var rows = 0;
+            await foreach (var raw in _adapter.ReadBatchAsync(id, from, requested, ct).ConfigureAwait(false))
+            {
+                rows++;
+                from = raw.Position;
+                if (!_registry.TryGetType(raw.EventType, out var type) || type is null)
+                    continue; // unknown event type — skip for forward compatibility
+
+                yield return ToEnvelope(id, raw, type);
+                yielded++;
+            }
+
+            // A short page is the end of the stream. A full page that held unknown types leaves
+            // the batch short, so the rows after it are read.
+            if (yielded == maxCount || rows < requested)
+                yield break;
+
+            // The next page starts after the last row of this one; an adapter whose positions do
+            // not advance would otherwise be read again from the same place forever.
+            if (from.Value <= pageStart.Value)
+                throw new InvalidOperationException(
+                    $"The adapter returned events at or before position {pageStart.Value} for a read after it, so the read cannot advance.");
+        }
+    }
+
+    private EventEnvelope ToEnvelope(StreamId id, RawEvent raw, Type type)
+    {
+        var deserialized = _serializer.Deserialize(raw.Payload, type);
+        if (_upcasterPipeline?.TryUpcast(deserialized, out var upgraded) == true)
+            deserialized = upgraded;
+        return new EventEnvelope(id, raw.Position, deserialized, raw.Metadata);
     }
 
     /// <inheritdoc/>

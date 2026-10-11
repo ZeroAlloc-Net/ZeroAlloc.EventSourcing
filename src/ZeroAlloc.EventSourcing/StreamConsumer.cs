@@ -77,18 +77,16 @@ public sealed class StreamConsumer : IStreamConsumer
         var position = await _checkpointStore.ReadAsync(ConsumerId, cancellationToken).ConfigureAwait(false) ?? StreamPosition.Start;
         _currentPosition = position;
 
-        // Consume events in batches
+        // Consume events in batches. One buffer serves every batch; it is cleared before each read.
+        var batch = new List<EventEnvelope>();
         while (!cancellationToken.IsCancellationRequested)
         {
-            var batch = new List<EventEnvelope>();
+            batch.Clear();
 
-            // Fetch batch of events
-            await foreach (var envelope in _eventStore.ReadAsync(_streamId, position, cancellationToken).ConfigureAwait(false))
-            {
+            // Fetch the next batch. The store bounds the read to BatchSize events, so a batch does
+            // not run a query over the whole rest of the stream, see #473.
+            await foreach (var envelope in _eventStore.ReadBatchAsync(_streamId, position, _options.BatchSize, cancellationToken).ConfigureAwait(false))
                 batch.Add(envelope);
-                if (batch.Count >= _options.BatchSize)
-                    break;
-            }
 
             if (batch.Count == 0)
                 break; // No more events

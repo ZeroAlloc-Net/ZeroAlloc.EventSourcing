@@ -18,6 +18,28 @@ public interface IEventStoreAdapter
         StreamPosition from,
         CancellationToken ct = default);
 
+    /// <summary>
+    /// Reads at most <paramref name="maxCount"/> raw events of a stream after <paramref name="from"/>,
+    /// in position order. The bound on <paramref name="from"/> is exclusive, as for
+    /// <see cref="ReadAsync"/>. Fewer than
+    /// <paramref name="maxCount"/> events means the end of the stream was reached.
+    /// </summary>
+    /// <remarks>
+    /// The default implementation stops the unbounded read after <paramref name="maxCount"/>
+    /// events. A storage backend should override it to bound the query itself, for example with
+    /// <c>LIMIT</c> or <c>TOP</c>, so a read of a long stream does not cost the whole tail of it.
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="maxCount"/> is zero or negative.</exception>
+    IAsyncEnumerable<RawEvent> ReadBatchAsync(
+        StreamId id,
+        StreamPosition from,
+        int maxCount,
+        CancellationToken ct = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxCount);
+        return Internal.BoundedRead.Take(ReadAsync(id, from, ct), maxCount, ct);
+    }
+
     /// <summary>Subscribes to raw events appended to a stream.</summary>
     ValueTask<IEventSubscription> SubscribeAsync(
         StreamId id,

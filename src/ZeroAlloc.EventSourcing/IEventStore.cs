@@ -18,6 +18,27 @@ public interface IEventStore
         StreamPosition from = default,
         CancellationToken ct = default);
 
+    /// <summary>
+    /// Reads at most <paramref name="maxCount"/> events of a stream after <paramref name="from"/>,
+    /// in position order. The bound on <paramref name="from"/> is exclusive, as for
+    /// <see cref="ReadAsync"/>. Fewer than
+    /// <paramref name="maxCount"/> events means the end of the stream was reached.
+    /// </summary>
+    /// <remarks>
+    /// The default implementation stops the unbounded read after <paramref name="maxCount"/>
+    /// events. <see cref="EventStore"/> overrides it to bound the query the adapter runs.
+    /// </remarks>
+    /// <exception cref="ArgumentOutOfRangeException"><paramref name="maxCount"/> is zero or negative.</exception>
+    IAsyncEnumerable<EventEnvelope> ReadBatchAsync(
+        StreamId id,
+        StreamPosition from,
+        int maxCount,
+        CancellationToken ct = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxCount);
+        return Internal.BoundedRead.Take(ReadAsync(id, from, ct), maxCount, ct);
+    }
+
     /// <summary>Subscribes to events appended to a stream from <paramref name="from"/> onward.</summary>
     ValueTask<IEventSubscription> SubscribeAsync(
         StreamId id,

@@ -297,14 +297,42 @@ public sealed class SqlServerEventStoreAdapter : IEventStoreAdapter
         }
     }
 
+    private const string ReadColumns =
+        "position, event_type, event_id, occurred_at, correlation_id, causation_id, payload, global_position FROM dbo.event_store ";
+    private const string GlobalReadFilter = "WHERE global_position > @from ORDER BY global_position ASC";
+    private const string StreamReadFilter = "WHERE stream_id = @streamId AND position > @from ORDER BY position ASC";
+    private const string GlobalReadSql = "SELECT " + ReadColumns + GlobalReadFilter;
+    private const string GlobalReadBatchSql = "SELECT TOP (@limit) " + ReadColumns + GlobalReadFilter;
+    private const string StreamReadSql = "SELECT " + ReadColumns + StreamReadFilter;
+    private const string StreamReadBatchSql = "SELECT TOP (@limit) " + ReadColumns + StreamReadFilter;
+
     /// <inheritdoc/>
-    public async IAsyncEnumerable<RawEvent> ReadAsync(
+    public IAsyncEnumerable<RawEvent> ReadAsync(
         StreamId id,
         StreamPosition from,
-        [EnumeratorCancellation] CancellationToken ct = default)
+        CancellationToken ct = default)
+        => ReadCoreAsync(id, from, maxCount: null, ct);
+
+    /// <inheritdoc/>
+    /// <remarks>The query is bounded with <c>TOP</c>, so it reads at most <paramref name="maxCount"/> rows.</remarks>
+    public IAsyncEnumerable<RawEvent> ReadBatchAsync(
+        StreamId id,
+        StreamPosition from,
+        int maxCount,
+        CancellationToken ct = default)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxCount);
+        return ReadCoreAsync(id, from, maxCount, ct);
+    }
+
+    private async IAsyncEnumerable<RawEvent> ReadCoreAsync(
+        StreamId id,
+        StreamPosition from,
+        int? maxCount,
+        [EnumeratorCancellation] CancellationToken ct)
     {
         using var conn = new SqlConnection(_connectionString);
-        using var cmd = CreateReadCommand(conn, id, from);
+        using var cmd = CreateReadCommand(conn, id, from, maxCount);
 
         // SequentialAccess is required for efficient VARBINARY(MAX) streaming.
         // Columns MUST be read in index order when using SequentialAccess.
@@ -326,34 +354,25 @@ public sealed class SqlServerEventStoreAdapter : IEventStoreAdapter
             yield return ReadEvent(reader, id.IsGlobal);
     }
 
-    private static SqlCommand CreateReadCommand(SqlConnection conn, StreamId id, StreamPosition from)
+    private static SqlCommand CreateReadCommand(SqlConnection conn, StreamId id, StreamPosition from, int? maxCount)
     {
         var cmd = conn.CreateCommand();
+        // EXCLUSIVE `> @from` semantics: required by StreamConsumer, which checkpoints to the
+        // position of the last delivered event and re-reads from that cursor. INCLUSIVE
+        // (`>= @from`) would cause infinite re-delivery of the boundary event.
         if (id.IsGlobal)
         {
-            // EXCLUSIVE `> @from` semantics: required by StreamConsumer, which checkpoints to the
-            // position of the last delivered event and re-reads from that cursor. INCLUSIVE
-            // (`>= @from`) would cause infinite re-delivery of the boundary event.
-            cmd.CommandText = """
-                SELECT position, event_type, event_id, occurred_at, correlation_id, causation_id, payload, global_position
-                FROM dbo.event_store
-                WHERE global_position > @from
-                ORDER BY global_position ASC
-                """;
-            cmd.Parameters.AddWithValue("@from", from.Value);
+            cmd.CommandText = maxCount is null ? GlobalReadSql : GlobalReadBatchSql;
         }
         else
         {
-            // EXCLUSIVE `> @from` semantics — see global-branch comment above.
-            cmd.CommandText = """
-                SELECT position, event_type, event_id, occurred_at, correlation_id, causation_id, payload, global_position
-                FROM dbo.event_store
-                WHERE stream_id = @streamId AND position > @from
-                ORDER BY position ASC
-                """;
+            cmd.CommandText = maxCount is null ? StreamReadSql : StreamReadBatchSql;
             cmd.Parameters.AddWithValue("@streamId", id.Value);
-            cmd.Parameters.AddWithValue("@from", from.Value);
         }
+
+        cmd.Parameters.AddWithValue("@from", from.Value);
+        if (maxCount is { } limit)
+            cmd.Parameters.Add(new SqlParameter("@limit", SqlDbType.Int) { Value = limit });
 
         return cmd;
     }
