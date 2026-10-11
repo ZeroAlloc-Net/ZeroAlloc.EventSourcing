@@ -1,0 +1,47 @@
+<Project>
+  <!--
+    Limits which assemblies an AOT smoke lets through with a trim or AOT warning.
+
+    NativeAOT reports a package assembly's trim and AOT warnings as one rollup per assembly:
+    IL2104 for trim warnings, IL3053 for AOT warnings. A smoke that names a third-party
+    assembly as an AllowedTrimWarningRollup item, and makes IL2104 and IL3053 non-fatal with
+    WarningsNotAsErrors, would otherwise excuse the rollup of every package assembly, ours
+    included.
+
+    So this target stops every other assembly from collapsing into a rollup: their warnings
+    are reported one by one under their own codes, IL2026, IL3050 and the rest, which
+    TreatWarningsAsErrors keeps fatal. Only the assemblies named here can still produce
+    IL2104 or IL3053. Project references and the smoke itself never collapse; the SDK already
+    reports them one by one.
+
+    To list what an allowed rollup hides, publish with -p:TrimmerSingleWarn=false
+    -p:TreatWarningsAsErrors=false: the target then stands aside and every warning is shown.
+  -->
+  <Target Name="ZeroAllocScopeTrimWarningRollups"
+          AfterTargets="PrepareForILLink"
+          Condition="'@(AllowedTrimWarningRollup)' != '' and '$(TrimmerSingleWarn)' != 'false'">
+    <ItemGroup>
+      <ManagedAssemblyToLink>
+        <TrimmerSingleWarn>false</TrimmerSingleWarn>
+      </ManagedAssemblyToLink>
+    </ItemGroup>
+
+    <JoinItems Left="@(ManagedAssemblyToLink)" LeftKey="FileName" LeftMetadata="*"
+               Right="@(AllowedTrimWarningRollup)"
+               ItemSpecToUse="Left">
+      <Output TaskParameter="JoinResult" ItemName="_ZeroAllocAllowedRollupAssembly" />
+    </JoinItems>
+
+    <ItemGroup>
+      <ManagedAssemblyToLink Remove="@(_ZeroAllocAllowedRollupAssembly)" />
+      <ManagedAssemblyToLink Include="@(_ZeroAllocAllowedRollupAssembly)" TrimmerSingleWarn="true" />
+
+      <_ZeroAllocAllowedRollupName Include="@(_ZeroAllocAllowedRollupAssembly->'%(Filename)')" />
+      <_ZeroAllocStaleRollupName Include="@(AllowedTrimWarningRollup)" Exclude="@(_ZeroAllocAllowedRollupName)" />
+    </ItemGroup>
+
+    <!-- A name that matches nothing would excuse nothing, and hides that the list is out of date. -->
+    <Error Condition="'@(_ZeroAllocStaleRollupName)' != ''"
+           Text="AllowedTrimWarningRollup names @(_ZeroAllocStaleRollupName), which this publish does not contain. Remove the entry." />
+  </Target>
+</Project>

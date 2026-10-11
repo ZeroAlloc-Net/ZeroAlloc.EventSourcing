@@ -10,8 +10,6 @@
     <InvariantGlobalization>true</InvariantGlobalization>
     <OptimizationPreference>Size</OptimizationPreference>
 
-    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
-    <WarningsAsErrors>$(WarningsAsErrors);IL2026;IL2067;IL2075;IL2091;IL3050;IL3051</WarningsAsErrors>
     <!-- Sample domain types are intentionally undocumented; the sample isn't packed. -->
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
   </PropertyGroup>

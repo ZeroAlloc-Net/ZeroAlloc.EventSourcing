@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- Override the multi-TFM list from Directory.Build.props -->
+    <TargetFrameworks></TargetFrameworks>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>ZeroAlloc.EventSourcing.Kafka.AotSmoke</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <OptimizationPreference>Size</OptimizationPreference>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Shared\SmokeSupport.cs" Link="Shared\SmokeSupport.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ZeroAlloc.EventSourcing.Kafka\ZeroAlloc.EventSourcing.Kafka.csproj"
+                      SetTargetFramework="TargetFramework=net10.0" />
+  </ItemGroup>
+
+  <!--
+    Confluent.Kafka 2.16.0 is not trim clean. Published with -p:TrimmerSingleWarn=false, every
+    warning is inside that one assembly, none in ours:
+      IL2067  Librdkafka.SetDelegates reflects over the NativeMethods classes to bind librdkafka.
+              The trimmer removed those methods, so building any client threw at run time.
+              ZeroAlloc.EventSourcing.Kafka now keeps them; see LibrdkafkaNativeMethods.cs.
+              This smoke is the test for that: it builds an admin client, a producer, a
+              consumer and the health check's admin client, and runs them against a broker.
+      IL2026  AwsAutoWireDispatcher loads the AWS OAUTHBEARER handler by name, only when
+      IL2075  that SASL mechanism is configured.
+      IL2091  Util.Marshal.PtrToStructure<T> lacks the constructor annotation.
+    They roll up as IL2104. Only IL2104 is non-fatal, and only for Confluent.Kafka:
+    TrimWarningRollups.targets reports every other assembly's warnings under their own codes,
+    which stay fatal. Remove this once Confluent.Kafka publishes clean:
+    confluentinc/confluent-kafka-dotnet#2146.
+  -->
+  <PropertyGroup>
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);IL2104</WarningsNotAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <AllowedTrimWarningRollup Include="Confluent.Kafka" />
+  </ItemGroup>
+  <Import Project="..\Shared\TrimWarningRollups.targets" />
+</Project>
