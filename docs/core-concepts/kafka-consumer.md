@@ -315,6 +315,16 @@ var options = new KafkaManualPartitionOptions
 };
 ```
 
+## NativeAOT
+
+The consumers and the health check publish and run under NativeAOT. Confluent.Kafka binds to
+librdkafka by reflecting over its P/Invoke classes, which the trimmer would otherwise remove; this
+package keeps them whenever the app uses one of its consumers or its health check, so building
+a client works in a trimmed app, including a producer or admin client you build yourself.
+The publish still reports IL2104 for `Confluent.Kafka`, from that binding code and its AWS
+OAUTHBEARER loader. Upstream support is tracked in
+[confluent-kafka-dotnet#2146](https://github.com/confluentinc/confluent-kafka-dotnet/issues/2146).
+
 ## Performance Tuning
 
 - **BatchSize**: Larger batches = fewer commits, higher memory usage. Default 100, range 1-10,000.

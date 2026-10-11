@@ -208,6 +208,20 @@ Server=staging-db.example.com;Database=EventStore;User Id=app_user;Password=Secu
 Server=prod-db.example.com;Database=EventStore;User Id=app_user;Password=SecurePassword123;Encrypt=true;TrustServerCertificate=false;Application Name=EventSourcingApp
 ```
 
+### NativeAOT
+
+The SQL Server adapter publishes and runs under NativeAOT, with two things to know:
+
+- `Microsoft.Data.SqlClient` refuses to open a connection in globalization invariant mode, so
+  leave `InvariantGlobalization` off in a NativeAOT app that uses it.
+- `Microsoft.Data.SqlClient`, `Microsoft.Data.SqlClient.Internal.Logging` and the
+  `System.Configuration.ConfigurationManager` it pulls in are not trim clean. The publish reports
+  them as IL2104 and IL3053, one per assembly. The warnings are in their code paths for UDTs,
+  vectors, configurable retry logic and Azure authentication providers, not in this package.
+
+The PostgreSQL adapter publishes clean. CI publishes both adapters with warnings as errors and
+runs them against a real server; see `samples/*AotSmoke`.
+
 ## Serialization Strategies
 
 The adapters store whatever bytes the `IEventSerializer` produces. The recommended serializer is the

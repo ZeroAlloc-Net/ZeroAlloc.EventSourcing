@@ -176,6 +176,7 @@ public sealed class KafkaConsumerGroupConsumer : KafkaConsumerBase
             EnableAutoOffsetStore = false, // StoreOffset is called manually in ProcessBatchAsync
         };
 
+        LibrdkafkaNativeMethods.Keep();
         return new ConsumerBuilder<string, byte[]>(config)
             .SetPartitionsAssignedHandler((_, partitions) =>
                 box.PendingSeeks.Enqueue([.. partitions]))

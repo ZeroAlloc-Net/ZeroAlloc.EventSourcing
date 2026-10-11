@@ -16,9 +16,13 @@
   </Folder>
   <Folder Name="/samples/">
     <Project Path="samples/ZeroAlloc.EventSourcing.AotSmoke/ZeroAlloc.EventSourcing.AotSmoke.csproj" />
+    <Project Path="samples/ZeroAlloc.EventSourcing.Kafka.AotSmoke/ZeroAlloc.EventSourcing.Kafka.AotSmoke.csproj" />
     <Project Path="samples/ZeroAlloc.EventSourcing.Mediator.AotSmoke/ZeroAlloc.EventSourcing.Mediator.AotSmoke.csproj" />
     <Project Path="samples/ZeroAlloc.EventSourcing.Outbox.AotSmoke/ZeroAlloc.EventSourcing.Outbox.AotSmoke.csproj" />
+    <Project Path="samples/ZeroAlloc.EventSourcing.PostgreSql.AotSmoke/ZeroAlloc.EventSourcing.PostgreSql.AotSmoke.csproj" />
+    <Project Path="samples/ZeroAlloc.EventSourcing.Sql.AotSmoke/ZeroAlloc.EventSourcing.Sql.AotSmoke.csproj" />
     <Project Path="samples/ZeroAlloc.EventSourcing.Sqlite.AotSmoke/ZeroAlloc.EventSourcing.Sqlite.AotSmoke.csproj" />
+    <Project Path="samples/ZeroAlloc.EventSourcing.SqlServer.AotSmoke/ZeroAlloc.EventSourcing.SqlServer.AotSmoke.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/ZeroAlloc.EventSourcing.Aggregates.ConsumerTests/ZeroAlloc.EventSourcing.Aggregates.ConsumerTests.csproj" />

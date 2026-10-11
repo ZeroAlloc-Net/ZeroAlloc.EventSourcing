@@ -69,6 +69,57 @@ jobs:
     # a new smoke from being left out the same way.
     # One job rather than a matrix: aot-smoke is a required check on main, and a matrix
     # would report under per-leg names instead.
+    # Each smoke publishes with TreatWarningsAsErrors, so any trim or AOT warning fails it; a
+    # smoke that tolerates a third-party rollup names that assembly in its csproj.
+    # The PostgreSql, SqlServer, Sql and Kafka smokes run against the service containers below,
+    # the same images the integration tests start through Testcontainers. A NativeAOT binary
+    # cannot drive Testcontainers itself, so the job provides the servers and passes their
+    # addresses in the ZA_ES_AOTSMOKE_* variables; a smoke fails when its variable is unset.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: smoke
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s --health-timeout 5s --health-retries 30
+      sqlserver:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: 'Y'
+          MSSQL_SA_PASSWORD: AotSmoke_Passw0rd
+        ports:
+          - 1433:1433
+        options: >-
+          --health-cmd "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P AotSmoke_Passw0rd -Q 'SELECT 1'"
+          --health-interval 5s --health-timeout 10s --health-retries 30
+      kafka:
+        image: apache/kafka:3.9.1
+        # Single-node KRaft broker. It advertises localhost:9092, which the runner reaches
+        # through the mapped port.
+        env:
+          KAFKA_NODE_ID: '1'
+          KAFKA_PROCESS_ROLES: broker,controller
+          KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+          KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+          KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+          KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+          KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: '1'
+          KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: '1'
+          KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: '1'
+          KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: '0'
+        ports:
+          - 9092:9092
+        options: >-
+          --health-cmd "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092"
+          --health-interval 5s --health-timeout 20s --health-retries 30
+    env:
+      ZA_ES_AOTSMOKE_POSTGRES: Host=localhost;Port=5432;Username=postgres;Password=smoke;Database=postgres
+      ZA_ES_AOTSMOKE_SQLSERVER: Server=localhost,1433;User Id=sa;Password=AotSmoke_Passw0rd;TrustServerCertificate=True
+      ZA_ES_AOTSMOKE_KAFKA: localhost:9092
     steps:
       - uses: actions/checkout@v7
       - name: Setup .NET

@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- Override the multi-TFM list from Directory.Build.props -->
+    <TargetFrameworks></TargetFrameworks>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>ZeroAlloc.EventSourcing.PostgreSql.AotSmoke</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <OptimizationPreference>Size</OptimizationPreference>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Shared\SmokeSupport.cs" Link="Shared\SmokeSupport.cs" />
+    <Compile Include="..\Shared\EventStoreSmoke.cs" Link="Shared\EventStoreSmoke.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ZeroAlloc.EventSourcing.PostgreSql\ZeroAlloc.EventSourcing.PostgreSql.csproj"
+                      SetTargetFramework="TargetFramework=net10.0" />
+  </ItemGroup>
+</Project>

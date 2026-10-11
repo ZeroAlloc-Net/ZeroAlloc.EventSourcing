@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <!-- Override the multi-TFM list from Directory.Build.props -->
+    <TargetFrameworks></TargetFrameworks>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>ZeroAlloc.EventSourcing.Sql.AotSmoke</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <PublishAot>true</PublishAot>
+    <!-- Microsoft.Data.SqlClient throws "Globalization Invariant Mode is not supported" on open. -->
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <OptimizationPreference>Size</OptimizationPreference>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Shared\SmokeSupport.cs" Link="Shared\SmokeSupport.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ZeroAlloc.EventSourcing.Sql\ZeroAlloc.EventSourcing.Sql.csproj"
+                      SetTargetFramework="TargetFramework=net10.0" />
+  </ItemGroup>
+
+  <!--
+    Microsoft.Data.SqlClient 7.1.1 is not trim or AOT clean. Published with
+    -p:TrimmerSingleWarn=false, every warning is inside these three assemblies, none in ours:
+      Microsoft.Data.SqlClient                    IL2026 IL2057 IL2067 IL2070 IL2072 IL2075
+                                                  IL2111 IL3050: UDT and SqlVector JSON paths,
+                                                  DiagnosticSource writes, the retry-logic and
+                                                  authentication-provider loaders
+      Microsoft.Data.SqlClient.Internal.Logging   IL2026: EventSource.WriteEvent with object[]
+      System.Configuration.ConfigurationManager   IL2026 IL2057 IL2067 IL2070: config type
+                                                  loading, pulled in by SqlClient
+    They roll up as IL2104 and IL3053. Only those two codes are non-fatal, and only for these
+    three assemblies: TrimWarningRollups.targets reports every other assembly's warnings
+    under their own codes, which stay fatal. Remove this once SqlClient publishes clean.
+  -->
+  <PropertyGroup>
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);IL2104;IL3053</WarningsNotAsErrors>
+  </PropertyGroup>
+  <ItemGroup>
+    <AllowedTrimWarningRollup Include="Microsoft.Data.SqlClient" />
+    <AllowedTrimWarningRollup Include="Microsoft.Data.SqlClient.Internal.Logging" />
+    <AllowedTrimWarningRollup Include="System.Configuration.ConfigurationManager" />
+  </ItemGroup>
+  <Import Project="..\Shared\TrimWarningRollups.targets" />
+</Project>
