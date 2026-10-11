@@ -96,7 +96,7 @@ jobs:
           --health-cmd "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P AotSmoke_Passw0rd -Q 'SELECT 1'"
           --health-interval 5s --health-timeout 10s --health-retries 30
       kafka:
-        image: apache/kafka:3.9.1
+        image: apache/kafka:3.9.2
         # Single-node KRaft broker. It advertises localhost:9092, which the runner reaches
         # through the mapped port.
         env:
