@@ -1,4 +1,1 @@
 #nullable enable
-ZeroAlloc.EventSourcing.EventStore.ReadBatchAsync(ZeroAlloc.EventSourcing.StreamId id, ZeroAlloc.EventSourcing.StreamPosition from, int maxCount, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<ZeroAlloc.EventSourcing.EventEnvelope>!
-ZeroAlloc.EventSourcing.IEventStore.ReadBatchAsync(ZeroAlloc.EventSourcing.StreamId id, ZeroAlloc.EventSourcing.StreamPosition from, int maxCount, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<ZeroAlloc.EventSourcing.EventEnvelope>!
-ZeroAlloc.EventSourcing.IEventStoreAdapter.ReadBatchAsync(ZeroAlloc.EventSourcing.StreamId id, ZeroAlloc.EventSourcing.StreamPosition from, int maxCount, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Collections.Generic.IAsyncEnumerable<ZeroAlloc.EventSourcing.RawEvent>!
