@@ -1,5 +1,6 @@
 using BenchmarkDotNet.Attributes;
 using ZeroAlloc.EventSourcing.InMemory;
+using ZeroAlloc.Results;
 
 namespace ZeroAlloc.EventSourcing.Benchmarks;
 
@@ -23,7 +24,9 @@ internal sealed class BenchmarkTypeRegistry : IEventTypeRegistry
 }
 
 /// <summary>
-/// Minimal JSON serializer for benchmarks.
+/// System.Text.Json reflection serializer. <see cref="SerializerBenchmarks"/> compares it with the
+/// dispatcher serializer; the event store benchmarks use <see cref="CachedSerializer"/> instead, so
+/// serialization cost does not hide the overhead of the library.
 /// </summary>
 internal sealed class BenchmarkSerializer : IEventSerializer
 {
@@ -35,140 +38,124 @@ internal sealed class BenchmarkSerializer : IEventSerializer
 }
 
 /// <summary>
-/// Benchmarks for EventStore operations.
-/// Measures performance of event storage and retrieval.
+/// An adapter that stores nothing and completes every append synchronously. Appending through it
+/// measures what <see cref="EventStore"/> itself costs: type mapping, metadata and the hand-off
+/// of the raw events.
 /// </summary>
-[SimpleJob(warmupCount: 3, invocationCount: 5)]
+internal sealed class NoOpEventStoreAdapter : IEventStoreAdapter
+{
+    public ValueTask<Result<AppendResult, StoreError>> AppendAsync(
+        StreamId id,
+        ReadOnlyMemory<RawEvent> events,
+        StreamPosition expectedVersion,
+        CancellationToken ct = default)
+        => ValueTask.FromResult(Result<AppendResult, StoreError>.Success(
+            new AppendResult(id, new StreamPosition(expectedVersion.Value + events.Length))));
+
+    public IAsyncEnumerable<RawEvent> ReadAsync(StreamId id, StreamPosition from, CancellationToken ct = default)
+        => throw new NotSupportedException();
+
+    public ValueTask<IEventSubscription> SubscribeAsync(
+        StreamId id,
+        StreamPosition from,
+        Func<RawEvent, CancellationToken, ValueTask> handler,
+        CancellationToken ct = default)
+        => throw new NotSupportedException();
+}
+
+/// <summary>
+/// Benchmarks for <see cref="EventStore"/>. Serialization goes through <see cref="CachedSerializer"/>
+/// and every input is built in setup, so the numbers are the library's own: an append through
+/// <see cref="NoOpEventStoreAdapter"/> allocates nothing.
+/// </summary>
 [MemoryDiagnoser]
+[SimpleJob]
 public class EventStoreBenchmarks
 {
     private const int PrePopulationCount = 100;
+    private const int StreamCount = 10;
+    private const int EventsPerStream = 10;
 
-    private IEventStore _eventStore = null!;
-    private StreamId _streamId;
-    private int _eventCount;
+    private IEventStore _appendStore = null!;
+    private IEventStore _readStore = null!;
+    private readonly StreamId _appendStream = new("append-stream");
+    private readonly StreamId _readStream = new("benchmark-stream");
+    private readonly StreamId[] _streams = new StreamId[StreamCount];
+    private ReadOnlyMemory<object> _oneEvent;
+    private ReadOnlyMemory<object> _tenEvents;
 
     /// <summary>
-    /// Global setup for benchmarks.
-    /// Pre-populates the event store with 100 events for read benchmarks.
+    /// Builds the append inputs, and pre-populates an in-memory store with one 100-event stream
+    /// and ten 10-event streams for the read benchmarks.
     /// </summary>
     [GlobalSetup]
     public void Setup()
     {
-        var adapter = new InMemoryEventStoreAdapter();
         var registry = new BenchmarkTypeRegistry();
-        var serializer = new BenchmarkSerializer();
-        _eventStore = new EventStore(adapter, serializer, registry);
+        var serializer = new CachedSerializer();
+        _appendStore = new EventStore(new NoOpEventStoreAdapter(), serializer, registry);
+        _readStore = new EventStore(new InMemoryEventStoreAdapter(), serializer, registry);
 
-        _streamId = new StreamId("benchmark-stream");
-        _eventCount = 0;
+        var @event = new BenchmarkEvent("event", new byte[] { 1, 2, 3, 4, 5 });
+        _oneEvent = new object[] { @event };
+        _tenEvents = Enumerable.Repeat<object>(@event, 10).ToArray();
 
-        // Pre-populate single stream for ReadEventsFromStream benchmark
-        for (int i = 0; i < PrePopulationCount; i++)
+        for (var i = 0; i < PrePopulationCount; i++)
+            Append(_readStore, _readStream, i, _oneEvent);
+
+        for (var s = 0; s < StreamCount; s++)
         {
-            var @event = new BenchmarkEvent($"event-{i}", new byte[] { 1, 2, 3, 4, 5 });
-            var result = _eventStore.AppendAsync(
-                _streamId,
-                new object[] { @event }.AsMemory(),
-                new StreamPosition(_eventCount),
-                CancellationToken.None
-            ).GetAwaiter().GetResult();
-
-            if (!result.IsSuccess)
-            {
-                throw new InvalidOperationException(
-                    $"Failed to append event {i} to benchmark stream during setup: {result.Error}");
-            }
-
-            _eventCount++;
-        }
-
-        // Pre-populate 10 separate streams for ReadEventsAcrossStreams benchmark
-        for (int streamIdx = 0; streamIdx < 10; streamIdx++)
-        {
-            var streamId = new StreamId($"stream-{streamIdx}");
-            for (int eventIdx = 0; eventIdx < 10; eventIdx++)
-            {
-                var @event = new BenchmarkEvent($"stream-{streamIdx}-event-{eventIdx}", new byte[] { 1, 2, 3, 4, 5 });
-                var result = _eventStore.AppendAsync(
-                    streamId,
-                    new object[] { @event }.AsMemory(),
-                    new StreamPosition(eventIdx),
-                    CancellationToken.None
-                ).GetAwaiter().GetResult();
-
-                if (!result.IsSuccess)
-                {
-                    throw new InvalidOperationException(
-                        $"Failed to append event {eventIdx} to stream-{streamIdx} during setup: {result.Error}");
-                }
-            }
+            _streams[s] = new StreamId($"stream-{s}");
+            for (var i = 0; i < EventsPerStream; i++)
+                Append(_readStore, _streams[s], i, _oneEvent);
         }
     }
 
-    /// <summary>
-    /// Benchmark: AppendEvent - measure appending a single event to a stream.
-    /// Creates a new stream per invocation to avoid conflicts between benchmark invocations.
-    /// Each invocation increments _eventCount to ensure unique stream identifiers.
-    /// </summary>
+    /// <summary>Append one event: the cost of <see cref="EventStore"/> on top of the adapter.</summary>
     [Benchmark]
-    public async Task AppendEvent()
+    public async ValueTask<long> AppendEvent()
     {
-        var @event = new BenchmarkEvent($"event-{_eventCount}", new byte[] { 1, 2, 3, 4, 5 });
-        var result = await _eventStore.AppendAsync(
-            new StreamId($"stream-{_eventCount}"),
-            new object[] { @event }.AsMemory(),
-            StreamPosition.Start,
-            CancellationToken.None
-        );
+        var result = await _appendStore.AppendAsync(_appendStream, _oneEvent, StreamPosition.Start, CancellationToken.None);
+        return result.Value.NextExpectedVersion.Value;
+    }
 
+    /// <summary>Append ten events in one call: the per-event cost of <see cref="EventStore"/>.</summary>
+    [Benchmark]
+    public async ValueTask<long> AppendTenEvents()
+    {
+        var result = await _appendStore.AppendAsync(_appendStream, _tenEvents, StreamPosition.Start, CancellationToken.None);
+        return result.Value.NextExpectedVersion.Value;
+    }
+
+    /// <summary>Read all 100 events of one in-memory stream.</summary>
+    [Benchmark]
+    public async ValueTask<int> ReadEventsFromStream()
+    {
+        var count = 0;
+        await foreach (var _ in _readStore.ReadAsync(_readStream, StreamPosition.Start, CancellationToken.None))
+            count++;
+        return count;
+    }
+
+    /// <summary>Read ten in-memory streams of ten events each.</summary>
+    [Benchmark]
+    public async ValueTask<int> ReadEventsAcrossStreams()
+    {
+        var count = 0;
+        foreach (var stream in _streams)
+        {
+            await foreach (var _ in _readStore.ReadAsync(stream, StreamPosition.Start, CancellationToken.None))
+                count++;
+        }
+
+        return count;
+    }
+
+    private static void Append(IEventStore store, StreamId stream, long expectedVersion, ReadOnlyMemory<object> events)
+    {
+        var result = store.AppendAsync(stream, events, new StreamPosition(expectedVersion), CancellationToken.None)
+            .AsTask().GetAwaiter().GetResult();
         if (!result.IsSuccess)
-        {
-            throw new InvalidOperationException(
-                $"Failed to append event to stream-{_eventCount}: {result.Error}");
-        }
-
-        _eventCount++;
-    }
-
-    /// <summary>
-    /// Benchmark: ReadEventsFromStream - measure reading all events from a single stream.
-    /// </summary>
-    [Benchmark]
-    public async Task ReadEventsFromStream()
-    {
-        var events = new List<EventEnvelope>();
-        await foreach (var evt in _eventStore.ReadAsync(_streamId, StreamPosition.Start, CancellationToken.None))
-        {
-            events.Add(evt);
-        }
-    }
-
-    /// <summary>
-    /// Benchmark: ReadEventsAcrossStreams - measure reading from multiple streams.
-    /// Reads from 10 pre-populated streams (100 events total: 10 streams × 10 events).
-    /// </summary>
-    [Benchmark]
-    public async Task ReadEventsAcrossStreams()
-    {
-        var allEvents = 0;
-        for (int i = 0; i < 10; i++)
-        {
-            await foreach (var evt in _eventStore.ReadAsync(
-                new StreamId($"stream-{i}"),
-                StreamPosition.Start,
-                CancellationToken.None
-            ))
-            {
-                allEvents++;
-            }
-        }
-
-        // Verify we read all expected events (10 streams × 10 events each)
-        if (allEvents != 100)
-        {
-            throw new InvalidOperationException(
-                $"Expected to read 100 events across 10 streams, but read {allEvents}");
-        }
+            throw new InvalidOperationException($"Failed to append to {stream.Value} during setup: {result.Error}");
     }
 }

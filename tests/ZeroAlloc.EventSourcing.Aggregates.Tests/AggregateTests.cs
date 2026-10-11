@@ -34,6 +34,9 @@ public sealed partial class Order : Aggregate<OrderId, OrderState>
         Raise(new OrderShippedEvent(tracking));
 
     public void SetId(OrderId id) => Id = id;
+
+    // Raises an event the caller already holds, so a test can raise without allocating one.
+    public void Record(OrderPlacedEvent placed) => Raise(placed);
 }
 
 // --- tests ---

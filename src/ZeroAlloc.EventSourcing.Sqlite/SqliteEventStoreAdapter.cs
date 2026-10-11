@@ -1,6 +1,7 @@
 using System.Data;
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Microsoft.Data.Sqlite;
 using ZeroAlloc.EventSourcing;
 using ZeroAlloc.Results;
@@ -66,9 +67,6 @@ public sealed class SqliteEventStoreAdapter : IEventStoreAdapter
         if (events.Length == 0)
             return Result<AppendResult, StoreError>.Success(new AppendResult(id, expectedVersion));
 
-        // Copy to array up-front: ReadOnlyMemory access across awaits is fine but iteration is cleaner with an array.
-        var eventsArray = events.ToArray();
-
         var conn = new SqliteConnection(_connectionString);
 #pragma warning disable MA0004
         await using var _ = conn;
@@ -94,16 +92,11 @@ public sealed class SqliteEventStoreAdapter : IEventStoreAdapter
 
             var globalCurrent = await ReadCurrentGlobalPositionAsync(conn, tx, ct).ConfigureAwait(false);
 
-            for (var i = 0; i < eventsArray.Length; i++)
-            {
-                var position = expectedVersion.Value + i + 1;
-                var globalPosition = globalCurrent + i + 1;
-                await InsertEventAsync(conn, tx, id, eventsArray[i], position, globalPosition, ct).ConfigureAwait(false);
-            }
+            await InsertEventsAsync(conn, tx, id, events, expectedVersion.Value, globalCurrent, ct).ConfigureAwait(false);
 
             await tx.CommitAsync(ct).ConfigureAwait(false);
 
-            var nextVersion = new StreamPosition(expectedVersion.Value + eventsArray.Length);
+            var nextVersion = new StreamPosition(expectedVersion.Value + events.Length);
             return Result<AppendResult, StoreError>.Success(new AppendResult(id, nextVersion));
         }
         catch
@@ -221,23 +214,53 @@ public sealed class SqliteEventStoreAdapter : IEventStoreAdapter
         return result is null or DBNull ? 0L : Convert.ToInt64(result, CultureInfo.InvariantCulture);
     }
 
-    private static async ValueTask InsertEventAsync(SqliteConnection conn, SqliteTransaction tx, StreamId id, RawEvent e, long position, long globalPosition, CancellationToken ct)
+    private const string InsertSql = """
+        INSERT INTO event_store (stream_id, position, global_position, event_type, event_id, occurred_at, correlation_id, causation_id, payload)
+        VALUES (@streamId, @position, @globalPosition, @eventType, @eventId, @occurredAt, @correlationId, @causationId, @payload)
+        """;
+
+    private static async ValueTask InsertEventsAsync(SqliteConnection conn, SqliteTransaction tx, StreamId id, ReadOnlyMemory<RawEvent> events, long expectedVersion, long globalCurrent, CancellationToken ct)
     {
+        // One command for the whole append: each event sets the parameter values and executes it
+        // again, so SQLite prepares the statement once per append rather than once per event.
         using var ins = conn.CreateCommand();
         ins.Transaction = tx;
-        ins.CommandText = """
-            INSERT INTO event_store (stream_id, position, global_position, event_type, event_id, occurred_at, correlation_id, causation_id, payload)
-            VALUES (@streamId, @position, @globalPosition, @eventType, @eventId, @occurredAt, @correlationId, @causationId, @payload)
-            """;
+        ins.CommandText = InsertSql;
         ins.Parameters.AddWithValue("@streamId", id.Value);
-        ins.Parameters.AddWithValue("@position", position);
-        ins.Parameters.AddWithValue("@globalPosition", globalPosition);
-        ins.Parameters.AddWithValue("@eventType", e.EventType);
-        ins.Parameters.AddWithValue("@eventId", e.Metadata.EventId.ToString("D", CultureInfo.InvariantCulture));
-        ins.Parameters.AddWithValue("@occurredAt", e.Metadata.OccurredAt.ToString("O", CultureInfo.InvariantCulture));
-        ins.Parameters.AddWithValue("@correlationId", (object?)e.Metadata.CorrelationId?.ToString("D", CultureInfo.InvariantCulture) ?? DBNull.Value);
-        ins.Parameters.AddWithValue("@causationId", (object?)e.Metadata.CausationId?.ToString("D", CultureInfo.InvariantCulture) ?? DBNull.Value);
-        ins.Parameters.AddWithValue("@payload", e.Payload.ToArray());
-        await ins.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        var position = ins.Parameters.Add("@position", SqliteType.Integer);
+        var globalPosition = ins.Parameters.Add("@globalPosition", SqliteType.Integer);
+        var eventType = ins.Parameters.Add("@eventType", SqliteType.Text);
+        var eventId = ins.Parameters.Add("@eventId", SqliteType.Text);
+        var occurredAt = ins.Parameters.Add("@occurredAt", SqliteType.Text);
+        var correlationId = ins.Parameters.Add("@correlationId", SqliteType.Text);
+        var causationId = ins.Parameters.Add("@causationId", SqliteType.Text);
+        var payload = ins.Parameters.Add("@payload", SqliteType.Blob);
+
+        for (var i = 0; i < events.Length; i++)
+        {
+            var e = events.Span[i];
+            position.Value = expectedVersion + i + 1;
+            globalPosition.Value = globalCurrent + i + 1;
+            eventType.Value = e.EventType;
+            eventId.Value = e.Metadata.EventId.ToString("D", CultureInfo.InvariantCulture);
+            occurredAt.Value = e.Metadata.OccurredAt.ToString("O", CultureInfo.InvariantCulture);
+            correlationId.Value = (object?)e.Metadata.CorrelationId?.ToString("D", CultureInfo.InvariantCulture) ?? DBNull.Value;
+            causationId.Value = (object?)e.Metadata.CausationId?.ToString("D", CultureInfo.InvariantCulture) ?? DBNull.Value;
+            payload.Value = PayloadArray(e.Payload);
+            await ins.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
     }
+
+    /// <summary>
+    /// The payload as the byte array Microsoft.Data.Sqlite binds as a blob. A payload that is a
+    /// whole array, as most serializers return, is bound as that array without a copy. The
+    /// provider binds byte arrays only, so only a slice of a larger array is copied.
+    /// </summary>
+    private static byte[] PayloadArray(ReadOnlyMemory<byte> payload)
+        => MemoryMarshal.TryGetArray(payload, out var segment)
+           && segment.Array is { } array
+           && segment.Offset == 0
+           && segment.Count == array.Length
+            ? array
+            : payload.ToArray();
 }

@@ -104,6 +104,9 @@ Every adapter that ships with the library follows these rules, and `EventStore`,
 - **Appends are optimistic.** When `expectedVersion` is not the stream's current version, return
   `StoreError.Conflict(id, expectedVersion, actualVersion)` and store nothing. On success return
   `new AppendResult(id, newVersion)`, where `newVersion` is the version after the append.
+- **The events are lent for the call.** `EventStore` passes the events in a pooled buffer and
+  reuses it once `AppendAsync` completes. Copy what you keep beyond the call, as the example below
+  does for its subscribers; store the `RawEvent` values, not the `ReadOnlyMemory` itself.
 - **Reads exclude `from`.** `ReadAsync(id, from)` returns the events with a position greater than
   `from`, so `StreamPosition.Start` reads the whole stream and a consumer that passes its last
   checkpoint does not get that event again.

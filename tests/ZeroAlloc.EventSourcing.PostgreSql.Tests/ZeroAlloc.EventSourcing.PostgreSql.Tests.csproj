@@ -26,6 +26,7 @@
   <ItemGroup>
     <Compile Include="..\Shared\TestDatabase.cs" Link="Shared\TestDatabase.cs" />
     <Compile Include="..\Shared\BoundedReadContract.cs" Link="Shared\BoundedReadContract.cs" />
+    <Compile Include="..\Shared\AppendContract.cs" Link="Shared\AppendContract.cs" />
     <Compile Include="..\Shared\PostgreSqlContainerFixture.cs" Link="Shared\PostgreSqlContainerFixture.cs" />
   </ItemGroup>
 

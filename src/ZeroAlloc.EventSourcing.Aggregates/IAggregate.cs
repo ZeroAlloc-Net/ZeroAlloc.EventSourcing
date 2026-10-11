@@ -8,8 +8,15 @@ public interface IAggregate
     /// <summary>Applies a historic event during stream replay.</summary>
     internal void ApplyHistoric(object @event, StreamPosition position);
 
-    /// <summary>Returns and clears the uncommitted event queue.</summary>
-    internal ReadOnlySpan<object> DequeueUncommitted();
+    /// <summary>The number of events raised since the last save.</summary>
+    internal int UncommittedCount { get; }
+
+    /// <summary>
+    /// Copies the uncommitted events into <paramref name="destination"/>, in the order they were
+    /// raised, and clears the queue. <paramref name="destination"/> holds at least
+    /// <see cref="UncommittedCount"/> elements.
+    /// </summary>
+    internal void DrainUncommitted(Span<object> destination);
 
     /// <summary>Updates <see cref="OriginalVersion"/> to <paramref name="position"/> after a successful save.</summary>
     internal void AcceptVersion(StreamPosition position);

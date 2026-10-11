@@ -37,7 +37,8 @@ public class HandRolledOverheadBenchmark
     private SqliteEventStoreAdapter _zaAdapter = null!;
     private EventStore _zaStore = null!;
 
-    private readonly BenchmarkEvent _appendEvent = new("evt-x", new byte[32]);
+    private readonly ReadOnlyMemory<object> _appendEvents = new object[] { new BenchmarkEvent("evt-x", new byte[32]) };
+    private readonly StreamId _appendStream = new("append-stream");
     private readonly byte[] _handPayload = new byte[32];
     private readonly StreamId _readStream = new("read-stream");
     private long _appendVersion;
@@ -118,8 +119,8 @@ public class HandRolledOverheadBenchmark
     public async ValueTask<long> Za_Append()
     {
         var result = await _zaStore.AppendAsync(
-            new StreamId("append-stream"),
-            new object[] { _appendEvent }.AsMemory(),
+            _appendStream,
+            _appendEvents,
             new StreamPosition(_appendVersionZa),
             CancellationToken.None);
         if (!result.IsSuccess)

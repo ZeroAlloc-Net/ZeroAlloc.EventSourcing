@@ -30,6 +30,7 @@
 
   <ItemGroup>
     <Compile Include="..\Shared\BoundedReadContract.cs" Link="Shared\BoundedReadContract.cs" />
+    <Compile Include="..\Shared\AppendContract.cs" Link="Shared\AppendContract.cs" />
   </ItemGroup>
 
 </Project>

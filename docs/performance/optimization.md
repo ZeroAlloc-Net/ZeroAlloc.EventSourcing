@@ -127,12 +127,12 @@ var events = new[] { evt1, evt2, evt3, evt4, evt5 };
 foreach (var @event in events)
 {
     await eventStore.AppendAsync(streamId, new[] { @event }, position);
-    // 5 × 13.76 μs = 68.8 μs
+    // 5 transactions, 5 database round trips
 }
 
 // EFFICIENT: Single append
 await eventStore.AppendAsync(streamId, events, position);
-// ~15 μs (mostly fixed overhead)
+// 1 transaction for all five events
 ```
 
 **Impact:** 5-10x faster for batch operations

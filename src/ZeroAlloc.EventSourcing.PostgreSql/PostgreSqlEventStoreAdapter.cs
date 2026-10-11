@@ -140,9 +140,6 @@ public sealed class PostgreSqlEventStoreAdapter : IEventStoreAdapter
         if (events.Length == 0)
             return Result<AppendResult, StoreError>.Success(new AppendResult(id, expectedVersion));
 
-        // Copy to array up-front: ReadOnlySpan cannot be preserved across await boundaries.
-        var eventsArray = events.ToArray();
-
         var conn = await _dataSource.OpenConnectionAsync(ct).ConfigureAwait(false);
 #pragma warning disable MA0004
         await using var _ = conn;
@@ -166,10 +163,10 @@ public sealed class PostgreSqlEventStoreAdapter : IEventStoreAdapter
             }
 
             // Insert events at successive positions
-            await InsertEventsAsync(conn, tx, id, eventsArray, expectedVersion, ct).ConfigureAwait(false);
+            await InsertEventsAsync(conn, tx, id, events, expectedVersion, ct).ConfigureAwait(false);
             await tx.CommitAsync(ct).ConfigureAwait(false);
 
-            var nextVersion = new StreamPosition(expectedVersion.Value + eventsArray.Length);
+            var nextVersion = new StreamPosition(expectedVersion.Value + events.Length);
             return Result<AppendResult, StoreError>.Success(new AppendResult(id, nextVersion));
         }
         catch
@@ -203,28 +200,48 @@ public sealed class PostgreSqlEventStoreAdapter : IEventStoreAdapter
         return (long)(await versionCmd.ExecuteScalarAsync(ct).ConfigureAwait(false) ?? 0L);
     }
 
-    private async ValueTask InsertEventsAsync(NpgsqlConnection conn, NpgsqlTransaction tx, StreamId id, RawEvent[] eventsArray, StreamPosition expectedVersion, CancellationToken ct)
+    private const string InsertSql = """
+        INSERT INTO event_store (stream_id, position, event_type, event_id, occurred_at, correlation_id, causation_id, payload)
+        VALUES (@streamId, @position, @eventType, @eventId, @occurredAt, @correlationId, @causationId, @payload)
+        """;
+
+    private static async ValueTask InsertEventsAsync(NpgsqlConnection conn, NpgsqlTransaction tx, StreamId id, ReadOnlyMemory<RawEvent> events, StreamPosition expectedVersion, CancellationToken ct)
     {
-        for (var i = 0; i < eventsArray.Length; i++)
+        // One command for the whole append: each event sets the parameter values and executes it
+        // again. The typed parameters write their values without boxing, and the payload is
+        // written straight from the serializer's memory, without a copy.
+        // global_position is intentionally omitted — BIGSERIAL (or the post-upgrade SEQUENCE
+        // DEFAULT) auto-assigns the next monotonic value.
+        using var ins = conn.CreateCommand();
+        ins.Transaction = tx;
+        ins.CommandText = InsertSql;
+        var streamId = new NpgsqlParameter<string>("streamId", NpgsqlDbType.Text) { TypedValue = id.Value };
+        var position = new NpgsqlParameter<long>("position", NpgsqlDbType.Bigint);
+        var eventType = new NpgsqlParameter<string>("eventType", NpgsqlDbType.Text);
+        var eventId = new NpgsqlParameter<Guid>("eventId", NpgsqlDbType.Uuid);
+        var occurredAt = new NpgsqlParameter<DateTime>("occurredAt", NpgsqlDbType.TimestampTz);
+        var correlationId = new NpgsqlParameter<Guid?>("correlationId", NpgsqlDbType.Uuid);
+        var causationId = new NpgsqlParameter<Guid?>("causationId", NpgsqlDbType.Uuid);
+        var payload = new NpgsqlParameter<ReadOnlyMemory<byte>>("payload", NpgsqlDbType.Bytea);
+        ins.Parameters.Add(streamId);
+        ins.Parameters.Add(position);
+        ins.Parameters.Add(eventType);
+        ins.Parameters.Add(eventId);
+        ins.Parameters.Add(occurredAt);
+        ins.Parameters.Add(correlationId);
+        ins.Parameters.Add(causationId);
+        ins.Parameters.Add(payload);
+
+        for (var i = 0; i < events.Length; i++)
         {
-            var e = eventsArray[i];
-            var position = expectedVersion.Value + i + 1;
-            using var ins = conn.CreateCommand();
-            ins.Transaction = tx;
-            // global_position is intentionally omitted — BIGSERIAL (or the post-upgrade SEQUENCE
-            // DEFAULT) auto-assigns the next monotonic value.
-            ins.CommandText = """
-                INSERT INTO event_store (stream_id, position, event_type, event_id, occurred_at, correlation_id, causation_id, payload)
-                VALUES (@streamId, @position, @eventType, @eventId, @occurredAt, @correlationId, @causationId, @payload)
-                """;
-            ins.Parameters.AddWithValue("streamId", id.Value);
-            ins.Parameters.AddWithValue("position", position);
-            ins.Parameters.AddWithValue("eventType", e.EventType);
-            ins.Parameters.AddWithValue("eventId", e.Metadata.EventId);
-            ins.Parameters.AddWithValue("occurredAt", e.Metadata.OccurredAt.UtcDateTime);
-            ins.Parameters.Add(new NpgsqlParameter("correlationId", NpgsqlDbType.Uuid) { Value = (object?)e.Metadata.CorrelationId ?? DBNull.Value });
-            ins.Parameters.Add(new NpgsqlParameter("causationId", NpgsqlDbType.Uuid) { Value = (object?)e.Metadata.CausationId ?? DBNull.Value });
-            ins.Parameters.Add(new NpgsqlParameter("payload", NpgsqlDbType.Bytea) { Value = e.Payload.ToArray() });
+            var e = events.Span[i];
+            position.TypedValue = expectedVersion.Value + i + 1;
+            eventType.TypedValue = e.EventType;
+            eventId.TypedValue = e.Metadata.EventId;
+            occurredAt.TypedValue = e.Metadata.OccurredAt.UtcDateTime;
+            correlationId.TypedValue = e.Metadata.CorrelationId;
+            causationId.TypedValue = e.Metadata.CausationId;
+            payload.TypedValue = e.Payload;
             await ins.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
         }
     }
