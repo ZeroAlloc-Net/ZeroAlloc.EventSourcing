@@ -20,6 +20,7 @@ public sealed class KafkaEventStoreHealthCheck : IHealthCheck, IDisposable
     public KafkaEventStoreHealthCheck(string bootstrapServers)
     {
         ArgumentNullException.ThrowIfNull(bootstrapServers);
+        LibrdkafkaNativeMethods.Keep();
         _adminClient = new AdminClientBuilder(
             new AdminClientConfig { BootstrapServers = bootstrapServers })
             .Build();

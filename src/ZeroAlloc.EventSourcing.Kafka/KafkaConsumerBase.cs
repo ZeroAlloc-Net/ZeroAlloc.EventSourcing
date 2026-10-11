@@ -371,5 +371,8 @@ public abstract class KafkaConsumerBase : IStreamConsumer, IDisposable
     public void Dispose() => CloseConsumer();
 
     private static IConsumer<string, byte[]> BuildConsumer(ConsumerConfig config)
-        => new ConsumerBuilder<string, byte[]>(config).Build();
+    {
+        LibrdkafkaNativeMethods.Keep();
+        return new ConsumerBuilder<string, byte[]>(config).Build();
+    }
 }
