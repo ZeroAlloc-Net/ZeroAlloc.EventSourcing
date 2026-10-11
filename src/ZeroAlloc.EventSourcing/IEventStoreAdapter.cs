@@ -6,6 +6,12 @@ namespace ZeroAlloc.EventSourcing;
 public interface IEventStoreAdapter
 {
     /// <summary>Appends raw events to a stream with optimistic concurrency check.</summary>
+    /// <remarks>
+    /// <paramref name="events"/> is valid only until the returned task completes:
+    /// <see cref="EventStore"/> passes a pooled buffer and reuses it afterwards. An adapter that
+    /// needs the events later, for example to notify subscribers in the background, copies them
+    /// before it returns.
+    /// </remarks>
     ValueTask<Result<AppendResult, StoreError>> AppendAsync(
         StreamId id,
         ReadOnlyMemory<RawEvent> events,

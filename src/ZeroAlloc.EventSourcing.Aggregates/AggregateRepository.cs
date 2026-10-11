@@ -1,3 +1,4 @@
+using System.Buffers;
 using ZeroAlloc.EventSourcing;
 using ZeroAlloc.Results;
 
@@ -55,16 +56,26 @@ public sealed class AggregateRepository<TAggregate, TId> : IAggregateRepository<
     {
         ArgumentNullException.ThrowIfNull(aggregate);
 
-        var uncommitted = aggregate.DequeueUncommitted();
-        if (uncommitted.Length == 0)
+        var count = aggregate.UncommittedCount;
+        if (count == 0)
             return Result<AppendResult, StoreError>.Success(new AppendResult(_streamIdFactory(id), aggregate.OriginalVersion));
 
-        // Copy events to array for IEventStore API (one allocation per save, acceptable)
-        var events = new object[uncommitted.Length];
-        for (var i = 0; i < uncommitted.Length; i++)
-            events[i] = uncommitted[i];
+        // The events go through a pooled buffer that lives for the duration of the append only;
+        // IEventStore.AppendAsync does not keep the memory once its task has completed.
+        var events = ArrayPool<object>.Shared.Rent(count);
+        Result<AppendResult, StoreError> result;
+        try
+        {
+            aggregate.DrainUncommitted(events.AsSpan(0, count));
+            result = await _store.AppendAsync(_streamIdFactory(id), new ReadOnlyMemory<object>(events, 0, count), aggregate.OriginalVersion, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            // Drop the event references before the buffer goes back to the pool.
+            events.AsSpan(0, count).Clear();
+            ArrayPool<object>.Shared.Return(events);
+        }
 
-        var result = await _store.AppendAsync(_streamIdFactory(id), events.AsMemory(), aggregate.OriginalVersion, ct).ConfigureAwait(false);
         if (result.IsSuccess)
             aggregate.AcceptVersion(result.Value.NextExpectedVersion);
         return result;

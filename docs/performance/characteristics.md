@@ -12,17 +12,17 @@ ZeroAlloc.EventSourcing is designed to minimize garbage collection pressure and 
 
 ### Event Store Operations
 
-All measurements taken on .NET 8.0 with Intel X64 processor, full GC collection post-benchmark.
+Measured 2026-10-11 on .NET 10.0 with `EventStoreBenchmarks`; see [Detailed Benchmark Results](benchmarks.md#raw-results-eventstorebenchmarks).
 
 | Operation | Mean Latency | P95 | P99 | Allocations |
 |-----------|------------|-----|-----|-------------|
-| AppendEvent (single) | 13.76 μs | ~18 μs | ~25 μs | 4.5 KB |
-| ReadEventsFromStream (100 events) | 328.35 μs | ~450 μs | ~600 μs | 58.84 KB |
-| ReadEventsAcrossStreams (multiple streams) | 292.73 μs | ~400 μs | ~550 μs | 43.22 KB |
+| AppendEvent (single, library only) | 0.47 μs | — | — | 0 B |
+| ReadEventsFromStream (100 events, in-memory) | 41.5 μs | — | — | 12.1 KB |
+| ReadEventsAcrossStreams (10 × 10 events, in-memory) | 48.3 μs | — | — | 22.9 KB |
 
 **Interpretation:**
-- AppendEvent is the fastest operation (~13 microseconds), reflecting the simplicity of write-only operations
-- Read operations are slower due to the need to deserialize event payloads and construct event envelopes
+- AppendEvent is measured without an adapter, so it is the cost of `EventStore` itself: ~0.5 μs and no allocation. A real append adds the adapter, a database round trip for the SQL adapters
+- The read benchmarks run against the in-memory adapter, a test double; most of their allocation is its snapshot of the stream and the async enumerators
 - Allocation is unavoidable during read operations due to event object creation; the library uses stack-allocated structs for state during processing
 
 ### Aggregate Loading
@@ -107,7 +107,7 @@ In steady state (after JIT warmup):
 
 | Operation | Type | Allocation Size | Frequency |
 |-----------|------|-----------------|-----------|
-| Append | One-time | 4.5 KB | Per append call |
+| Append | None | 0 B | `EventStore` itself; the adapter allocates what its driver needs |
 | Read stream | Per event | ~600 B | Per event |
 | Replay state | Per event | 0 B | State is struct on stack |
 | Projection apply | Per call | 192-304 B | Per event |
@@ -186,9 +186,7 @@ The event object itself is heap-allocated (unavoidable in C#), but is only held 
 For a typical workload:
 
 **Event appending:**
-- 1 append = ~4.5 KB allocation
-- 100 appends = ~450 KB Gen 0
-- Need ~47,000 appends to trigger Gen 0 collection (default 8 MB threshold)
+- `EventStore` allocates nothing per append; the adapter and its database driver allocate their own
 
 **Event reading:**
 - 1 read (100 events) = ~59 KB allocation
@@ -244,13 +242,13 @@ using var fromSnapshot = (await snapshotRepository.LoadAsync(orderId)).Value;
 Appending events one-at-a-time has overhead. Batch them:
 
 ```csharp
-// Inefficient: 10 appends = 10 × 13.76 μs
+// Inefficient: 10 appends = 10 transactions and 10 database round trips
 foreach (var @event in events)
 {
     await eventStore.AppendAsync(streamId, new[] { @event }, position);
 }
 
-// Better: 1 append = 13.76 μs + overhead for multiple events
+// Better: 1 append = 1 transaction for all the events
 var allEvents = new List<object> { ... };
 await eventStore.AppendAsync(streamId, allEvents, position);
 ```

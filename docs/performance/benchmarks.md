@@ -10,7 +10,7 @@
 
 Benchmark results show ZeroAlloc.EventSourcing delivers:
 
-- **~13.76 μs** per event append
+- **~0.5 μs and 0 B** of library overhead per event append, before the adapter
 - **~30 μs** base latency for aggregate loading (plus ~1.9 μs per event)
 - **<1 μs** for projection event application
 - **~2.6 μs** for snapshot write, ~800 ns for snapshot read
@@ -50,97 +50,44 @@ BenchmarkDotNet v0.14.0
 
 ### Raw Results: EventStoreBenchmarks
 
+Re-measured 2026-10-11 for #472, after the benchmark was rebuilt to show the library's own cost.
+Serialization goes through `CachedSerializer`, which hands back a fixed byte array, and every
+input is built in setup. The append benchmarks run against `NoOpEventStoreAdapter`, which stores
+nothing, so they measure `EventStore` alone; the read benchmarks run against
+`InMemoryEventStoreAdapter`.
+
 ```
-BenchmarkDotNet v0.14.0, Windows 11 (10.0.26200.8037)
-Unknown processor, .NET SDK 10.0.104
-[Host]: .NET 8.0.25 (8.0.2526.11203), X64 RyuJIT AVX2
-Job-TLIYMM: .NET 8.0.25 (8.0.2526.11203), X64 RyuJIT AVX2
+BenchmarkDotNet v0.15.8, Windows 11, .NET SDK 10.0.401
+[Host]: .NET 10.0.12, X64 RyuJIT x86-64-v3, InProcessEmitToolchain, ShortRun
 
-InvocationCount=5, UnrollFactor=1, WarmupCount=3
-
-| Method                  | Mean      | Error     | StdDev    | Median    | Allocated |
-|------------------------ |----------:|----------:|----------:|----------:|----------:|
-| AppendEvent             |  13.76 μs |  1.805 μs |  5.265 μs |  11.67 μs |    4.5 KB |
-| ReadEventsFromStream    | 328.35 μs | 26.899 μs | 78.890 μs | 293.38 μs |  58.84 KB |
-| ReadEventsAcrossStreams | 292.73 μs | 19.520 μs | 54.089 μs | 285.90 μs |  43.22 KB |
+| Method                  | Mean        | Error       | StdDev    | Allocated |
+|------------------------ |------------:|------------:|----------:|----------:|
+| AppendEvent             |    466.6 ns |   175.57 ns |   9.62 ns |         - |
+| AppendTenEvents         |  3,605.5 ns | 4,923.60 ns | 269.88 ns |         - |
+| ReadEventsFromStream    | 41,452.6 ns | 1,409.90 ns |  77.28 ns |   12424 B |
+| ReadEventsAcrossStreams | 48,336.6 ns | 3,337.91 ns | 182.96 ns |   23440 B |
 ```
 
 ### Analysis
 
-#### AppendEvent (13.76 μs, 4.5 KB)
+#### AppendEvent and AppendTenEvents (0 B)
 
-**What's measured:** Single event appended to a stream
+**What's measured:** `EventStore.AppendAsync` with one and with ten events, on top of an adapter
+that does nothing. The time is the type-name lookup, a version-7 event ID and timestamp per
+event, and the hand-off of the raw events to the adapter.
 
-**Breakdown:**
-- Event validation: ~2 μs
-- Position calculation: <1 μs
-- Event storage: ~5 μs
-- Envelope creation: ~6 μs
+**No allocation:** the raw events go to the adapter in a pooled buffer, which `EventStore`
+returns once the adapter call completes. Before #472 the same append allocated a new
+`RawEvent[]`: 136 B for one event, 1,144 B for ten. An allocation test in
+`EventStoreAllocationTests` keeps it at zero.
 
-**Why 4.5 KB allocation?**
-- Test harness creates event envelope object (~400 B)
-- Dictionary/List overhead (~2 KB)
-- Other framework overhead (~2 KB)
+A real append adds the adapter: a database round trip for the SQL adapters, which dominates.
 
-**Production reality:** In a streaming scenario, this amortizes to <100 B per event.
+#### ReadEventsFromStream and ReadEventsAcrossStreams
 
-**Variability:** 1.805 μs error (13.1% relative), due to:
-- GC interference (even with GC diagnostics)
-- CPU frequency scaling
-- Cache effects
-
-#### ReadEventsFromStream (328.35 μs, 58.84 KB)
-
-**What's measured:** Read ~100 events from a stream
-
-**Breakdown per event:**
-- Deserialization: ~1.5 μs
-- Envelope construction: ~1.2 μs
-- Return overhead: ~0.5 μs
-- Total per event: ~3.2 μs
-- Fixed overhead: ~28 μs
-
-**Allocation per event:** ~600 B
-- Event object: ~300 B
-- Envelope struct: ~100 B
-- Collection overhead: ~200 B
-
-**Why is this slow?** Deserialization is the bottleneck. Event objects must be created on the heap (C# requirement).
-
-**Optimization:** Use snapshots to avoid reading large streams:
-- With snapshot at 1000 events: Only need to read ~50 recent events
-- Estimated time: ~160 μs (50 × 3.2 μs + 28 μs fixed)
-- **Savings: 168 μs (51% faster)**
-
-#### ReadEventsAcrossStreams (292.73 μs, 43.22 KB)
-
-**What's measured:** Read ~100 events spread across multiple streams
-
-**Comparison to ReadEventsFromStream:**
-- **Same event count but 12% faster** — Likely due to better cache locality
-- **26% fewer allocations** (43 KB vs 59 KB) — Different stream layout
-
-**Use case:** Subscriptions that replay events across all streams.
-
-### Throughput Implications
-
-**Single-threaded append throughput:**
-
-```
-13.76 μs per append → 72,674 appends/sec
-```
-
-**Network/I/O overhead:** Not included in benchmark (in-memory store)
-
-**With SQL Server append (estimated 1 ms round-trip):**
-```
-1000 μs + 13.76 μs ≈ 1.01 ms → 990 appends/sec
-```
-
-**Batching improves this significantly:**
-```
-Batch 100 appends: 1000 μs + 1376 μs ≈ 2.37 ms → 42,000 appends/sec
-```
+**What's measured:** reading one 100-event stream, and ten 10-event streams, from the in-memory
+adapter. The allocations are the in-memory adapter's snapshot of the stream and the async
+enumerators; the in-memory adapter is a test double and does not aim for zero allocation.
 
 ## Aggregate Loading Benchmarks
 
@@ -384,7 +331,7 @@ Based on latency measurements:
 
 | Operation | Latency | Throughput (single-threaded) |
 |-----------|---------|------------------------------|
-| Append | 13.76 μs | 72.6K events/sec |
+| Append (library only, no adapter) | 0.47 μs | 2.1M events/sec |
 | Read stream | 3.28 μs/event | 305K events/sec |
 | Load aggregate (100 events) | 214.77 μs | 4.6K aggregates/sec |
 | Apply projection | 386.8 ns | 2.59M events/sec |
@@ -396,7 +343,7 @@ For remote event store (1 ms network round-trip):
 
 | Operation | Total Latency | Throughput |
 |-----------|---------------|-----------|
-| Append | 1.014 ms | 986 events/sec |
+| Append | ~1.0 ms | ~1,000 appends/sec per connection |
 | Read (100 events) | 1.330 ms | 752 operations/sec |
 | Load aggregate | 1.215 ms | 823 aggregates/sec |
 | Snapshot write | 1.003 ms | 998 snapshots/sec |
@@ -406,8 +353,8 @@ For remote event store (1 ms network round-trip):
 ### Practical Recommendations
 
 **For 1000 events/sec throughput:**
-- Need 2+ threads (single thread max 73K appends/sec)
-- Each thread appends ~500 events/sec
+- The library is not the limit: it costs ~0.5 μs of a ~1 ms round trip
+- Batch events into one append, and run appends to different streams concurrently
 
 **For 10,000 aggregates loaded/sec:**
 - Need 100+ concurrent loads
@@ -421,17 +368,10 @@ Using benchmark allocation data:
 
 **Append operation:**
 ```
-4.5 KB per append
-100 appends = 450 KB Gen 0
-Gen 0 trigger (8 MB default): 17,778 appends needed
+0 B per append in EventStore; what remains is the adapter's
 ```
 
-**Time to Gen 0 collection at 72K appends/sec:**
-```
-17,778 appends / 72K appends/sec = 247 ms
-```
-
-**Result:** Gen 0 collection every ~250 ms under high load.
+**Result:** appends add no Gen 0 pressure of their own; reads and the adapter's driver do.
 
 **Gen 0 pause duration:** 1-5 ms (typical for modern GC)
 
@@ -538,7 +478,7 @@ Results will be in `/BenchmarkDotNet.Artifacts/results/`.
 
 Key findings:
 
-1. **Event append is fast** (~14 μs, 72K/sec single-threaded)
+1. **Event append adds ~0.5 μs and no allocation** on top of the adapter
 2. **Aggregate loading scales linearly** (~2 μs per event)
 3. **Snapshots are critical** for >100 event aggregates (300x faster)
 4. **Projections are nanosecond-fast** (2.6M events/sec)

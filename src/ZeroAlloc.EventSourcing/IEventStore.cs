@@ -6,6 +6,11 @@ namespace ZeroAlloc.EventSourcing;
 public interface IEventStore
 {
     /// <summary>Appends events to a stream. Returns <see cref="StoreError.Conflict"/> if <paramref name="expectedVersion"/> mismatches.</summary>
+    /// <remarks>
+    /// <paramref name="events"/> is valid only until the returned task completes: a caller such as
+    /// the aggregate repository may pass a pooled buffer and reuse it afterwards. An implementation
+    /// that needs the events later copies them before it returns.
+    /// </remarks>
     ValueTask<Result<AppendResult, StoreError>> AppendAsync(
         StreamId id,
         ReadOnlyMemory<object> events,
