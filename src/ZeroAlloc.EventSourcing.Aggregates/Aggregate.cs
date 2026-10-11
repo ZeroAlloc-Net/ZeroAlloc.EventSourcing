@@ -103,20 +103,26 @@ public abstract class Aggregate<TId, TState> : IAggregate, IAggregateIdentity<TI
         _hasHistory = true;
     }
 
-    /// <summary>Returns the uncommitted events as a span and clears the queue. Snapshots to array before clear for pool safety.</summary>
-    internal ReadOnlySpan<object> DequeueUncommitted()
+    /// <summary>The number of events raised since the last save.</summary>
+    internal int UncommittedCount => _uncommitted.Count;
+
+    /// <summary>
+    /// Copies the uncommitted events into <paramref name="destination"/> and clears the queue.
+    /// The copy happens before the clear, because the clear returns the pooled buffer.
+    /// </summary>
+    internal void DrainUncommitted(Span<object> destination)
     {
-        if (_uncommitted.Count == 0) return ReadOnlySpan<object>.Empty;
-        var snapshot = _uncommitted.AsReadOnlySpan().ToArray(); // snapshot before clear — pool buffer is returned by Clear()
+        if (_uncommitted.Count == 0) return;
+        _uncommitted.AsReadOnlySpan().CopyTo(destination);
         _uncommitted.Clear();
-        return snapshot;
     }
 
     internal void AcceptVersion(StreamPosition position) => OriginalVersion = position;
 
     // Explicit interface implementations delegate to the internal methods above
     void IAggregate.ApplyHistoric(object @event, StreamPosition position) => ApplyHistoric(@event, position);
-    ReadOnlySpan<object> IAggregate.DequeueUncommitted() => DequeueUncommitted();
+    int IAggregate.UncommittedCount => UncommittedCount;
+    void IAggregate.DrainUncommitted(Span<object> destination) => DrainUncommitted(destination);
     void IAggregate.AcceptVersion(StreamPosition position) => AcceptVersion(position);
     void IAggregateIdentity<TId>.AssignId(TId id) => Id = id;
 

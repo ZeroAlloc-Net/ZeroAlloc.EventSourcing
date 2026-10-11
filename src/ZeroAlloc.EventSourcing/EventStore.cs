@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Runtime.CompilerServices;
 using ZeroAlloc.Results;
 
@@ -37,23 +38,34 @@ public sealed class EventStore : IEventStore
         StreamPosition expectedVersion,
         CancellationToken ct = default)
     {
-        // Phase 1: allocates a RawEvent[] per append. Phase 3 should use ArrayPool<RawEvent> or stackalloc
-        // with an inline threshold to satisfy the zero-alloc mandate for production adapters.
-        var raw = new RawEvent[events.Length];
-        for (var i = 0; i < events.Length; i++)
+        // The raw events live in a pooled buffer for the duration of the adapter call only:
+        // IEventStoreAdapter.AppendAsync must not keep the memory once its task has completed.
+        var count = events.Length;
+        var raw = ArrayPool<RawEvent>.Shared.Rent(count);
+        try
         {
-            var e = events.Span[i];
-            var typeName = _registry.GetTypeName(e.GetType());
-            raw[i] = new RawEvent(
-                // Position is advisory — SQL adapters must assign their own positions via DB sequence/trigger and ignore this field.
-                // Positions are 1-based: the first event in a stream is at position 1, matching the stream version after append.
-                new StreamPosition(expectedVersion.Value + i + 1),
-                typeName,
-                _serializer.Serialize(e),
-                EventMetadata.New(typeName));
-        }
+            var source = events.Span;
+            for (var i = 0; i < count; i++)
+            {
+                var e = source[i];
+                var typeName = _registry.GetTypeName(e.GetType());
+                raw[i] = new RawEvent(
+                    // Position is advisory — SQL adapters must assign their own positions via DB sequence/trigger and ignore this field.
+                    // Positions are 1-based: the first event in a stream is at position 1, matching the stream version after append.
+                    new StreamPosition(expectedVersion.Value + i + 1),
+                    typeName,
+                    _serializer.Serialize(e),
+                    EventMetadata.New(typeName));
+            }
 
-        return await _adapter.AppendAsync(id, raw.AsMemory(), expectedVersion, ct).ConfigureAwait(false);
+            return await _adapter.AppendAsync(id, new ReadOnlyMemory<RawEvent>(raw, 0, count), expectedVersion, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            // Drop the payload and type name references before the buffer goes back to the pool.
+            raw.AsSpan(0, count).Clear();
+            ArrayPool<RawEvent>.Shared.Return(raw);
+        }
     }
 
     /// <inheritdoc/>

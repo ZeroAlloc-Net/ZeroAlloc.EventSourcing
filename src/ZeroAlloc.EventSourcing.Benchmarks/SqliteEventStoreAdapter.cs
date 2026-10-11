@@ -62,7 +62,7 @@ internal sealed class SqliteEventStoreAdapter : IEventStoreAdapter
             cmd.Parameters.AddWithValue("$sid", id.Value);
             cmd.Parameters.AddWithValue("$pos", e.Position.Value);
             cmd.Parameters.AddWithValue("$type", e.EventType);
-            cmd.Parameters.AddWithValue("$payload", e.Payload.ToArray());
+            cmd.Parameters.AddWithValue("$payload", PayloadArray(e.Payload));
             cmd.Parameters.AddWithValue("$eid", e.Metadata.EventId.ToByteArray());
             cmd.Parameters.AddWithValue("$occurred", e.Metadata.OccurredAt.ToString("O"));
             cmd.ExecuteNonQuery();
@@ -72,6 +72,16 @@ internal sealed class SqliteEventStoreAdapter : IEventStoreAdapter
         return ValueTask.FromResult(Result<AppendResult, StoreError>.Success(
             new AppendResult(id, new StreamPosition(expectedVersion.Value + span.Length))));
     }
+
+    // The payload array itself when the memory is a whole array, as the library's Sqlite adapter
+    // does, so the benchmark does not charge the library for a copy it no longer makes.
+    private static byte[] PayloadArray(ReadOnlyMemory<byte> payload)
+        => System.Runtime.InteropServices.MemoryMarshal.TryGetArray(payload, out var segment)
+           && segment.Array is { } array
+           && segment.Offset == 0
+           && segment.Count == array.Length
+            ? array
+            : payload.ToArray();
 
     public async IAsyncEnumerable<RawEvent> ReadAsync(
         StreamId id,

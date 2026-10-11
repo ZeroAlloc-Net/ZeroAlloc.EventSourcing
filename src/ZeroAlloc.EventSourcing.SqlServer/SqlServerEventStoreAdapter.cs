@@ -1,5 +1,6 @@
 using System.Data;
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;
 using Microsoft.Data.SqlClient;
 using ZeroAlloc.EventSourcing;
 using ZeroAlloc.Results;
@@ -220,9 +221,6 @@ public sealed class SqlServerEventStoreAdapter : IEventStoreAdapter
         if (events.Length == 0)
             return Result<AppendResult, StoreError>.Success(new AppendResult(id, expectedVersion));
 
-        // Copy to array up-front: ReadOnlySpan cannot be preserved across await boundaries.
-        var eventsArray = events.ToArray();
-
         using var conn = new SqlConnection(_connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
         var txTask = conn.BeginTransactionAsync(IsolationLevel.ReadCommitted, ct).ConfigureAwait(false);
@@ -242,10 +240,10 @@ public sealed class SqlServerEventStoreAdapter : IEventStoreAdapter
             }
 
             // Insert events at successive positions
-            await InsertEventsAsync(conn, tx, id, eventsArray, expectedVersion, ct).ConfigureAwait(false);
+            await InsertEventsAsync(conn, tx, id, events, expectedVersion, ct).ConfigureAwait(false);
             await tx.CommitAsync(ct).ConfigureAwait(false);
 
-            var nextVersion = new StreamPosition(expectedVersion.Value + eventsArray.Length);
+            var nextVersion = new StreamPosition(expectedVersion.Value + events.Length);
             return Result<AppendResult, StoreError>.Success(new AppendResult(id, nextVersion));
         }
         catch
@@ -269,33 +267,61 @@ public sealed class SqlServerEventStoreAdapter : IEventStoreAdapter
         return (long)(await versionCmd.ExecuteScalarAsync(ct).ConfigureAwait(false) ?? 0L);
     }
 
-    private async ValueTask InsertEventsAsync(SqlConnection conn, SqlTransaction tx, StreamId id, RawEvent[] eventsArray, StreamPosition expectedVersion, CancellationToken ct)
+    // nvarchar(4000), as AddWithValue declares a short string: a value longer than its column
+    // still reaches the server and fails the insert there, instead of being cut to fit.
+    private const int NVarCharParameterSize = 4000;
+
+    private const string InsertSql = """
+        INSERT INTO dbo.event_store
+            (stream_id, position, event_type, event_id, occurred_at, correlation_id, causation_id, payload)
+        VALUES
+            (@streamId, @position, @eventType, @eventId, @occurredAt, @correlationId, @causationId, @payload)
+        """;
+
+    private static async ValueTask InsertEventsAsync(SqlConnection conn, SqlTransaction tx, StreamId id, ReadOnlyMemory<RawEvent> events, StreamPosition expectedVersion, CancellationToken ct)
     {
-        for (var i = 0; i < eventsArray.Length; i++)
+        // One command for the whole append: each event sets the parameter values and executes it
+        // again. The parameter types are fixed, so every execution reuses one cached plan.
+        // global_position is intentionally omitted — IDENTITY (fresh install) or the
+        // post-upgrade SEQUENCE DEFAULT auto-assigns the next monotonic value.
+        using var ins = conn.CreateCommand();
+        ins.Transaction = tx;
+        ins.CommandText = InsertSql;
+        ins.Parameters.Add(new SqlParameter("@streamId", SqlDbType.NVarChar, NVarCharParameterSize) { Value = id.Value });
+        var position = ins.Parameters.Add("@position", SqlDbType.BigInt);
+        var eventType = ins.Parameters.Add("@eventType", SqlDbType.NVarChar, NVarCharParameterSize);
+        var eventId = ins.Parameters.Add("@eventId", SqlDbType.UniqueIdentifier);
+        var occurredAt = ins.Parameters.Add("@occurredAt", SqlDbType.DateTimeOffset);
+        var correlationId = ins.Parameters.Add("@correlationId", SqlDbType.UniqueIdentifier);
+        var causationId = ins.Parameters.Add("@causationId", SqlDbType.UniqueIdentifier);
+        var payload = ins.Parameters.Add("@payload", SqlDbType.VarBinary, -1);
+
+        for (var i = 0; i < events.Length; i++)
         {
-            var e = eventsArray[i];
-            var position = expectedVersion.Value + i + 1;
-            using var ins = conn.CreateCommand();
-            ins.Transaction = tx;
-            // global_position is intentionally omitted — IDENTITY (fresh install) or the
-            // post-upgrade SEQUENCE DEFAULT auto-assigns the next monotonic value.
-            ins.CommandText = """
-                INSERT INTO dbo.event_store
-                    (stream_id, position, event_type, event_id, occurred_at, correlation_id, causation_id, payload)
-                VALUES
-                    (@streamId, @position, @eventType, @eventId, @occurredAt, @correlationId, @causationId, @payload)
-                """;
-            ins.Parameters.AddWithValue("@streamId", id.Value);
-            ins.Parameters.AddWithValue("@position", position);
-            ins.Parameters.AddWithValue("@eventType", e.EventType);
-            ins.Parameters.AddWithValue("@eventId", e.Metadata.EventId);
-            ins.Parameters.AddWithValue("@occurredAt", e.Metadata.OccurredAt);
-            ins.Parameters.Add(new SqlParameter("@correlationId", SqlDbType.UniqueIdentifier) { Value = (object?)e.Metadata.CorrelationId ?? DBNull.Value });
-            ins.Parameters.Add(new SqlParameter("@causationId", SqlDbType.UniqueIdentifier) { Value = (object?)e.Metadata.CausationId ?? DBNull.Value });
-            ins.Parameters.Add(new SqlParameter("@payload", SqlDbType.VarBinary, -1) { Value = e.Payload.ToArray() });
+            var e = events.Span[i];
+            position.Value = expectedVersion.Value + i + 1;
+            eventType.Value = e.EventType;
+            eventId.Value = e.Metadata.EventId;
+            occurredAt.Value = e.Metadata.OccurredAt;
+            correlationId.Value = (object?)e.Metadata.CorrelationId ?? DBNull.Value;
+            causationId.Value = (object?)e.Metadata.CausationId ?? DBNull.Value;
+            payload.Value = PayloadArray(e.Payload);
             await ins.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
         }
     }
+
+    /// <summary>
+    /// The payload as the byte array SqlClient takes for a varbinary parameter. A payload that
+    /// is a whole array, as most serializers return, goes as that array without a copy. SqlClient
+    /// cannot send a slice of an array as varbinary(max), so only a slice is copied.
+    /// </summary>
+    private static byte[] PayloadArray(ReadOnlyMemory<byte> payload)
+        => MemoryMarshal.TryGetArray(payload, out var segment)
+           && segment.Array is { } array
+           && segment.Offset == 0
+           && segment.Count == array.Length
+            ? array
+            : payload.ToArray();
 
     private const string ReadColumns =
         "position, event_type, event_id, occurred_at, correlation_id, causation_id, payload, global_position FROM dbo.event_store ";
