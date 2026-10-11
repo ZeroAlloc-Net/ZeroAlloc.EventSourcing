@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.1](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/compare/ZeroAlloc.EventSourcing-v1.6.0...ZeroAlloc.EventSourcing-v1.6.1) (2026-10-11)
+
+
+### Performance Improvements
+
+* bound StreamConsumer batch reads in the adapter query ([#475](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/issues/475)) ([cf7506a](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/commit/cf7506aa5da38a631fd1faef1e408c7920a13196)), closes [#473](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/issues/473)
+
 ## [1.6.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/compare/ZeroAlloc.EventSourcing-v1.5.0...ZeroAlloc.EventSourcing-v1.6.0) (2026-10-10)
 
 
