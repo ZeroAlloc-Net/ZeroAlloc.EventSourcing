@@ -20,7 +20,7 @@
     <PackageVersion Include="ZeroAlloc.StateMachine"            Version="1.6.3" />
     <PackageVersion Include="Roslynator.Analyzers"               Version="5.0.1" />
     <PackageVersion Include="xunit"                              Version="2.9.3" />
-    <PackageVersion Include="xunit.runner.visualstudio"          Version="4.0.0" />
+    <PackageVersion Include="xunit.runner.visualstudio"          Version="4.0.1" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk"             Version="18.10.1" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp"      Version="5.9.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.Analyzers"   Version="5.9.0" />
