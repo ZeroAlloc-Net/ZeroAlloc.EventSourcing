@@ -34,13 +34,28 @@ public sealed class SqlServerContainerFixture : IAsyncLifetime
 
     private async Task DropDatabaseAsync(string name, string connectionString)
     {
-        // DROP DATABASE fails while a connection is open on the database, and the test leaves its
-        // connections in the client pool. Closing that pool frees them; SET SINGLE_USER WITH
-        // ROLLBACK IMMEDIATE would too, but took three seconds per test.
+        // DROP DATABASE fails with error 3702 while a session is open on the database, and the test
+        // leaves its connections in the client pool. ClearPool closes them, but only on the client:
+        // the server ends each session after it sees the socket close, so a DROP sent straight
+        // afterwards can still find one. That happened most after subscription tests, see #478.
+        // SET SINGLE_USER WITH ROLLBACK IMMEDIATE ends any session still on the database and waits
+        // until it is gone, so the DROP that follows cannot race it. It costs about 250 ms even
+        // when there is nothing to end, so it runs only when a session is still on the database or
+        // still holds a lock on it. The test is over and its pool is cleared, so no new session can
+        // arrive between that check and the DROP.
         using (var pooled = new SqlConnection(connectionString))
             SqlConnection.ClearPool(pooled);
 
-        await ExecuteOnServerAsync($"DROP DATABASE [{name}]");
+        await ExecuteOnServerAsync(
+            $"""
+            IF EXISTS (SELECT 1 FROM sys.dm_tran_locks
+                       WHERE resource_type = 'DATABASE'
+                         AND resource_database_id = DB_ID(N'{name}')
+                         AND request_session_id <> @@SPID)
+               OR EXISTS (SELECT 1 FROM sys.dm_exec_sessions WHERE database_id = DB_ID(N'{name}'))
+                ALTER DATABASE [{name}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+            DROP DATABASE [{name}];
+            """);
     }
 
     private async Task ExecuteOnServerAsync(string sql)
