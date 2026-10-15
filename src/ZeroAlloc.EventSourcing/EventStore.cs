@@ -1,5 +1,5 @@
 using System.Buffers;
-using System.Runtime.CompilerServices;
+using System.Diagnostics.CodeAnalysis;
 using ZeroAlloc.Results;
 
 namespace ZeroAlloc.EventSourcing;
@@ -8,7 +8,7 @@ namespace ZeroAlloc.EventSourcing;
 /// Default <see cref="IEventStore"/> implementation. Wraps an <see cref="IEventStoreAdapter"/>
 /// with serialization via <see cref="IEventSerializer"/> and type mapping via <see cref="IEventTypeRegistry"/>.
 /// </summary>
-public sealed class EventStore : IEventStore
+public sealed partial class EventStore : IEventStore
 {
     private readonly IEventStoreAdapter _adapter;
     private readonly IEventSerializer _serializer;
@@ -69,19 +69,15 @@ public sealed class EventStore : IEventStore
     }
 
     /// <inheritdoc/>
-    public async IAsyncEnumerable<EventEnvelope> ReadAsync(
+    /// <remarks>
+    /// Each call allocates one small reader object, which is also the enumerator for the first
+    /// enumeration on the calling thread. Nothing is allocated per event by the store itself.
+    /// </remarks>
+    public IAsyncEnumerable<EventEnvelope> ReadAsync(
         StreamId id,
         StreamPosition from = default,
-        [EnumeratorCancellation] CancellationToken ct = default)
-    {
-        await foreach (var raw in _adapter.ReadAsync(id, from, ct).ConfigureAwait(false))
-        {
-            if (!_registry.TryGetType(raw.EventType, out var type) || type is null)
-                continue; // unknown event type — skip for forward compatibility
-
-            yield return ToEnvelope(id, raw, type);
-        }
-    }
+        CancellationToken ct = default)
+        => new StreamReader(this, id, from, ct);
 
     /// <inheritdoc/>
     /// <remarks>
@@ -97,51 +93,27 @@ public sealed class EventStore : IEventStore
         CancellationToken ct = default)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxCount);
-        return ReadBatchCoreAsync(id, from, maxCount, ct);
+        return new BatchReader(this, id, from, maxCount, ct);
     }
 
-    private async IAsyncEnumerable<EventEnvelope> ReadBatchCoreAsync(
-        StreamId id,
-        StreamPosition from,
-        int maxCount,
-        [EnumeratorCancellation] CancellationToken ct)
+    /// <summary>
+    /// Deserializes <paramref name="raw"/> when the registry knows its type, then upcasts it.
+    /// Returns <see langword="false"/> for an unknown type, which readers skip for forward
+    /// compatibility.
+    /// </summary>
+    private bool TryDeserialize(in RawEvent raw, [NotNullWhen(true)] out object? @event)
     {
-        var yielded = 0;
-        while (true)
+        if (!_registry.TryGetType(raw.EventType, out var type) || type is null)
         {
-            var requested = maxCount - yielded;
-            var pageStart = from;
-            var rows = 0;
-            await foreach (var raw in _adapter.ReadBatchAsync(id, from, requested, ct).ConfigureAwait(false))
-            {
-                rows++;
-                from = raw.Position;
-                if (!_registry.TryGetType(raw.EventType, out var type) || type is null)
-                    continue; // unknown event type — skip for forward compatibility
-
-                yield return ToEnvelope(id, raw, type);
-                yielded++;
-            }
-
-            // A short page is the end of the stream. A full page that held unknown types leaves
-            // the batch short, so the rows after it are read.
-            if (yielded == maxCount || rows < requested)
-                yield break;
-
-            // The next page starts after the last row of this one; an adapter whose positions do
-            // not advance would otherwise be read again from the same place forever.
-            if (from.Value <= pageStart.Value)
-                throw new InvalidOperationException(
-                    $"The adapter returned events at or before position {pageStart.Value} for a read after it, so the read cannot advance.");
+            @event = null;
+            return false;
         }
-    }
 
-    private EventEnvelope ToEnvelope(StreamId id, RawEvent raw, Type type)
-    {
         var deserialized = _serializer.Deserialize(raw.Payload, type);
         if (_upcasterPipeline?.TryUpcast(deserialized, out var upgraded) == true)
             deserialized = upgraded;
-        return new EventEnvelope(id, raw.Position, deserialized, raw.Metadata);
+        @event = deserialized;
+        return true;
     }
 
     /// <inheritdoc/>
@@ -153,12 +125,9 @@ public sealed class EventStore : IEventStore
     {
         return await _adapter.SubscribeAsync(id, from, async (raw, token) =>
         {
-            if (!_registry.TryGetType(raw.EventType, out var type) || type is null)
+            if (!TryDeserialize(raw, out var deserialized))
                 return;
 
-            var deserialized = _serializer.Deserialize(raw.Payload, type);
-            if (_upcasterPipeline?.TryUpcast(deserialized, out var upgraded) == true)
-                deserialized = upgraded;
             var envelope = new EventEnvelope(id, raw.Position, deserialized, raw.Metadata);
             await handler(envelope, token).ConfigureAwait(false);
         }, ct).ConfigureAwait(false);
