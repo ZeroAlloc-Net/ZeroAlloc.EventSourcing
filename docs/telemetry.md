@@ -8,7 +8,7 @@ sidebar_position: 10
 
 `ZeroAlloc.EventSourcing.Telemetry` adds a hand-rolled decorator around `IAggregateRepository<TAggregate, TId>` that records `Activity` spans and metrics for every aggregate load/save — without taking a dependency on the OpenTelemetry SDK.
 
-> **Breaking change in v2.0.** Instrumentation now sits at the aggregate-repository layer, not the event-store layer. Existing dashboards subscribed to `event_store.append` / `event_store.read` / `event_store.subscribe` will see nothing after upgrading. See [Migrating from v1.x](#migrating-from-v1x).
+Instrumentation sits at the aggregate-repository layer, not the event-store layer: there are no `event_store.*` spans. Every published version of the package works this way; see [Event-store spans](#event-store-spans) for why some older material mentions them.
 
 ## Install
 
@@ -28,7 +28,7 @@ services
     .WithTelemetry();                 // wraps each IAggregateRepository<,> with InstrumentedAggregateRepository<,>
 ```
 
-> Renamed from `UseEventSourcingTelemetry()` for consistency with the rest of the ecosystem; the old name remains as `[Obsolete]` for one minor version and delegates to `WithTelemetry()`.
+> Renamed from `UseEventSourcingTelemetry()` for consistency with the rest of the ecosystem. The old name remains as an `[Obsolete]` alias, diagnostic `ZAES001`, that delegates to `WithTelemetry()`; it is removed in the next major.
 
 The extension replaces each existing `IAggregateRepository<TAggregate, TId>` registration with `InstrumentedAggregateRepository<TAggregate, TId>` wrapping the original. Any code that resolves `IAggregateRepository<,>` gets the decorated version automatically. That covers `UseAggregateRepository` and hand-written registrations alike, such as a `SnapshotCachingRepositoryDecorator` registered with `AddScoped`; keyed registrations stay keyed, and every registration keeps its lifetime.
 
@@ -42,8 +42,8 @@ Every repository gets that default implementation without doing anything. A repo
 
 A class that implements two or more closed `IAggregateRepository<,>` interfaces inherits a default `Accept` from each one, so it has no single most specific implementation.
 
-- **Compile time.** Since this version such a class no longer compiles, with error CS8705, until it implements `IAggregateRepository.Accept` itself.
-- **Existing binaries.** A binary of such a class compiled against an earlier version still loads. It throws `AmbiguousImplementationException` when `WithTelemetry()` calls `Accept` on resolve.
+- **Compile time.** Since 1.6.0 such a class no longer compiles, with error CS8705, until it implements `IAggregateRepository.Accept` itself.
+- **Existing binaries.** A binary of such a class compiled against 1.5.0 or earlier still loads. It throws `AmbiguousImplementationException` when `WithTelemetry()` calls `Accept` on resolve.
 
 Its own `Accept` has to pick one closed interface:
 
@@ -81,7 +81,7 @@ The duration histograms (`aggregate.load_duration_ms`, `aggregate.save_duration_
 
 ## Connecting to OpenTelemetry
 
-The decorator publishes under the `ActivitySource` name and `Meter` name `"ZeroAlloc.EventSourcing"` (unchanged from v1.x). Wire those into your OTel SDK setup:
+The decorator publishes under the `ActivitySource` name and `Meter` name `"ZeroAlloc.EventSourcing"`. Wire those into your OTel SDK setup:
 
 ```csharp
 services.AddOpenTelemetry()
@@ -101,26 +101,8 @@ services.AddOpenTelemetry()
         .AddOtlpExporter());
 ```
 
-## Migrating from v1.x
+## Event-store spans
 
-In v1.x, `WithTelemetry()` (and the previous `UseEventSourcingTelemetry()` shim) decorated `IEventStore` directly via a source-generated proxy and emitted spans named after store operations. In v2.0 the decorator was moved up the abstraction stack to `IAggregateRepository<TAggregate, TId>` so spans correspond to domain-meaningful operations (loading an aggregate, saving an aggregate) instead of low-level append/read/subscribe calls.
+Before the first release, during development in April 2026, `WithTelemetry()` decorated `IEventStore` through a source-generated proxy and emitted `event_store.append`, `event_store.read` and `event_store.subscribe` spans. That design was replaced before `ZeroAlloc.EventSourcing.Telemetry` 1.0.0 shipped, so no NuGet release has emitted those spans and no released version needs migrating.
 
-Map your existing dashboards and alerts using the table below:
-
-| Before (event-store-level) | After (aggregate-level) |
-|---|---|
-| Span `event_store.append` | Span `aggregate.save` |
-| Span `event_store.read` | Span `aggregate.load` |
-| Span `event_store.subscribe` | _removed; subscribe was an event-store concern_ |
-| Counter `event_store.appends_total` | Counter `aggregate.saves_total` |
-| Histogram `event_store.read_duration_ms` | Histogram `aggregate.load_duration_ms` |
-| Tag `stream.id` | Tag `aggregate.type` (set to `typeof(TAggregate).Name`) |
-| ActivitySource `ZeroAlloc.EventSourcing` | ActivitySource `ZeroAlloc.EventSourcing` (unchanged) |
-| Meter `ZeroAlloc.EventSourcing` | Meter `ZeroAlloc.EventSourcing` (unchanged) |
-
-Notes for upgraders:
-
-- **`event_store.subscribe` has no replacement.** The decorator no longer instruments subscriptions; if you need that signal, instrument your subscription pipeline directly using the same `ActivitySource` name.
-- **Per-stream tags are gone.** The aggregate-level decorator tags spans with `aggregate.type` rather than `stream.id`. If you need per-aggregate-id breakdowns, add them in your own decorator below `WithTelemetry()`.
-- **`InstrumentedEventStore` has been deleted.** The class no longer exists; the `[Instrument]` attribute that drove the source generator has also been removed from `IEventStore`.
-- **Registration shape is unchanged.** `.WithTelemetry()` is still the only call you need. Provided you have at least one `IAggregateRepository<,>` registered before the call, decoration happens automatically.
+For stream consumers, wrap an `IStreamConsumer` in `InstrumentedStreamConsumer`, which records a `consumer.consume` span tagged with `consumer.id`. For anything else at the event-store level, instrument it yourself using the same `ZeroAlloc.EventSourcing` `ActivitySource` name.

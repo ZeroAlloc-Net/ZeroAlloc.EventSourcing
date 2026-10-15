@@ -2,20 +2,20 @@
 
 [![NuGet](https://img.shields.io/nuget/v/ZeroAlloc.EventSourcing.svg)](https://www.nuget.org/packages/ZeroAlloc.EventSourcing)
 [![Build](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/actions/workflows/ci.yml/badge.svg)](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/blob/main/LICENSE)
 [![AOT](https://img.shields.io/badge/AOT--Compatible-passing-brightgreen)](https://learn.microsoft.com/dotnet/core/deploying/native-aot/)
 [![GitHub Sponsors](https://img.shields.io/github/sponsors/MarcelRoozekrans?style=flat&logo=githubsponsors&color=ea4aaa&label=Sponsor)](https://github.com/sponsors/MarcelRoozekrans)
 
-A high-performance, zero-allocation event sourcing library for .NET with streaming capabilities and production-grade reliability features.
+A high-performance event sourcing library for .NET with streaming capabilities and production-grade reliability features. The append path allocates nothing of its own; see [Allocations](#allocations) for what each path costs.
 
 ## Key Features
 
-- **Zero-Allocation Design**: Optimized for performance-critical applications with minimal garbage collection
+- **Allocation-free appends**: `EventStore.AppendAsync` and `AggregateRepository.SaveAsync` allocate nothing of their own, asserted in tests
 - **Event Sourcing**: Full event sourcing support with append-only event store
 - **Stream Consumers**: Production-grade consumers for reliable event consumption
 - **Projections**: Multiple projection types for denormalized views
 - **Snapshots**: Optimize aggregate loading with configurable snapshot strategies
-- **SQL Adapters**: SQL Server and PostgreSQL support with Testcontainers testing
+- **Storage Adapters**: SQL Server, PostgreSQL and SQLite, tested against real databases; SQL Server and PostgreSQL through Testcontainers
 - **Checkpoint Tracking**: Automatic position tracking with recovery capabilities
 - **Comprehensive Testing**: Extensive test suite and integration testing patterns
 
@@ -26,6 +26,8 @@ A high-performance, zero-allocation event sourcing library for .NET with streami
 ```bash
 dotnet add package ZeroAlloc.EventSourcing
 ```
+
+Every package targets `net8.0`, `net9.0` and `net10.0`.
 
 ### Basic Event Sourcing
 
@@ -61,14 +63,17 @@ Most applications work with aggregates instead of raw events: see
 | Package | Description |
 |---------|-------------|
 | `ZeroAlloc.EventSourcing` | Core library with event store and serialization |
-| `ZeroAlloc.EventSourcing.Aggregates` | Aggregate patterns and source generation |
+| `ZeroAlloc.EventSourcing.Aggregates` | Aggregate base class and repository |
+| `ZeroAlloc.EventSourcing.Generators` | Source generator that emits aggregate `ApplyEvent` dispatch and the event type registry |
 | `ZeroAlloc.EventSourcing.InMemory` | In-memory event store for testing |
 | `ZeroAlloc.EventSourcing.PostgreSql` | PostgreSQL adapter with native streams |
 | `ZeroAlloc.EventSourcing.SqlServer` | SQL Server adapter with native streams |
+| `ZeroAlloc.EventSourcing.Sql` | Shared SQL checkpoint, snapshot, projection and dead-letter stores for SQL Server and PostgreSQL |
+| `ZeroAlloc.EventSourcing.Sqlite` | SQLite adapter for embedded and single-node use ([README](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/blob/main/src/ZeroAlloc.EventSourcing.Sqlite/README.md)) |
 | `ZeroAlloc.EventSourcing.Kafka` | Kafka stream consumer for external event sources |
+| `ZeroAlloc.EventSourcing.Outbox` | At-least-once cross-aggregate dispatch through ZeroAlloc.Mediator ([README](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/blob/main/src/ZeroAlloc.EventSourcing.Outbox/README.md)) |
+| `ZeroAlloc.EventSourcing.Mediator` | Republishes live committed events as ZeroAlloc.Mediator notifications |
 | `ZeroAlloc.EventSourcing.Telemetry` | BCL `ActivitySource` + `Meter` decorator around `IAggregateRepository<,>` — OpenTelemetry spans and metrics with no OTel SDK dependency |
-
-All packages follow zero-allocation principles and are optimized for high-throughput scenarios.
 
 ## Performance
 
@@ -82,6 +87,18 @@ Correctness-matched overhead vs a hand-rolled SQLite event store (same connectio
 The delta is the cost of the `IEventStore` + `IEventStoreAdapter` + `IEventSerializer` + `IEventTypeRegistry` layer — what you get for it is typed events, pluggable serialization, optimistic concurrency through `StreamPosition`, and composability with `Aggregate<T>`, projections, snapshots, upcasters, and dead-letter handling. At real-database latency the abstraction tax becomes negligible vs the SQL round-trip.
 
 Full methodology: [docs/performance.md](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/blob/main/docs/performance.md).
+
+### Allocations
+
+What the library itself allocates, measured with allocation-free test doubles for the adapter, serializer and type registry:
+
+| Call | Library allocation | Test |
+|---|---:|---|
+| `EventStore.AppendAsync`, 1 to 64 events | 0 B | `EventStoreAllocationTests` |
+| `AggregateRepository.SaveAsync` | 0 B | `AggregateRepositoryAllocationTests` |
+| `EventStore.ReadAsync`, one full read of 1 or 100 events | 304 B per call, none per event | `EventStoreReadAllocationTests` |
+
+The 304 B is the compiler-generated async iterator behind `ReadAsync` ([#504](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/issues/504)). Storage adapters and serializers add their own allocations on top, as the SQLite numbers above show.
 
 ## Stream Consumers
 
@@ -215,7 +232,7 @@ The decorator emits, under the `ZeroAlloc.EventSourcing` activity-source/meter n
 
 Any OpenTelemetry SDK wired to the process picks up all three instruments automatically.
 
-> **Breaking change in v2.0:** `WithTelemetry()` now decorates `IAggregateRepository<,>` instead of `IEventStore`. The old `event_store.append` / `event_store.read` / `event_store.subscribe` spans no longer exist; the deleted `InstrumentedEventStore` and its `[Instrument]` attribute on `IEventStore` are gone. Existing dashboards must be re-pointed at `aggregate.load` / `aggregate.save`. See [docs/telemetry.md](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/blob/main/docs/telemetry.md) for the full migration table. The legacy `UseEventSourcingTelemetry()` extension remains as `[Obsolete]` and now delegates to `WithTelemetry()`.
+Spans and metrics sit at the aggregate-repository layer: every published version of the package decorates `IAggregateRepository<,>`, not `IEventStore`. `UseEventSourcingTelemetry()` is an `[Obsolete]` alias that delegates to `WithTelemetry()`. See [docs/telemetry.md](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/blob/main/docs/telemetry.md) for the full guide.
 
 ## Documentation
 
@@ -245,12 +262,12 @@ dotnet test ZeroAlloc.EventSourcing.slnx --configuration Release
 ### Benchmarks
 
 ```bash
-dotnet run --project benchmarks/ZeroAlloc.EventSourcing.Benchmarks -c Release
+dotnet run --project src/ZeroAlloc.EventSourcing.Benchmarks -c Release
 ```
 
 ## License
 
-See LICENSE file for details.
+MIT — see [LICENSE](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/blob/main/LICENSE).
 
 ## Contributing
 
