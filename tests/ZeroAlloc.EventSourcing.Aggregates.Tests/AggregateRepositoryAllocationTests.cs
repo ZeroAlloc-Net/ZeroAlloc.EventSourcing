@@ -2,6 +2,7 @@ using AwesomeAssertions;
 using ZeroAlloc.EventSourcing;
 using ZeroAlloc.EventSourcing.Aggregates;
 using ZeroAlloc.Results;
+using ZeroAlloc.TestHelpers;
 
 namespace ZeroAlloc.EventSourcing.Aggregates.Tests;
 
@@ -17,7 +18,7 @@ public class AggregateRepositoryAllocationTests
     [Theory]
     [InlineData(1)]
     [InlineData(3)]
-    public async Task SaveAsync_WithAnAllocationFreeStore_DoesNotAllocate(int eventsPerSave)
+    public void SaveAsync_WithAnAllocationFreeStore_DoesNotAllocate(int eventsPerSave)
     {
         var store = new NoOpEventStore();
         var streamId = new StreamId("order-alloc");
@@ -26,29 +27,25 @@ public class AggregateRepositoryAllocationTests
         var order = new Order();
         order.SetId(id);
         var placed = new OrderPlacedEvent("ORD-1", 1m);
+        var saves = 0;
 
-        // Warm up: JIT, tiering and the first rent from any pool.
-        for (var i = 0; i < 100; i++)
-        {
-            for (var e = 0; e < eventsPerSave; e++)
-                order.Record(placed);
-            await repo.SaveAsync(order, id);
-        }
+        // Each call records the events it saves, since a save with nothing uncommitted would not
+        // reach the store; recording allocates nothing either. The store completes synchronously,
+        // so the save does too, and the gate fails a call that does not. The budget is exact.
+        AllocationGate.AssertBudgetValueTask(
+            0,
+            Iterations,
+            () =>
+            {
+                for (var e = 0; e < eventsPerSave; e++)
+                    order.Record(placed);
+                saves++;
+                return repo.SaveAsync(order, id);
+            },
+            $"AggregateRepository.SaveAsync of {eventsPerSave} events");
 
-        var allSynchronous = true;
-        var before = GC.GetAllocatedBytesForCurrentThread();
-        for (var i = 0; i < Iterations; i++)
-        {
-            for (var e = 0; e < eventsPerSave; e++)
-                order.Record(placed);
-            allSynchronous &= repo.SaveAsync(order, id).IsCompletedSuccessfully;
-        }
-        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-
-        allSynchronous.Should().BeTrue();
-        allocated.Should().Be(0, "a save through an allocation-free store allocates nothing of its own");
         store.LastCount.Should().Be(eventsPerSave);
-        order.OriginalVersion.Value.Should().Be((100 + Iterations) * eventsPerSave);
+        order.OriginalVersion.Value.Should().Be(saves * eventsPerSave);
     }
 
     [Fact]
