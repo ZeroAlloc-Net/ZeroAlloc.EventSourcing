@@ -12,15 +12,15 @@ public class EventStoreReadAllocationTests
 {
     private const int Iterations = 1_000;
 
-    // The compiler-generated async iterator behind EventStore.ReadAsync is a class, so each call
-    // allocates one instance: 304 B, measured on net9.0. Nothing is allocated per event, which the
-    // 1- and 100-event cases pin. Tracked in issue 504; lower this to 0 when the iterator goes.
-    private const int ReadCallBudgetBytes = 304;
+    // Each call allocates the one reader object behind EventStore.ReadAsync: 96 B, measured on
+    // net9.0. It was 304 B while ReadAsync was a compiler-generated async iterator, see issue 504.
+    // Nothing is allocated per event, which the 1- and 100-event cases pin.
+    private const int ReadCallBudgetBytes = 96;
 
     [Theory]
     [InlineData(1)]
     [InlineData(100)]
-    public void ReadAsync_WithAllocationFreeCollaborators_AllocatesOnlyTheIteratorPerCall(int eventCount)
+    public void ReadAsync_WithAllocationFreeCollaborators_AllocatesOnlyTheReaderPerCall(int eventCount)
     {
         var store = new EventStore(new CachedReadAdapter(eventCount), new CachedSerializer(), new ConstantRegistry());
         var id = new StreamId("alloc-stream");
