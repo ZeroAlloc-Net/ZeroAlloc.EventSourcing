@@ -37,8 +37,8 @@
          transitive pinning covers the tests and smoke projects. Each target gets the patched
          release of its own servicing line, so net8.0 consumers stay on the 8.0 line. Remove
          these entries and the two direct references once SqlClient depends on a patched Pkcs. -->
-    <PackageVersion Include="System.Security.Cryptography.Pkcs"  Version="8.0.2"  Condition="'$(TargetFramework)' == 'net8.0'" />
-    <PackageVersion Include="System.Security.Cryptography.Pkcs"  Version="9.0.21" Condition="'$(TargetFramework)' == 'net9.0'" />
+    <PackageVersion Include="System.Security.Cryptography.Pkcs"  Version="10.0.12"  Condition="'$(TargetFramework)' == 'net8.0'" />
+    <PackageVersion Include="System.Security.Cryptography.Pkcs"  Version="10.0.12" Condition="'$(TargetFramework)' == 'net9.0'" />
     <PackageVersion Include="System.Security.Cryptography.Pkcs"  Version="10.0.13" Condition="'$(TargetFramework)' != 'net8.0' AND '$(TargetFramework)' != 'net9.0'" />
     <PackageVersion Include="Microsoft.Data.Sqlite"              Version="10.0.12" />
     <!-- CVE-2025-6965 / GHSA-2m69-gcr7-jv3q: Microsoft.Data.Sqlite 10.0.9 pulls
