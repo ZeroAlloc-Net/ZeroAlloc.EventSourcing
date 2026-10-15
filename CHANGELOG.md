@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.6.3](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/compare/ZeroAlloc.EventSourcing-v1.6.2...ZeroAlloc.EventSourcing-v1.6.3) (2026-10-15)
+
+
+### Bug Fixes
+
+* **sql:** pin patched system.security.cryptography.pkcs for cve-2026-84008 ([#509](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/issues/509)) ([025755a](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/commit/025755ab5490346703059de2b68c608ab5786a07))
+
+
+### Performance Improvements
+
+* replace the async iterators behind EventStore reads with a hand-written reader ([#513](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/issues/513)) ([54ea480](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/commit/54ea4800b3f91effa320b9b374308c67249d8f04)), closes [#504](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/issues/504)
+
+
+### Documentation
+
+* correct the README packages, allocation claims and telemetry history ([#507](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/issues/507)) ([d324315](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/commit/d324315ca77c6cdc11719fea5bd887b8344c9ed0))
+* point the contributing page at CONTRIBUTING.md and the real release process ([#515](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/issues/515)) ([d3342a1](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/commit/d3342a124e9573f9e496e04f940c7f3d3974fa92)), closes [#506](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/issues/506)
+
 ## [1.6.2](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/compare/ZeroAlloc.EventSourcing-v1.6.1...ZeroAlloc.EventSourcing-v1.6.2) (2026-10-11)
 
 
