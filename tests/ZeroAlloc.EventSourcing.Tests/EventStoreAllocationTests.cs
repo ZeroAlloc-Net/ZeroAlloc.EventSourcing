@@ -1,5 +1,6 @@
 using AwesomeAssertions;
 using ZeroAlloc.Results;
+using ZeroAlloc.TestHelpers;
 
 namespace ZeroAlloc.EventSourcing.Tests;
 
@@ -15,7 +16,7 @@ public class EventStoreAllocationTests
     [InlineData(1)]
     [InlineData(3)]
     [InlineData(64)]
-    public async Task AppendAsync_WithAllocationFreeCollaborators_DoesNotAllocate(int eventCount)
+    public void AppendAsync_WithAllocationFreeCollaborators_DoesNotAllocate(int eventCount)
     {
         var adapter = new NoOpAdapter();
         var store = new EventStore(adapter, new CachedSerializer(), new ConstantRegistry());
@@ -25,22 +26,14 @@ public class EventStoreAllocationTests
             events[i] = new OrderPlaced("ORD-1", 1m);
         var memory = new ReadOnlyMemory<object>(events);
 
-        // Warm up: JIT, tiering and the first rent from any pool.
-        for (var i = 0; i < 100; i++)
-            await store.AppendAsync(id, memory, StreamPosition.Start);
+        // The adapter completes synchronously, so the append does too; the gate fails a call that
+        // does not. The budget is exact: an append allocates nothing of its own.
+        AllocationGate.AssertBudgetValueTask(
+            0,
+            Iterations,
+            () => store.AppendAsync(id, memory, StreamPosition.Start),
+            $"EventStore.AppendAsync of {eventCount} events");
 
-        var allSynchronous = true;
-        var before = GC.GetAllocatedBytesForCurrentThread();
-        for (var i = 0; i < Iterations; i++)
-        {
-            // The adapter completes synchronously, so the append does too.
-            allSynchronous &= store.AppendAsync(id, memory, StreamPosition.Start).IsCompletedSuccessfully;
-        }
-        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
-
-        allSynchronous.Should().BeTrue();
-
-        allocated.Should().Be(0, "an append through allocation-free collaborators allocates nothing of its own");
         adapter.LastCount.Should().Be(eventCount);
     }
 
