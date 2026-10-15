@@ -1,12 +1,14 @@
 # ZeroAlloc.EventSourcing.Outbox
 
 [![NuGet](https://img.shields.io/nuget/v/ZeroAlloc.EventSourcing.Outbox.svg)](https://www.nuget.org/packages/ZeroAlloc.EventSourcing.Outbox)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Build](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/actions/workflows/ci.yml/badge.svg)](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/blob/main/LICENSE)
 [![AOT](https://img.shields.io/badge/AOT--Compatible-passing-brightgreen)](https://learn.microsoft.com/dotnet/core/deploying/native-aot/)
+[![GitHub Sponsors](https://img.shields.io/github/sponsors/MarcelRoozekrans?style=flat&logo=githubsponsors&color=ea4aaa&label=Sponsor)](https://github.com/sponsors/MarcelRoozekrans)
 
 ## What it is
 
-At-least-once cross-aggregate event dispatch from the ZeroAlloc event store. `ZeroAlloc.EventSourcing.Outbox` runs as a hosted service that polls the global event stream and dispatches every event implementing `ZeroAlloc.Mediator.INotification` through an `INotificationDispatcher` (the in-process Mediator bridge). The key design choice: the event log **is** the outbox — there is no separate dispatch table and no dual-write to keep consistent. Position is tracked in `ICheckpointStore` so a restart resumes exactly where the previous process stopped. v0.1 is polling-based, in-process Mediator dispatch, and AOT-clean.
+At-least-once cross-aggregate event dispatch from the ZeroAlloc event store. `ZeroAlloc.EventSourcing.Outbox` runs as a hosted service that polls the global event stream and dispatches every event implementing `ZeroAlloc.Mediator.INotification` through an `INotificationDispatcher` (the in-process Mediator bridge). The key design choice: the event log **is** the outbox — there is no separate dispatch table and no dual-write to keep consistent. Position is tracked in `ICheckpointStore` so a restart resumes exactly where the previous process stopped. Dispatch is polling-based and in-process through Mediator, and the package is AOT-clean.
 
 ## Install
 
@@ -35,9 +37,13 @@ public sealed class LoyaltyPointsCreditHandler : INotificationHandler<OrderShipp
 
     public async ValueTask Handle(OrderShipped e, CancellationToken ct)
     {
-        var customer = await _customers.LoadAsync(e.CustomerId, ct);
+        var loaded = await _customers.LoadAsync(e.CustomerId, ct);
+        using var customer = loaded.Value;
         customer.CreditLoyaltyPoints(e.OrderId, (int)(e.Amount / 10m));
-        await _customers.SaveAsync(customer, ct);
+
+        var saved = await _customers.SaveAsync(customer, e.CustomerId, ct);
+        if (!saved.IsSuccess)
+            throw new InvalidOperationException(saved.Error.Message);
     }
 }
 ```
@@ -52,9 +58,13 @@ services.AddEventSourcing()
         {
             opts.ConsumerId = "myapp-outbox";
         });
+
+// The dispatcher the ZeroAlloc.EventSourcing.Mediator source generator emits into your assembly.
+services.AddSingleton<INotificationDispatcher,
+    ZeroAlloc.EventSourcing.Mediator.Generated.GeneratedNotificationDispatcher>();
 ```
 
-`AddOutbox(...)` registers the `OutboxDispatcher` as an `IHostedService`. You must also have an `INotificationDispatcher` in DI — this is what the `ZeroAlloc.EventSourcing.Mediator` source generator emits (zero reflection, zero `Activator.CreateInstance`).
+`AddOutbox(...)` registers the `OutboxDispatcher` as an `IHostedService`. It resolves `IEventStore`, `ICheckpointStore` and `INotificationDispatcher` from DI. The generated `GeneratedNotificationDispatcher` forwards each event to `IMediator.Publish` through a type switch, with no reflection and no `Activator.CreateInstance`, so `IMediator` must be registered as well. The handler above also needs an `IEventTypeRegistry` and an `IAggregateRepository<Customer, Guid>` registration.
 
 ## Configuration
 
@@ -78,7 +88,7 @@ services.AddEventSourcing()
 
 When the handler mutates an aggregate, lean on the event store's optimistic concurrency. The handler reloads the target aggregate, applies the operation, and calls `AppendAsync(...)` at the version it loaded. On a redelivery the aggregate version has already advanced past that expected version, so `AppendAsync` returns a `StoreError.Conflict`. The handler swallows the conflict and treats the work as already done.
 
-See `tests/ZeroAlloc.EventSourcing.Outbox.Tests/IdempotencyDemoTests.cs` for a runnable demo. (v0.1 checks the conflict error code with the string literal `"CONFLICT"` — v0.2 will expose a public `StoreError.ConflictCode` constant.)
+See [`IdempotencyDemoTests.cs`](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/blob/main/tests/ZeroAlloc.EventSourcing.Outbox.Tests/IdempotencyDemoTests.cs) for a runnable demo. A conflict is recognised by `StoreError.Code == "CONFLICT"`; there is no public constant for that code yet.
 
 ### Dedup-table-based
 
@@ -102,6 +112,7 @@ Some `INotification` events are emitted for aggregate-internal reasons (snapshot
 
 ```csharp
 services.AddEventSourcing()
+        .UseInMemoryCheckpointStore()
         .UseInMemoryEventStore()
         .AddOutbox(opts =>
         {
@@ -122,27 +133,14 @@ When per-event retries are exhausted (`MaxRetries` reached), `ErrorStrategy` dec
 
 ## AOT-clean
 
-The package is validated against `PublishAot=true` in `samples/ZeroAlloc.EventSourcing.Outbox.AotSmoke/`. The dispatch path uses no reflection, no `Activator.CreateInstance`, no `MakeGenericMethod` — type registration and notification dispatch are emitted by the `ZeroAlloc.EventSourcing.Mediator` source generator, and the outbox itself only orchestrates `StreamConsumer` + `INotificationDispatcher.DispatchAsync(object, CancellationToken)`. `IL2026` / `IL3050` are treated as build errors in the smoke project.
+The package is validated against `PublishAot=true` in [`samples/ZeroAlloc.EventSourcing.Outbox.AotSmoke/`](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/tree/main/samples/ZeroAlloc.EventSourcing.Outbox.AotSmoke), which CI publishes and runs. The dispatch path uses no reflection, no `Activator.CreateInstance`, no `MakeGenericMethod` — type registration and notification dispatch are emitted by the `ZeroAlloc.EventSourcing.Mediator` source generator, and the outbox itself only orchestrates `StreamConsumer` + `INotificationDispatcher.DispatchAsync(object, CancellationToken)`. The repository builds with warnings as errors, so any trim or AOT warning such as `IL2026` or `IL3050` fails the smoke publish.
 
-## Roadmap
+## Limitations
 
-**v0.1 (this release) — explicitly out of scope:**
-
-**v0.2 planned:**
-
-- LIVE subscription path via `IEventStore.SubscribeAsync` (currently v0.1 is polling-only)
-- Lifecycle hardening: restart-after-stop, double-`StopAsync` guards
-- `InMemoryEventStoreAdapter` `*` pseudo-stream fix — the in-memory adapter currently conflates per-stream version with the global consumer cursor (see TODO at `src/ZeroAlloc.EventSourcing.InMemory/InMemoryEventStoreAdapter.cs`)
-- `StoreError.ConflictCode` as a public constant so the aggregate-version idempotency recipe can stop matching the `"CONFLICT"` string literal
-
-**v0.3+ planned:**
-
-- Cross-process broker abstraction (Kafka, RabbitMQ, gRPC), shipped as separate sub-packages
-
-**v1.0:**
-
-- Public API freeze. Triggered when the outbox becomes the substrate for the planned `ZeroAlloc.Saga` package and the `za-cqrs-es` template in `ZeroAlloc.Templates` ships against it.
+- **Polling only.** The dispatcher polls the global stream every `PollInterval`; it does not use `IEventStore.SubscribeAsync` for live delivery.
+- **In-process only.** Events go to handlers in the same process through `INotificationDispatcher`; there is no cross-process broker transport.
+- **No conflict-code constant.** The aggregate-version recipe above matches the `"CONFLICT"` string literal, because `StoreError` has no public constant for it.
 
 ## License
 
-MIT. See LICENSE.
+MIT — see [LICENSE](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/blob/main/LICENSE).

@@ -9,10 +9,9 @@ This directory contains the source documentation for ZeroAlloc.EventSourcing.
 - `usage-guides/` - Practical patterns and recipes
 - `testing/` - Testing strategies and patterns
 - `performance/` - Performance characteristics and benchmarks
-- `api-reference/` - API documentation (auto-generated)
+- `api-reference.md` - API reference
 - `advanced/` - Advanced patterns and extensibility
 - `examples/` - Code samples and runnable examples
-- `assets/` - Images, diagrams, screenshots
 
 ## Building
 

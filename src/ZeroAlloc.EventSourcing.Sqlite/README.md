@@ -1,7 +1,10 @@
 # ZeroAlloc.EventSourcing.Sqlite
 
 [![NuGet](https://img.shields.io/nuget/v/ZeroAlloc.EventSourcing.Sqlite.svg)](https://www.nuget.org/packages/ZeroAlloc.EventSourcing.Sqlite)
+[![Build](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/actions/workflows/ci.yml/badge.svg)](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/blob/main/LICENSE)
 [![AOT](https://img.shields.io/badge/AOT--Compatible-passing-brightgreen)](https://learn.microsoft.com/dotnet/core/deploying/native-aot/)
+[![GitHub Sponsors](https://img.shields.io/github/sponsors/MarcelRoozekrans?style=flat&logo=githubsponsors&color=ea4aaa&label=Sponsor)](https://github.com/sponsors/MarcelRoozekrans)
 
 A SQLite-backed `IEventStoreAdapter` for [ZeroAlloc.EventSourcing](https://www.nuget.org/packages/ZeroAlloc.EventSourcing). Designed for embedded scenarios, single-node services, test harnesses, and AOT-published binaries.
 
@@ -41,8 +44,9 @@ services
 services.AddEventSourcing().UseSqliteEventStore(connectionString, ensureSchema: false);
 
 // Then run it manually at a time of your choosing
-var adapter = sp.GetRequiredService<IEventStoreAdapter>() as SqliteEventStoreAdapter;
-await adapter!.EnsureSchemaAsync();
+using var provider = services.BuildServiceProvider();
+var adapter = (SqliteEventStoreAdapter)provider.GetRequiredService<IEventStoreAdapter>();
+await adapter.EnsureSchemaAsync();
 ```
 
 ## The `*` global stream
