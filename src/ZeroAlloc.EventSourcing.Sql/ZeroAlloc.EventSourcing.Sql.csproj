@@ -14,6 +14,9 @@
   <ItemGroup>
     <PackageReference Include="Npgsql" />
     <PackageReference Include="Microsoft.Data.SqlClient" />
+    <!-- CVE-2026-84008: lifts SqlClient's vulnerable transitive Pkcs to a patched version for
+         consumers. Version per target in Directory.Packages.props; remove with that pin. -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
     <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" />
   </ItemGroup>
