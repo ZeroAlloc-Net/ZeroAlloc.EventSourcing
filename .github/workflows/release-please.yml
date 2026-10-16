@@ -73,85 +73,27 @@ jobs:
       # its push triggers the release PR's checks like release-please's own.
       RELEASE_BOT_PRIVATE_KEY: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
 
+  # Builds the release tag, packs every packable project, checks the versions inside the
+  # packages, pushes them, and waits until nuget.org serves every one of them. Shared from
+  # ZeroAlloc-Net/.github so a fix there reaches every repository; see ZeroAlloc-Net/.github#49.
+  # Destinations: nuget.org and the .nupkg files attached to the GitHub release.
+  # verify-command keeps the generator pack-layout check: the generator must land under
+  # analyzers/dotnet/cs, not lib/, or it silently stops running for every consumer.
+  # dotnet-version adds the net8.0 and net9.0 runtimes that the test projects also target.
   publish:
     needs: release-please
     if: needs.release-please.outputs.releases_created == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-
-      - uses: actions/setup-dotnet@v6
-        with:
-          # Installs the SDK global.json pins. Without it the job never installs
-          # that SDK at all and only works when the runner image happens to ship one
-          # satisfying the pin, which is how a publish failed on a lagging image.
-          global-json-file: global.json
-          dotnet-version: |
-            8.0.x
-            10.0.x
-          dotnet-quality: 'ga'
-
-      - name: Restore
-        run: dotnet restore ZeroAlloc.EventSourcing.slnx
-
-      - name: Build
-        run: dotnet build ZeroAlloc.EventSourcing.slnx -c Release --no-restore -p:Version=${{ needs.release-please.outputs.version }}
-
-      # Every test runs before publishing, the SQL Server, PostgreSQL and Kafka ones included:
-      # they start their own containers through Testcontainers on the runner's Docker.
-      - name: Test
-        run: dotnet test ZeroAlloc.EventSourcing.slnx -c Release --no-build
-
-      # One version covers every package. Under the old per-package components,
-      # -p:PackageVersion applied globally, so each sibling stamped its OWN number onto the
-      # ZeroAlloc.EventSourcing ProjectReference -- .Mediator 1.0.1 shipped "depends on
-      # ZeroAlloc.EventSourcing >= 1.0.1", a version that does not exist. See docs/releasing.md.
-      - name: Pack all packages at the release version
-        env:
-          VERSION: ${{ needs.release-please.outputs.version }}
-        run: |
-          set -euo pipefail
-          if [ -z "$VERSION" ]; then
-            echo "::error::release-please reported a release but produced no version"
-            exit 1
-          fi
-          mkdir -p ./nupkg
-          for csproj in src/*/*.csproj; do
-            # Most projects do not declare IsPackable and default to packable, so exclude
-            # explicitly-unpackable ones rather than requiring an opt-in.
-            if grep -q "<IsPackable>false</IsPackable>" "$csproj"; then
-              echo "Skipping $csproj (not packable)"
-              continue
-            fi
-            echo "Packing $csproj at $VERSION"
-            dotnet pack "$csproj" -c Release --no-build -p:PackageVersion="$VERSION" -o ./nupkg
-          done
-          ls -la ./nupkg
-          # Releasing nothing while reporting success is the failure mode this prevents.
-          if ! ls ./nupkg/*.nupkg >/dev/null 2>&1; then
-            echo "::error::no packages were produced"
-            exit 1
-          fi
-
-
-      - name: Verify generator pack layout
-        run: ./scripts/verify-generator-pack-layout.sh ./nupkg
-
-      - name: Push to NuGet
-        run: |
-          dotnet nuget push ./nupkg/*.nupkg \
-            --api-key ${{ secrets.NUGET_API_KEY }} \
-            --source https://api.nuget.org/v3/index.json \
-            --skip-duplicate
-
-      - name: Upload to GitHub Releases
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ needs.release-please.outputs.tag_name }}
-        run: |
-          set -euo pipefail
-          # One release per run now, so every package attaches to the same tag.
-          echo "Uploading $(ls ./nupkg/*.nupkg | wc -l) packages to release $TAG"
-          gh release upload "$TAG" ./nupkg/*.nupkg --clobber
+    uses: ZeroAlloc-Net/.github/.github/workflows/publish.yml@main
+    with:
+      tag: ${{ needs.release-please.outputs.tag_name }}
+      version: ${{ needs.release-please.outputs.version }}
+      solution: ZeroAlloc.EventSourcing.slnx
+      dotnet-version: |
+        8.0.x
+        9.0.x
+        10.0.x
+      verify-command: bash scripts/verify-generator-pack-layout.sh "$PACKAGES_DIR"
+      github-packages: false
+      release-assets: true
+    secrets:
+      NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
