@@ -69,9 +69,17 @@ To isolate the abstraction overhead from real-world serialization cost (which bo
 In production the dominant cost on both sides is the serializer + the SQL round-trip — at the millisecond scale of a real database both rows converge and this delta becomes invisible.
 <!-- BENCH:END -->
 
-## Zero-Allocation Compliance
+## Allocations
 
-All core operations target **zero allocations** in steady state. Any allocations shown above represent transient state during benchmark execution and are acceptable for this zero-allocation library.
+What the library itself allocates, measured with allocation-free test doubles for the adapter, serializer and type registry. Each figure is an exact budget asserted by an `AllocationGate` test:
+
+| Call | Library allocation | Test |
+|---|---:|---|
+| `EventStore.AppendAsync`, 1 to 64 events | 0 B | `EventStoreAllocationTests` |
+| `AggregateRepository.SaveAsync` | 0 B | `AggregateRepositoryAllocationTests` |
+| `EventStore.ReadAsync`, one full read of 1 or 100 events | 96 B per call, none per event | `EventStoreReadAllocationTests` |
+
+The 96 B is the reader object `ReadAsync` returns, which is also its enumerator. Removing it means returning a struct reader instead of `IAsyncEnumerable<EventEnvelope>`, a breaking change held for the next major ([#512](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/issues/512)). Storage adapters and serializers add their own allocations on top, as the SQLite numbers above show.
 
 ## Methodology
 
