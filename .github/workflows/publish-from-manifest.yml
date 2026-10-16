@@ -1,94 +1,70 @@
 name: Publish from manifest
 
-# Manually-triggered rescue workflow that packs and pushes every src/* csproj
-# at the version recorded in .release-please-manifest.json. Designed for the
-# case where release-please created the GitHub release/tag but the publish
-# job missed a sub-package (e.g. a hardcoded pack list went stale or a new
-# sub-package landed without a CI update). --skip-duplicate makes re-runs safe.
+# Manual rescue: publishes the release recorded in .release-please-manifest.json when the
+# automatic publish did not, for example after a dropped push event or a failed push.
+# It runs the same shared workflow as the release itself, against the release tag, so it
+# rebuilds exactly the released code even after main has moved on, and it confirms that
+# every package reached nuget.org. --skip-duplicate makes re-runs safe.
 #
-# Walks the release-please manifest â€” no hardcoded list, survives sub-package
-# additions automatically.
-#
-# Usage: gh workflow run publish-from-manifest.yml --repo ZeroAlloc-Net/<REPO>
+# Usage:
+#   gh workflow run publish-from-manifest.yml --repo ZeroAlloc-Net/ZeroAlloc.EventSourcing
+#   gh workflow run publish-from-manifest.yml --repo ZeroAlloc-Net/ZeroAlloc.EventSourcing -f dry-run=true
 
 on:
   workflow_dispatch:
+    inputs:
+      dry-run:
+        description: 'Build, pack and verify only; push nothing.'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  publish:
+  resolve:
     runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.manifest.outputs.tag }}
+      version: ${{ steps.manifest.outputs.version }}
     steps:
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
 
-      - uses: actions/setup-dotnet@v6
-        with:
-          # Installs the SDK global.json pins. Without it the job never installs
-          # that SDK at all and only works when the runner image happens to ship one
-          # satisfying the pin, which is how a publish failed on a lagging image.
-          global-json-file: global.json
-          dotnet-version: 10.0.x
-
-      - name: Read manifest version
-        id: version
+      - name: Read the manifest version and find its tag
+        id: manifest
         run: |
           set -euo pipefail
-          version=$(jq -r '.["."]' .release-please-manifest.json)
-          if [ -z "$version" ] || [ "$version" = "null" ]; then
-            echo "::error::.release-please-manifest.json has no version for the root component"
+          version=$(jq -r '."." // empty' .release-please-manifest.json)
+          if [ -z "$version" ]; then
+            echo "::error::.release-please-manifest.json has no \".\" entry"
             exit 1
           fi
+          # include-component-in-tag is on in release-please-config.json, so the tag
+          # carries the component: ZeroAlloc.EventSourcing-v<version>.
+          tag="ZeroAlloc.EventSourcing-v$version"
+          if ! git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+            echo "::error::the manifest says $version but tag $tag does not exist; nothing was released to rescue"
+            exit 1
+          fi
+          echo "Rescuing $tag"
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "Manifest version: $version"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
-      - name: Restore
-        run: dotnet restore ZeroAlloc.EventSourcing.slnx
-
-      # -p:Version here, because the pack below runs with --no-build: the assemblies must carry
-      # the version the packages claim. See ZeroAlloc-Net/.github#26 and #36.
-      - name: Build
-        run: dotnet build ZeroAlloc.EventSourcing.slnx -c Release --no-restore -p:Version=${{ steps.version.outputs.version }}
-
-      # NOTE: No Test step. publish-from-manifest is a rescue workflow — its sole
-      # job is to pack + push artifacts. PR-time CI (ci.yml) already validated
-      # the full test suite against the same build artifacts before merge.
-      # Re-running tests here adds 8-10 min and introduces flakiness (SQL
-      # testcontainer subscription/dead-letter races) that doesn't affect
-      # package correctness.
-
-      # The manifest has a single root component, ".", that versions every package, so pack
-      # every src project at that version, as release-please.yml does. This step used to glob
-      # "<manifest path>/*.csproj", which for "." matched no project: the rescue packed nothing.
-      - name: Pack all packages at the manifest version
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          set -euo pipefail
-          mkdir -p ./nupkg
-          for csproj in src/*/*.csproj; do
-            if grep -q "<IsPackable>false</IsPackable>" "$csproj"; then
-              echo "Skipping $csproj (not packable)"
-              continue
-            fi
-            echo "Packing $csproj at $VERSION"
-            dotnet pack "$csproj" -c Release --no-build -p:Version="$VERSION" -o ./nupkg
-          done
-          ls -la ./nupkg
-          if ! ls ./nupkg/*.nupkg >/dev/null 2>&1; then
-            echo "::error::no packages were produced"
-            exit 1
-          fi
-
-      - name: Verify generator pack layout
-        run: ./scripts/verify-generator-pack-layout.sh ./nupkg
-
-      - name: Push to NuGet
-        run: |
-          dotnet nuget push ./nupkg/*.nupkg \
-            --source https://api.nuget.org/v3/index.json \
-            --api-key ${{ secrets.NUGET_API_KEY }} \
-            --skip-duplicate
+  publish:
+    needs: resolve
+    uses: ZeroAlloc-Net/.github/.github/workflows/publish.yml@main
+    with:
+      tag: ${{ needs.resolve.outputs.tag }}
+      version: ${{ needs.resolve.outputs.version }}
+      solution: ZeroAlloc.EventSourcing.slnx
+      dotnet-version: |
+        8.0.x
+        9.0.x
+        10.0.x
+      verify-command: bash scripts/verify-generator-pack-layout.sh "$PACKAGES_DIR"
+      github-packages: false
+      release-assets: true
+      dry-run: ${{ inputs.dry-run }}
+    secrets:
+      NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
