@@ -7,6 +7,7 @@ module.exports = {
         'getting-started/installation',
         'getting-started/first-aggregate',
         'getting-started/quick-start',
+        'getting-started/feature-tour',
       ],
     },
     {
