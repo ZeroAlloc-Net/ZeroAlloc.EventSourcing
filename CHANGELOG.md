@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.6.4](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/compare/ZeroAlloc.EventSourcing-v1.6.3...ZeroAlloc.EventSourcing-v1.6.4) (2026-10-16)
+
+
+### Documentation
+
+* drop an unneeded package from the readme install ([#528](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/issues/528)) ([13fa305](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/commit/13fa3056d0e3d0b53eec83a302256725d4b77e09))
+* rewrite the readme as a product page ([#527](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/issues/527)) ([ff5b3a9](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/commit/ff5b3a9e2d6b197d10af843807238eef9e75647b))
+
 ## [1.6.3](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/compare/ZeroAlloc.EventSourcing-v1.6.2...ZeroAlloc.EventSourcing-v1.6.3) (2026-10-15)
 
 
