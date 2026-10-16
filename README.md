@@ -21,10 +21,9 @@ Event sourcing for .NET with source-generated aggregates: appends allocate nothi
 dotnet add package ZeroAlloc.EventSourcing.Aggregates
 dotnet add package ZeroAlloc.EventSourcing.Generators
 dotnet add package ZeroAlloc.EventSourcing.InMemory
-dotnet add package ZeroAlloc.Serialisation.SystemTextJson
 ```
 
-The generator package emits the aggregate dispatch; the serialiser package gives you an AOT-safe event serialiser.
+The generator package emits the aggregate dispatch. The AOT-safe event serialiser comes from ZeroAlloc.Serialisation, which the core package brings in.
 
 ## Quick start
 
