@@ -9,17 +9,19 @@ using ZeroAlloc.EventSourcing.Telemetry;
 namespace ZeroAlloc.EventSourcing.Aggregates.ConsumerTests;
 
 /// <summary>
-/// The snippets from README.md, copied as they appear there and compiled against the public API,
-/// using the Order domain from <c>Domain.cs</c>. Each test runs its snippet, except the Kafka one,
-/// which needs a broker and is only compiled. When a snippet changes in the README, change it
-/// here as well. See issue #402.
+/// The snippets from docs/getting-started/feature-tour.md, which held the README examples before
+/// the README became a product page. Copied as they appear there and compiled against the public
+/// API, using the Order domain from <c>Domain.cs</c>. Each test runs its snippet, except the Kafka
+/// one, which needs a broker and is only compiled. When a snippet changes in the feature tour,
+/// change it here as well. The README quick start is in <c>ReadmeQuickStartTests.cs</c>. See
+/// issue #402.
 /// </summary>
-public sealed class ReadmeSnippetTests
+public sealed class FeatureTourSnippetTests
 {
     private static IEventStore NewEventStore()
         => new EventStore(new InMemoryEventStoreAdapter(), new JsonEventSerializer(), new OrderEventTypeRegistry());
 
-    /// <summary>README.md, "Basic Event Sourcing".</summary>
+    /// <summary>Feature tour, "The event store without aggregates".</summary>
     [Fact]
     public async Task QuickStart_AppendsAndReads()
     {
@@ -55,7 +57,7 @@ public sealed class ReadmeSnippetTests
         read.Should().Equal(new OrderPlaced("alice"), new ItemAdded(100m));
     }
 
-    /// <summary>README.md, "Stream Consumers", "Quick Start".</summary>
+    /// <summary>Feature tour, "Stream Consumers", "Example".</summary>
     [Fact]
     public async Task StreamConsumer_QuickStart()
     {
@@ -76,7 +78,7 @@ public sealed class ReadmeSnippetTests
         (await consumer.GetPositionAsync()).Should().Be(new StreamPosition(1));
     }
 
-    /// <summary>README.md, "Kafka Integration". Compiled, not run: it needs a Kafka broker.</summary>
+    /// <summary>Feature tour, "Kafka Integration". Compiled, not run: it needs a Kafka broker.</summary>
     private static async Task KafkaIntegration(
         ICheckpointStore checkpointStore, IEventSerializer serializer, IEventTypeRegistry registry, EventHandler handler)
     {
@@ -103,7 +105,7 @@ public sealed class ReadmeSnippetTests
         public Task ProcessAsync(EventEnvelope envelope, CancellationToken ct) => Task.CompletedTask;
     }
 
-    // --- snippet: README.md, "Projections" ---
+    // --- snippet: feature tour, "Projections" ---
     public sealed record OrderTotals(int Orders, decimal Revenue);
 
     public sealed class OrderTotalsProjection : Projection<OrderTotals>
@@ -119,7 +121,7 @@ public sealed class ReadmeSnippetTests
     }
     // --- end snippet ---
 
-    /// <summary>README.md, "Projections".</summary>
+    /// <summary>Feature tour, "Projections".</summary>
     [Fact]
     public async Task Projections_TotalsOverTheGlobalStream()
     {
@@ -139,7 +141,7 @@ public sealed class ReadmeSnippetTests
         projection.Current.Should().Be(new OrderTotals(2, 7m));
     }
 
-    /// <summary>README.md, "Snapshots".</summary>
+    /// <summary>Feature tour, "Snapshots".</summary>
     [Fact]
     public async Task Snapshots_WritesEveryNEventsAndLoads()
     {
@@ -183,7 +185,7 @@ public sealed class ReadmeSnippetTests
         result.Version.Value.Should().Be(100);
     }
 
-    /// <summary>README.md and docs/telemetry.md, "OpenTelemetry Instrumentation".</summary>
+    /// <summary>Feature tour and docs/telemetry.md, "OpenTelemetry Instrumentation".</summary>
     [Fact]
     public void Telemetry_DecoratesTheAggregateRepository()
     {
