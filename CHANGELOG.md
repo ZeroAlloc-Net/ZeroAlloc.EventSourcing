@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.6.5](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/compare/ZeroAlloc.EventSourcing-v1.6.4...ZeroAlloc.EventSourcing-v1.6.5) (2026-10-17)
+
+
+### Bug Fixes
+
+* bound in-memory batch reads so consuming a stream is linear ([#548](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/issues/548)) ([cbb44a6](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/commit/cbb44a679c08b042e3d935d50ae56c803e5d7065)), closes [#547](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/issues/547)
+
+
+### Documentation
+
+* re-run the benchmarks on net8.0 and net10.0 and publish them ([#550](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/issues/550)) ([8893f48](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/commit/8893f4866d2c983b1e277e77de8c25f4350ad1a2))
+
 ## [1.6.4](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/compare/ZeroAlloc.EventSourcing-v1.6.3...ZeroAlloc.EventSourcing-v1.6.4) (2026-10-16)
 
 
