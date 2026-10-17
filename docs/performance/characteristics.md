@@ -1,148 +1,50 @@
 # Performance Characteristics
 
 **Version:** 1.0  
-**Last Updated:** 2026-04-04  
+**Last Updated:** 2026-10-17  
 **Target Runtime:** .NET 8.0+
 
 ## Overview
 
 ZeroAlloc.EventSourcing is designed to minimize garbage collection pressure and allocation overhead in event sourcing workloads. This document describes the performance characteristics across core operations.
 
-## Latency Profile
+## Measurements
 
-### Event Store Operations
-
-Measured 2026-10-11 on .NET 10.0 with `EventStoreBenchmarks`; see [Detailed Benchmark Results](benchmarks.md#raw-results-eventstorebenchmarks).
-
-| Operation | Mean Latency | P95 | P99 | Allocations |
-|-----------|------------|-----|-----|-------------|
-| AppendEvent (single, library only) | 0.47 μs | — | — | 0 B |
-| ReadEventsFromStream (100 events, in-memory) | 41.5 μs | — | — | 12.1 KB |
-| ReadEventsAcrossStreams (10 × 10 events, in-memory) | 48.3 μs | — | — | 22.9 KB |
-
-**Interpretation:**
-- AppendEvent is measured without an adapter, so it is the cost of `EventStore` itself: ~0.5 μs and no allocation. A real append adds the adapter, a database round trip for the SQL adapters
-- The read benchmarks run against the in-memory adapter, a test double; most of their allocation is its snapshot of the stream and the async enumerators
-- Allocation is unavoidable during read operations due to event object creation; the library uses stack-allocated structs for state during processing
-
-### Aggregate Loading
-
-Measured with in-memory event store, various stream sizes:
-
-| Operation | Stream Size | Mean Latency | Allocations |
-|-----------|------------|--------------|-------------|
-| LoadAggregateSmallStream | 10 events | 30.25 μs | 4.59 KB |
-| LoadAggregateMediumStream | 100 events | 214.77 μs | 32.71 KB |
-| LoadAggregateLargeStream | 1000 events | 1,914.79 μs | 313.91 KB |
-
-**Interpretation:**
-- Latency scales with stream size due to event replay
-- Replay is deterministic and predictable: ~30 μs baseline + ~1.9 μs per event
-- Allocations are proportional to stream size; snapshots significantly reduce both latency and allocations for large streams
-
-### Projection Operations
-
-| Operation | Events | Mean Latency | Allocations |
-|-----------|--------|--------------|-------------|
-| ApplySingleEvent | 1 | 386.8 ns | 192 B |
-| ApplyMultipleEventsSequential | 5 | 931.9 ns | 304 B |
-| ApplyTypedDispatch | 5 (with type dispatch) | 849.3 ns | 304 B |
-
-**Interpretation:**
-- Projection application is nanosecond-scale, ideal for high-frequency updates
-- Allocations are minimal and fixed per call, not per event
-- Typed dispatch (pattern matching on event type) is as fast as sequential dispatch
-
-### Snapshot Operations
-
-| Operation | Mean Latency | Allocations |
-|-----------|------------|-------------|
-| WriteSnapshot | 2,653.9 ns | 371 B |
-| ReadSnapshot | 796.1 ns | 80 B |
-| WriteAndReadSnapshot | 4,127.9 ns | 379 B |
-
-**Interpretation:**
-- Snapshot operations are sub-millisecond
-- Read is faster than write (no serialization overhead)
-- Minimal allocations reflect in-memory storage; SQL implementations will be slower due to I/O
-
-## Throughput
-
-### Theoretical Maximum Throughput
-
-Based on latency measurements, theoretical maximum throughput under ideal conditions:
-
-| Operation | Events/Second |
-|-----------|---------------|
-| AppendEvent | ~72,000 events/sec |
-| ReadEventsFromStream (per stream) | ~3,000 streams/sec |
-| ApplyProjectionEvent | ~2.6M events/sec |
-| WriteSnapshot | ~377,000 snapshots/sec |
-
-**Practical throughput** will be lower due to:
-- I/O latency (disk/network)
-- Concurrency coordination
-- Event processing logic overhead
-- Memory allocation patterns
-
-### Scaling Characteristics
-
-Tested with varying aggregate sizes:
-
-**Single-threaded throughput:**
-- 10-event aggregates: ~700 aggregates/sec loaded from store
-- 100-event aggregates: ~100 aggregates/sec loaded from store
-- 1000-event aggregates: ~10 aggregates/sec loaded from store
-
-**With snapshots (every 100 events):**
-- All sizes: ~700 aggregates/sec (bounded by snapshot read latency)
-
-**Key insight:** Snapshots are critical for scaling to large event streams.
+The measured allocations, and same-run ratios where a benchmark has a baseline, are in
+**[Performance & Benchmarks](../performance.md)**. This page explains where the library allocates;
+it does not repeat the numbers.
 
 ## Allocation Characteristics
 
 ### Steady-State Allocations
 
-In steady state (after JIT warmup):
+In steady state (after JIT warmup), what the library itself allocates:
 
-| Operation | Type | Allocation Size | Frequency |
-|-----------|------|-----------------|-----------|
-| Append | None | 0 B | `EventStore` itself; the adapter allocates what its driver needs |
-| Read stream | Per event | ~600 B | Per event |
-| Replay state | Per event | 0 B | State is struct on stack |
-| Projection apply | Per call | 192-304 B | Per event |
+| Operation | Allocation | Notes |
+|-----------|------------|-------|
+| Append | 0 B | `EventStore` itself, asserted by `EventStoreAllocationTests`; the adapter allocates what its driver needs |
+| Aggregate save | 0 B | Asserted by `AggregateRepositoryAllocationTests` |
+| Read a stream | 96 B per call, nothing per event | The reader object; asserted by `EventStoreReadAllocationTests` |
+| Replay state | 0 B | State is a struct on the stack |
+| Snapshot read, in-memory store | 0 B | |
 
-### Gen 0 Pressure
-
-For a system appending 10,000 events/second with 100 concurrent aggregates:
-
-**Without projections:**
-- ~45 MB/sec Gen 0 allocation (from appends)
-- ~6 MB/sec Gen 0 allocation (from reads at 1 aggregate/sec)
-- Total: ~51 MB/sec Gen 0
-
-**With projections (100 projections, apply to 10 events):**
-- Additional ~2 MB/sec Gen 0 (projection overhead is negligible)
-
-**GC pause impact:**
-- Gen 0 collections: ~1 every 2-3 seconds (system-dependent)
-- Pause duration: <5 ms (typical for Gen 0)
-- Gen 1/Gen 2: Rare, only if memory pressure persists
+Deserialized events, envelopes from a storage adapter and the adapter's own buffers come on top.
+Loading an aggregate through the in-memory adapter with the System.Text.Json serializer measures
+about 310 B per replayed event, most of it outside the library.
 
 ### Zero-Allocation Claims
 
 The library targets "zero allocations" in the following operations:
 
-1. **Aggregate state replay** — State is a struct, lives on the stack, never allocated
-2. **Event application to state** — Pure function, no side effects, no allocations
-3. **Reading snapshot data** — In-memory store uses no allocations; SQL stores allocate event envelopes only
+1. **Appending events and saving aggregates** — `EventStore` and `AggregateRepository` allocate nothing of their own
+2. **Aggregate state replay** — State is a struct, lives on the stack, never allocated
+3. **Event application to state** — Pure function, no side effects, no allocations
+4. **Reading snapshot data** — In-memory store uses no allocations; SQL stores allocate event envelopes only
 
 The allocations shown in benchmarks represent:
 - Event envelope objects (unavoidable when deserializing from store)
 - Temporary buffers (unavoidable for I/O)
-- Test harness overhead (not representative of real usage)
-
-**Production impact:** The allocations are amortized over many operations and rarely cause GC pauses in realistic workloads.
+- The in-memory adapter's snapshot of each read, a test double
 
 ## Memory Layout and Cache Efficiency
 
@@ -178,36 +80,6 @@ var envelope = new EventEnvelope(
 ```
 
 The event object itself is heap-allocated (unavoidable in C#), but is only held in memory for the duration of processing.
-
-## GC Pressure Analysis
-
-### Collections Triggered
-
-For a typical workload:
-
-**Event appending:**
-- `EventStore` allocates nothing per append; the adapter and its database driver allocate their own
-
-**Event reading:**
-- 1 read (100 events) = ~59 KB allocation
-- 100 reads = ~5.9 MB Gen 0
-- Need ~1,400 reads to trigger collection
-
-**Aggregate loading:**
-- 1 load (100 events) = ~33 KB allocation
-- 100 loads = ~3.3 MB Gen 0
-- Need ~2,400 loads to trigger collection
-
-### Collection Duration
-
-**Gen 0 collection:** 1-5 ms (typical)
-- Scans young objects (millions per second)
-- Most Gen 0 objects are short-lived event envelopes
-- Survival rate is low (most don't reach Gen 1)
-
-**Gen 1 collection:** 5-20 ms (depends on Gen 1 size)
-- Triggered if many objects survive Gen 0 collection
-- Rare in ZeroAlloc.EventSourcing due to low survival rate
 
 ## Performance Tips
 
@@ -260,15 +132,15 @@ await eventStore.AppendAsync(streamId, allEvents, position);
 Reading models (projections) are much faster than querying aggregates:
 
 ```csharp
-// Slow: Load 100 aggregates = 100 × 30 μs = 3 ms
+// Slow: load 100 aggregates, each replaying its stream from the store
 var aggregates = new List<Order>();
 foreach (var id in orderIds)
 {
     var agg = new Order();
-    // Load from store... ~30 μs each
+    // Load from store... one replay each
 }
 
-// Fast: Query projection = single dict lookup = <1 μs
+// Fast: query the projection, a single dictionary lookup
 var readModel = await projectionStore.LoadAsync("OrdersProjection");
 var orders = readModel.Orders.Where(o => o.CustomerId == customerId);
 ```
@@ -288,33 +160,12 @@ AppContext.SetSwitch("System.GC.RetainVM", false);   // Return memory to OS
 
 Impact: Reduces pause times by 50-70% at cost of slightly higher memory usage.
 
-## Benchmarking Methodology
-
-All benchmarks use:
-
-- **BenchmarkDotNet** v0.14.0 with full configuration
-- **3 warmup iterations** (to allow JIT compilation and L1/L2 cache filling)
-- **5 measurement iterations** (for statistical significance)
-- **Memory diagnostics enabled** (forced full GC before each iteration)
-- **Nanosecond precision** (using `DateTime.Ticks` and `Stopwatch.Elapsed`)
-
-### Variability
-
-Expect 10-20% variance in measurements due to:
-- CPU frequency scaling
-- Cache effects
-- OS scheduling
-- Background processes
-
-Reported values are mean ± standard deviation from 5 iterations.
-
 ## Summary
 
 ZeroAlloc.EventSourcing delivers:
 
-- **Microsecond-scale latencies** for core operations
-- **Minimal allocations** in steady state
-- **Predictable performance** (latency scales linearly with event count)
+- **No allocation of its own** on the write path, and 96 B per read
+- **Predictable performance** (replay cost scales linearly with event count)
 - **Snapshot support** for scaling to large aggregates
 - **Cache-efficient** struct-based state representation
 
@@ -324,4 +175,4 @@ The "zero-allocation" name reflects the struct-based state design, not absolute 
 
 - **[Zero-Allocation Design](./zero-allocation.md)** — Understand the design philosophy
 - **[Optimization Strategies](./optimization.md)** — Practical tips for production workloads
-- **[Benchmark Results](./benchmarks.md)** — Detailed raw data and methodology
+- **[Performance & Benchmarks](../performance.md)** — Measured allocations and ratios

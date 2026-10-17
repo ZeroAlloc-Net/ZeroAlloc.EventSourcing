@@ -108,12 +108,12 @@ Optional packages:
 
 ## Performance
 
-Against a hand-rolled SQLite event store on the same connection, both transactional, both checking the stream version inside the transaction. .NET 8.0.26, i9-12900HK, BenchmarkDotNet v0.15.8.
+Against a hand-rolled SQLite event store on the same connection, both transactional, both checking the stream version inside the transaction. .NET 10, BenchmarkDotNet, same run; time is the ratio against the hand-rolled store, allocations are exact.
 
-| Operation | Hand-rolled | ZA.EventSourcing | Overhead |
+| Operation | Hand-rolled | ZA.EventSourcing | Allocated, hand-rolled → ZA |
 |---|---:|---:|---:|
-| Append 1 event (transactional, OCC check) | 80.7 µs / 3.80 KB | **106.3 µs / 4.79 KB** | +33% time, +26% alloc |
-| Read 100-event stream (ordered) | 66.0 µs / 11.95 KB | **140.9 µs / 25.23 KB** | +114% time, +111% alloc |
+| Append 1 event (transactional, OCC check) | 1.00 | **1.20** | 3,888 B → 4,688 B |
+| Read 100-event stream (ordered) | 1.00 | **2.03** | 12,232 B → 25,632 B |
 
 The overhead is the price of typed events, pluggable serialisation, optimistic concurrency and the aggregate, projection and snapshot layers; at real-database latency the SQL round trip dominates. Full methodology and the per-call allocation budgets: [docs/performance.md](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/blob/main/docs/performance.md).
 
