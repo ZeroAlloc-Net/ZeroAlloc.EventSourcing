@@ -7,16 +7,25 @@ namespace ZeroAlloc.EventSourcing.InMemory;
 
 /// <summary>
 /// In-memory <see cref="IEventStoreAdapter"/> backed by a <see cref="ConcurrentDictionary{TKey,TValue}"/>.
-/// This is a test double — it is not a production adapter. Allocations such as list snapshots in
-/// <see cref="InMemoryStream.ReadFrom"/> are intentional and acceptable in a test context.
+/// This is a test double — it is not a production adapter. Allocations such as the array snapshot
+/// each read returns are intentional and acceptable in a test context.
 /// </summary>
 public sealed class InMemoryEventStoreAdapter : IEventStoreAdapter
 {
     private readonly ConcurrentDictionary<string, InMemoryStream> _streams = new(StringComparer.Ordinal);
-    // Monotonic, adapter-wide counter incremented once per appended event under the per-stream
-    // write lock. Backs reads from <see cref="StreamId.Global"/> — each stored entry carries the
-    // global position assigned at append time. Interlocked.Increment is AOT-safe.
-    private long _globalCounter;
+
+    // Every appended event in global-position order, backing reads from <see cref="StreamId.Global"/>.
+    // Appends take _globalLock around reserving their positions and adding to this list, so the list
+    // has no gaps and _globalLog[i] holds global position i + 1. A reader can then never see a
+    // position before every lower one is visible, and a read finds its start by index instead of
+    // merging and sorting every stream. Appends to different streams are serialized by the lock,
+    // which is acceptable for a test double.
+    private readonly List<InMemoryStream.StoredEntry> _globalLog = new();
+#if NET9_0_OR_GREATER
+    private readonly Lock _globalLock = new();
+#else
+    private readonly object _globalLock = new();
+#endif
 
     /// <inheritdoc/>
     public ValueTask<Result<AppendResult, StoreError>> AppendAsync(
@@ -27,31 +36,70 @@ public sealed class InMemoryEventStoreAdapter : IEventStoreAdapter
     {
         var stream = _streams.GetOrAdd(id.Value, _ => new InMemoryStream());
 
-        // The assignment callback runs once, under the stream's write lock, and reserves a
-        // contiguous range of global positions. Using Interlocked.Add keeps the reservation
-        // atomic across concurrent appends to different streams.
+        // Runs once, under the stream's write lock, while _globalLock is held: the next global
+        // positions are the ones after the last logged event, so the reservation is contiguous.
+        long firstGlobal = 0;
         long AssignGlobalPositions(int count)
         {
-            // Reserve [next, next+count). Returns the first reserved position (1-based).
-            var last = Interlocked.Add(ref _globalCounter, count);
-            return last - count + 1;
+            firstGlobal = _globalLog.Count + 1;
+            return firstGlobal;
         }
 
-        if (!stream.TryAppend(events, expectedVersion.Value, AssignGlobalPositions, out var newVersion))
+        bool appended;
+        long newVersion;
+        RawEvent[]? toBroadcast;
+        lock (_globalLock)
+        {
+            appended = stream.TryAppend(events, expectedVersion.Value, AssignGlobalPositions, out newVersion, out toBroadcast);
+            if (appended)
+            {
+                var span = events.Span;
+                for (var i = 0; i < span.Length; i++)
+                    _globalLog.Add(new InMemoryStream.StoredEntry(firstGlobal + i, span[i]));
+            }
+        }
+
+        if (!appended)
         {
             var error = StoreError.Conflict(id, expectedVersion, new StreamPosition(newVersion));
             return ValueTask.FromResult(Result<AppendResult, StoreError>.Failure(error));
         }
+
+        // Outside every lock, so a subscriber that reads or appends cannot deadlock.
+        if (toBroadcast is not null)
+            stream.Broadcast(toBroadcast);
 
         var result = new AppendResult(id, new StreamPosition(newVersion));
         return ValueTask.FromResult(Result<AppendResult, StoreError>.Success(result));
     }
 
     /// <inheritdoc/>
-    public async IAsyncEnumerable<RawEvent> ReadAsync(
+    public IAsyncEnumerable<RawEvent> ReadAsync(
         StreamId id,
         StreamPosition from,
-        [EnumeratorCancellation] CancellationToken ct = default)
+        CancellationToken ct = default)
+        => Read(id, from, int.MaxValue, ct);
+
+    /// <inheritdoc/>
+    /// <remarks>
+    /// Copies only the events of the batch, so a consumer paging through a long stream pays for each
+    /// page, not for the whole stream on every page.
+    /// </remarks>
+    IAsyncEnumerable<RawEvent> IEventStoreAdapter.ReadBatchAsync(
+        StreamId id,
+        StreamPosition from,
+        int maxCount,
+        CancellationToken ct)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxCount);
+        return Read(id, from, maxCount, ct);
+    }
+
+    private async IAsyncEnumerable<RawEvent> Read(
+        StreamId id,
+        StreamPosition from,
+        int maxCount,
+        [EnumeratorCancellation] CancellationToken ct)
     {
         // Global stream: yield events from all streams ordered by the global position assigned
         // at append time. <paramref name="from"/> is interpreted as an EXCLUSIVE lower bound
@@ -63,20 +111,18 @@ public sealed class InMemoryEventStoreAdapter : IEventStoreAdapter
         // is the canonical identity per Task 1's design.
         if (id.IsGlobal)
         {
-            // Collect a point-in-time snapshot across all streams, then sort by global position.
-            // The per-stream snapshots are each taken under their own lock; the merged view is a
-            // consistent union of the per-stream prefixes observed during this call.
-            var merged = new List<InMemoryStream.StoredEntry>();
-            foreach (var stream in _streams.Values)
+            // A point-in-time copy of the requested page. _globalLog[i] holds global position
+            // i + 1, so the first entry after the exclusive bound from.Value is at index from.Value.
+            InMemoryStream.StoredEntry[] page;
+            lock (_globalLock)
             {
-                merged.AddRange(stream.SnapshotEntries());
+                var start = (int)Math.Clamp(from.Value, 0, _globalLog.Count);
+                page = new InMemoryStream.StoredEntry[Math.Min(maxCount, _globalLog.Count - start)];
+                _globalLog.CopyTo(start, page, 0, page.Length);
             }
 
-            merged.Sort(static (a, b) => a.GlobalPosition.CompareTo(b.GlobalPosition));
-
-            foreach (var entry in merged)
+            foreach (var entry in page)
             {
-                if (entry.GlobalPosition <= from.Value) continue;
                 ct.ThrowIfCancellationRequested();
                 // Yield with Position = global position — the semantic overload from the design.
                 yield return entry.RawEvent with { Position = new StreamPosition(entry.GlobalPosition) };
@@ -88,7 +134,7 @@ public sealed class InMemoryEventStoreAdapter : IEventStoreAdapter
         if (!_streams.TryGetValue(id.Value, out var specificStream))
             yield break;
 
-        foreach (var e in specificStream.ReadFrom(from.Value))
+        foreach (var e in specificStream.ReadRange(from.Value, maxCount))
         {
             ct.ThrowIfCancellationRequested();
             yield return e;
