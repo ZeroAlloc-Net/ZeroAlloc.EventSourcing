@@ -10,6 +10,9 @@ jobs:
   build:
     name: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # Codecov upload via OIDC, no token secret
     steps:
       - uses: actions/checkout@v7
       - name: Setup .NET
@@ -33,13 +36,21 @@ jobs:
       # No LogFileName: a fixed name made every test project overwrite the same results.trx,
       # so the uploaded artifact held only the last project's results.
       - name: Test
-        run: dotnet test ZeroAlloc.EventSourcing.slnx --no-build --configuration Release --logger trx --results-directory ./TestResults
+        run: dotnet test ZeroAlloc.EventSourcing.slnx --no-build --configuration Release --logger trx --results-directory ./TestResults --settings coverage.runsettings
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v7
         with:
           name: test-results
           path: "**/TestResults/*.trx"
+      - name: Upload coverage to Codecov
+        if: '!cancelled()'
+        uses: codecov/codecov-action@v5
+        with:
+          use_oidc: true
+          files: "TestResults/**/coverage.cobertura.xml"
+          disable_search: true   # only the files above, not every *.xml the search finds
+          fail_ci_if_error: false
       # Discovered as release-please.yml does, not listed: the old hardcoded list of ten had
       # already missed Outbox and Sqlite, so the dry-run never packed two shipped packages.
       - name: Verify pack (dry-run, every packable src project)
