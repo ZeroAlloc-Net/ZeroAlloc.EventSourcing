@@ -38,13 +38,19 @@ internal sealed class InMemoryStream
     /// <c>first + 1</c>, <c>first + 2</c>, .... Invoked exactly once per successful append; never invoked on conflict.
     /// </param>
     /// <param name="newVersion">Receives the new stream version on success, or the current version on conflict.</param>
+    /// <param name="toBroadcast">
+    /// Receives the appended events when subscribers are registered, otherwise <see langword="null"/>.
+    /// The caller passes them to <see cref="Broadcast"/> once it holds no lock, so a subscriber
+    /// never runs inside one.
+    /// </param>
     public bool TryAppend(
         ReadOnlyMemory<RawEvent> incoming,
         long expectedVersion,
         Func<int, long> assignGlobalPositions,
-        out long newVersion)
+        out long newVersion,
+        out RawEvent[]? toBroadcast)
     {
-        RawEvent[]? toFire = null;
+        toBroadcast = null;
         lock (_events)
         {
             if (_version != expectedVersion)
@@ -66,18 +72,18 @@ internal sealed class InMemoryStream
             // Capture events to fire outside the lock
             if (_broadcast.Count > 0)
             {
-                toFire = incoming.ToArray();
+                toBroadcast = incoming.ToArray();
             }
         }
 
-        // Fire events outside the lock — fire-and-forget
-        if (toFire is not null)
-        {
-            foreach (var e in toFire)
-                _ = _broadcast.InvokeAsync(e);
-        }
-
         return true;
+    }
+
+    /// <summary>Delivers appended events to the subscribers, fire-and-forget.</summary>
+    public void Broadcast(RawEvent[] events)
+    {
+        foreach (var e in events)
+            _ = _broadcast.InvokeAsync(e);
     }
 
     /// <summary>
@@ -91,23 +97,22 @@ internal sealed class InMemoryStream
     public void Unsubscribe(AsyncEvent<RawEvent> callback)
         => _broadcast.Unregister(callback);
 
-    /// <summary>Returns a snapshot of events starting at <paramref name="fromPosition"/>.</summary>
-    public IEnumerable<RawEvent> ReadFrom(long fromPosition)
+    /// <summary>
+    /// Returns a snapshot of at most <paramref name="maxCount"/> events, starting at
+    /// <paramref name="fromPosition"/>. Copies only the events it returns, so paging through the
+    /// stream costs each page, not the rest of the stream.
+    /// </summary>
+    public RawEvent[] ReadRange(long fromPosition, int maxCount)
     {
         lock (_events)
         {
             // Cast is safe: InMemoryStream is a test double; streams with >int.MaxValue events are not a supported scenario.
-            // Allocates a list snapshot intentionally — InMemoryStream is a test double, not a production adapter.
-            return _events.Skip((int)fromPosition).Select(e => e.RawEvent).ToList();
-        }
-    }
-
-    /// <summary>Returns a snapshot of all stored entries (per-stream + global position pairs).</summary>
-    public IEnumerable<StoredEntry> SnapshotEntries()
-    {
-        lock (_events)
-        {
-            return _events.ToList();
+            var start = (int)Math.Clamp(fromPosition, 0, _events.Count);
+            var count = Math.Min(maxCount, _events.Count - start);
+            var result = new RawEvent[count];
+            for (var i = 0; i < count; i++)
+                result[i] = _events[start + i].RawEvent;
+            return result;
         }
     }
 }
