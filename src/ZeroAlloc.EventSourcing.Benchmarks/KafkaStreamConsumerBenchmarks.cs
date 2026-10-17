@@ -1,21 +1,30 @@
-#pragma warning disable CS8601 // Possible null reference assignment.
 #pragma warning disable CS1591 // Missing XML comment
+using System.Text;
 using BenchmarkDotNet.Attributes;
 using Confluent.Kafka;
-using NSubstitute;
 using ZeroAlloc.EventSourcing.Kafka;
 
 namespace ZeroAlloc.EventSourcing.Benchmarks;
 
+/// <summary>
+/// Consumes <see cref="MessageCount"/> messages through <see cref="KafkaManualPartitionConsumer"/>.
+/// Every call replays the same pre-built messages from a hand-written fake consumer, so each call
+/// consumes all of them and the measurement holds only what the library does. The fakes allocate
+/// nothing per call, unlike a mocking library, which records every call it receives.
+/// </summary>
 [MemoryDiagnoser]
 [SimpleJob(warmupCount: 3, launchCount: 1, iterationCount: 5)]
 public class KafkaStreamConsumerBenchmarks
 {
-    private IConsumer<string, byte[]> _fakeConsumer = null!;
-    private KafkaManualPartitionOptions _options = null!;
-    private ICheckpointStore _checkpointStore = null!;
-    private IEventSerializer _serializer = null!;
-    private IEventTypeRegistry _registry = null!;
+    private FakeKafkaConsumer _fakeConsumer = null!;
+    private KafkaManualPartitionOptions _defaultBatch = null!;
+    private KafkaManualPartitionOptions _smallBatch = null!;
+    private KafkaManualPartitionOptions _afterEventCommit = null!;
+    private readonly NullCheckpointStore _checkpointStore = new();
+    private readonly KafkaBenchSerializer _serializer = new();
+    private readonly KafkaBenchTypeRegistry _registry = new();
+    private Func<EventEnvelope, CancellationToken, Task> _handler = null!;
+    private int _consumed;
 
     [Params(100, 1000, 10000)]
     public int MessageCount { get; set; }
@@ -23,174 +32,189 @@ public class KafkaStreamConsumerBenchmarks
     [GlobalSetup]
     public void Setup()
     {
-        _fakeConsumer = CreateFakeConsumer(MessageCount);
-        _options = new KafkaManualPartitionOptions
-        {
-            BootstrapServers = "localhost:9092",
-            Topic = "bench-topic",
-            ConsumerId = "bench-consumer",
-            Partitions = [0],
-            ConsumerOptions = new()
-            {
-                BatchSize = 100,
-                MaxRetries = 1,
-                ErrorStrategy = ErrorHandlingStrategy.FailFast,
-                CommitStrategy = CommitStrategy.AfterBatch
-            }
-        };
-
-        _checkpointStore = Substitute.For<ICheckpointStore>();
-        _checkpointStore.ReadAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(Task.FromResult<StreamPosition?>(null));
-
-        _serializer = Substitute.For<IEventSerializer>();
-        _serializer.Deserialize(Arg.Any<ReadOnlyMemory<byte>>(), Arg.Any<Type>())
-            .Returns(new TestEvent());
-
-        _registry = Substitute.For<IEventTypeRegistry>();
-        _registry.TryGetType("TestEvent", out Arg.Any<Type>())
-            .Returns(x => { x[1] = typeof(TestEvent); return true; });
+        _fakeConsumer = new FakeKafkaConsumer(KafkaBenchMessages.Create(MessageCount));
+        _defaultBatch = Options(100, CommitStrategy.AfterBatch);
+        _smallBatch = Options(10, CommitStrategy.AfterBatch);
+        _afterEventCommit = Options(100, CommitStrategy.AfterEvent);
+        _handler = Handle;
     }
 
     [Benchmark]
-    public async Task ConsumeAllMessages_DefaultBatchSize()
-    {
-        var consumer = new KafkaManualPartitionConsumer(_options, _checkpointStore, _serializer, _registry, _fakeConsumer);
-        var count = 0;
-
-        await consumer.ConsumeAsync(async (envelope, ct) =>
-        {
-            Interlocked.Increment(ref count);
-            await Task.CompletedTask;
-        });
-
-        consumer.Dispose();
-    }
+    public Task ConsumeAllMessages_DefaultBatchSize() => ConsumeAll(_defaultBatch);
 
     [Benchmark]
-    public async Task ConsumeAllMessages_SmallBatchSize()
-    {
-        var options = new KafkaManualPartitionOptions
-        {
-            BootstrapServers = "localhost:9092",
-            Topic = "bench-topic",
-            ConsumerId = "bench-consumer",
-            Partitions = [0],
-            ConsumerOptions = new()
-            {
-                BatchSize = 10,
-                MaxRetries = 1,
-                ErrorStrategy = ErrorHandlingStrategy.FailFast,
-                CommitStrategy = CommitStrategy.AfterBatch
-            }
-        };
-
-        var consumer = new KafkaManualPartitionConsumer(options, _checkpointStore, _serializer, _registry, _fakeConsumer);
-        var count = 0;
-
-        await consumer.ConsumeAsync(async (envelope, ct) =>
-        {
-            Interlocked.Increment(ref count);
-            await Task.CompletedTask;
-        });
-
-        consumer.Dispose();
-    }
+    public Task ConsumeAllMessages_SmallBatchSize() => ConsumeAll(_smallBatch);
 
     [Benchmark]
-    public async Task ConsumeAllMessages_AfterEventCommit()
+    public Task ConsumeAllMessages_AfterEventCommit() => ConsumeAll(_afterEventCommit);
+
+    private async Task ConsumeAll(KafkaManualPartitionOptions options)
     {
-        var options = new KafkaManualPartitionOptions
-        {
-            BootstrapServers = "localhost:9092",
-            Topic = "bench-topic",
-            ConsumerId = "bench-consumer",
-            Partitions = [0],
-            ConsumerOptions = new()
-            {
-                BatchSize = 100,
-                MaxRetries = 1,
-                ErrorStrategy = ErrorHandlingStrategy.FailFast,
-                CommitStrategy = CommitStrategy.AfterEvent
-            }
-        };
+        _fakeConsumer.Rewind();
+        _consumed = 0;
 
-        var consumer = new KafkaManualPartitionConsumer(options, _checkpointStore, _serializer, _registry, _fakeConsumer);
-        var count = 0;
+        using var consumer = new KafkaManualPartitionConsumer(options, _checkpointStore, _serializer, _registry, _fakeConsumer);
+        await consumer.ConsumeAsync(_handler).ConfigureAwait(false);
 
-        await consumer.ConsumeAsync(async (envelope, ct) =>
-        {
-            Interlocked.Increment(ref count);
-            await Task.CompletedTask;
-        });
-
-        consumer.Dispose();
+        // Guards the measurement itself: a fake that ran dry once made every call consume nothing.
+        if (_consumed != MessageCount)
+            throw new InvalidOperationException($"Consumed {_consumed} of {MessageCount} messages.");
     }
+
+    private Task Handle(EventEnvelope envelope, CancellationToken ct)
+    {
+        _consumed++;
+        return Task.CompletedTask;
+    }
+
+    private static KafkaManualPartitionOptions Options(int batchSize, CommitStrategy commitStrategy) => new()
+    {
+        BootstrapServers = "localhost:9092",
+        Topic = "bench-topic",
+        ConsumerId = "bench-consumer",
+        Partitions = [0],
+        ConsumerOptions = new()
+        {
+            BatchSize = batchSize,
+            MaxRetries = 1,
+            ErrorStrategy = ErrorHandlingStrategy.FailFast,
+            CommitStrategy = commitStrategy,
+        },
+    };
+}
+
+/// <summary>
+/// Maps one Kafka message to an <see cref="EventEnvelope"/>. The message is built once in setup.
+/// </summary>
+[MemoryDiagnoser]
+public class KafkaMessageMapperBenchmarks
+{
+    private ConsumeResult<string, byte[]> _message = null!;
+    private readonly KafkaBenchSerializer _serializer = new();
+    private readonly KafkaBenchTypeRegistry _registry = new();
+
+    [GlobalSetup]
+    public void Setup() => _message = KafkaBenchMessages.Create(1)[0];
 
     [Benchmark]
-    public void MapKafkaMessage_ToEnvelope()
+    public EventEnvelope MapKafkaMessage_ToEnvelope()
+        => KafkaMessageMapper.ToEnvelope(_message, _serializer, _registry);
+}
+
+internal static class KafkaBenchMessages
+{
+    public static ConsumeResult<string, byte[]>[] Create(int count)
     {
-        var headers = new Headers();
-        headers.Add("event-type", System.Text.Encoding.UTF8.GetBytes("TestEvent"));
-        headers.Add("event-id", System.Text.Encoding.UTF8.GetBytes(Guid.NewGuid().ToString()));
-
-        var message = new ConsumeResult<string, byte[]>
+        var messages = new ConsumeResult<string, byte[]>[count];
+        for (int i = 0; i < count; i++)
         {
-            Message = new()
+            var headers = new Headers
             {
-                Key = "stream-1",
-                Value = [1, 2, 3, 4],
-                Headers = headers
-            },
-            Topic = "bench-topic",
-            Partition = 0,
-            Offset = 0,
-            IsPartitionEOF = false,
-            TopicPartitionOffset = new TopicPartitionOffset("bench-topic", 0, 0)
-        };
+                { "event-type", Encoding.UTF8.GetBytes(nameof(KafkaBenchEvent)) },
+                { "event-id", Encoding.UTF8.GetBytes(Guid.NewGuid().ToString()) },
+            };
 
-        for (int i = 0; i < 1000; i++)
-        {
-            KafkaMessageMapper.ToEnvelope(message, _serializer, _registry);
-        }
-    }
-
-    private IConsumer<string, byte[]> CreateFakeConsumer(int messageCount)
-    {
-        var consumer = Substitute.For<IConsumer<string, byte[]>>();
-        var messages = new Queue<ConsumeResult<string, byte[]>?>();
-
-        for (int i = 0; i < messageCount; i++)
-        {
-            var headers = new Headers();
-            headers.Add("event-type", System.Text.Encoding.UTF8.GetBytes("TestEvent"));
-            headers.Add("event-id", System.Text.Encoding.UTF8.GetBytes(Guid.NewGuid().ToString()));
-
-            var message = new ConsumeResult<string, byte[]>
+            messages[i] = new ConsumeResult<string, byte[]>
             {
-                Message = new()
-                {
-                    Key = $"stream-{i}",
-                    Value = [1, 2, 3],
-                    Headers = headers
-                },
+                Message = new Message<string, byte[]> { Key = $"stream-{i}", Value = [1, 2, 3], Headers = headers },
                 Topic = "bench-topic",
                 Partition = 0,
                 Offset = i,
                 IsPartitionEOF = false,
-                TopicPartitionOffset = new TopicPartitionOffset("bench-topic", 0, i)
+                TopicPartitionOffset = new TopicPartitionOffset("bench-topic", 0, i),
             };
-
-            messages.Enqueue(message);
         }
 
-        messages.Enqueue(null);
+        return messages;
+    }
+}
 
-        consumer.Consume(Arg.Any<TimeSpan>())
-            .Returns(_ => messages.Count > 0 ? messages.Dequeue() : null);
+internal sealed class KafkaBenchEvent;
 
-        return consumer;
+internal sealed class KafkaBenchSerializer : IEventSerializer
+{
+    private static readonly KafkaBenchEvent Cached = new();
+
+    public ReadOnlyMemory<byte> Serialize<TEvent>(TEvent @event) where TEvent : notnull
+        => throw new NotSupportedException();
+
+    public object Deserialize(ReadOnlyMemory<byte> payload, Type eventType) => Cached;
+}
+
+internal sealed class KafkaBenchTypeRegistry : IEventTypeRegistry
+{
+    public bool TryGetType(string eventType, out Type? type)
+    {
+        type = string.Equals(eventType, nameof(KafkaBenchEvent), StringComparison.Ordinal) ? typeof(KafkaBenchEvent) : null;
+        return type is not null;
     }
 
-    private class TestEvent { }
+    public string GetTypeName(Type type) => type.Name;
+}
+
+/// <summary>A checkpoint store that never has a checkpoint and discards writes.</summary>
+internal sealed class NullCheckpointStore : ICheckpointStore
+{
+    private static readonly Task<StreamPosition?> NoCheckpoint = Task.FromResult<StreamPosition?>(null);
+
+    public Task<StreamPosition?> ReadAsync(string consumerId, CancellationToken ct = default) => NoCheckpoint;
+
+    public Task WriteAsync(string consumerId, StreamPosition position, CancellationToken ct = default) => Task.CompletedTask;
+
+    public Task DeleteAsync(string consumerId, CancellationToken ct = default) => Task.CompletedTask;
+}
+
+/// <summary>
+/// Replays a fixed array of messages, then returns <see langword="null"/>, which ends a consume
+/// run. <see cref="Rewind"/> starts the replay again. Only the members the library calls are
+/// implemented; the rest throw.
+/// </summary>
+internal sealed class FakeKafkaConsumer(ConsumeResult<string, byte[]>[] messages) : IConsumer<string, byte[]>
+{
+    private int _next;
+
+    public void Rewind() => _next = 0;
+
+    public ConsumeResult<string, byte[]> Consume(TimeSpan timeout)
+        => _next < messages.Length ? messages[_next++] : null!;
+
+    public void Assign(TopicPartition partition) { }
+    public void Assign(TopicPartitionOffset partition) { }
+    public void Assign(IEnumerable<TopicPartitionOffset> partitions) { }
+    public void Assign(IEnumerable<TopicPartition> partitions) { }
+    public void Subscribe(IEnumerable<string> topics) { }
+    public void Subscribe(string topic) { }
+    public void Seek(TopicPartitionOffset tpo) { }
+    public void StoreOffset(ConsumeResult<string, byte[]> result) { }
+    public void StoreOffset(TopicPartitionOffset offset) { }
+    public List<TopicPartitionOffset> Commit() => [];
+    public void Commit(IEnumerable<TopicPartitionOffset> offsets) { }
+    public void Commit(ConsumeResult<string, byte[]> result) { }
+    public void Close() { }
+    public void Dispose() { }
+
+    public ConsumeResult<string, byte[]> Consume(int millisecondsTimeout) => throw new NotSupportedException();
+    public ConsumeResult<string, byte[]> Consume(CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    public void Unsubscribe() => throw new NotSupportedException();
+    public void IncrementalAssign(IEnumerable<TopicPartitionOffset> partitions) => throw new NotSupportedException();
+    public void IncrementalAssign(IEnumerable<TopicPartition> partitions) => throw new NotSupportedException();
+    public void IncrementalUnassign(IEnumerable<TopicPartition> partitions) => throw new NotSupportedException();
+    public void Unassign() => throw new NotSupportedException();
+    public void Pause(IEnumerable<TopicPartition> partitions) => throw new NotSupportedException();
+    public void Resume(IEnumerable<TopicPartition> partitions) => throw new NotSupportedException();
+    public List<TopicPartitionOffset> Committed(TimeSpan timeout) => throw new NotSupportedException();
+    public List<TopicPartitionOffset> Committed(IEnumerable<TopicPartition> partitions, TimeSpan timeout) => throw new NotSupportedException();
+    public Offset Position(TopicPartition partition) => throw new NotSupportedException();
+    public List<TopicPartitionOffset> OffsetsForTimes(IEnumerable<TopicPartitionTimestamp> timestampsToSearch, TimeSpan timeout) => throw new NotSupportedException();
+    public WatermarkOffsets GetWatermarkOffsets(TopicPartition topicPartition) => throw new NotSupportedException();
+    public WatermarkOffsets QueryWatermarkOffsets(TopicPartition topicPartition, TimeSpan timeout) => throw new NotSupportedException();
+    public int AddBrokers(string brokers) => throw new NotSupportedException();
+    public void SetSaslCredentials(string username, string password) => throw new NotSupportedException();
+
+    public string MemberId => throw new NotSupportedException();
+    public List<TopicPartition> Assignment => throw new NotSupportedException();
+    public List<string> Subscription => throw new NotSupportedException();
+    public IConsumerGroupMetadata ConsumerGroupMetadata => throw new NotSupportedException();
+    public Handle Handle => throw new NotSupportedException();
+    public string Name => "fake";
 }

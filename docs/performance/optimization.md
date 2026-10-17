@@ -16,8 +16,8 @@ For aggregates with growing event streams, snapshots prevent replay of the entir
 **Problem:**
 
 ```csharp
-// Order has 5000 events. Loading takes:
-// 30 μs (base) + 5000 × 1.9 μs (replay) = 9,530 μs = 9.5 ms
+// Order has 5000 events. Loading replays and deserializes all 5000,
+// about 1.5 MB of allocation with the System.Text.Json serializer.
 var repository = new AggregateRepository<Order, OrderId>(
     eventStore,
     () => new Order(),
@@ -48,11 +48,11 @@ using var order = (await snapshotRepository.LoadAsync(orderId)).Value;
 ```
 
 **Impact:**
-- Without snapshot: 9.5 ms
-- With snapshot: 796 ns (read) + 30 μs (load remaining 50 events) = ~31 μs
-- **Improvement: 300x faster**
+- Without snapshot: the load replays all 5,000 events
+- With a snapshot every 100 events: one snapshot read plus at most 100 events replayed
+- **Improvement: up to 50× fewer events replayed**, and load cost scales with the events replayed
 
-**Trade-off:** Adds ~2.6 μs per 100 events to creation/update operations.
+**Trade-off:** Every save that crosses the snapshot interval also writes a snapshot.
 
 ### Strategy 1B: Lazy Snapshot Loading
 
@@ -171,7 +171,7 @@ public class CommandBatchProcessor
 For reading multiple aggregates, use parallel streams:
 
 ```csharp
-// SEQUENTIAL: Load 100 orders = 100 × 30 μs = 3 ms
+// SEQUENTIAL: Load 100 orders one after another; wall time is the sum of the loads
 var orders = new List<Order>();
 foreach (var orderId in orderIds)
 {
@@ -179,7 +179,7 @@ foreach (var orderId in orderIds)
     orders.Add(order);
 }
 
-// PARALLEL: Load 100 orders in parallel = ~30 μs (load time) (4 tasks at 30 μs each)
+// PARALLEL: Load 100 orders concurrently; against a database, wall time is bounded by the connection pool
 var orders = await Task.WhenAll(
     orderIds.Select(id => LoadOrderAsync(id))
 );
@@ -630,7 +630,7 @@ var projection = new InMemoryOrderProjection();
 // Rebuild projection once on startup
 await projection.RebuildAsync(eventStore);
 
-// Queries are <1 μs
+// Queries read memory, with no round trip to the event store
 var order = projection.GetOrder(orderId);
 ```
 

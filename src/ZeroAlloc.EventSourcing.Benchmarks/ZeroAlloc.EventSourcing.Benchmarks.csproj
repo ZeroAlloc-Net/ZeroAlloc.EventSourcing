@@ -2,7 +2,9 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net8.0</TargetFramework>
+    <!-- The library's LTS frameworks: net9.0 and later compile different metadata and telemetry
+         code, so each framework is measured on its own. -->
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>

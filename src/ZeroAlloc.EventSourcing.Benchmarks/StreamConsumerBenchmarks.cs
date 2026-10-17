@@ -211,29 +211,6 @@ public class StreamConsumerBenchmarks
     }
 
     /// <summary>
-    /// Benchmark: Consume with expensive handler (simulates real-world processing).
-    /// Measures total throughput with realistic workload.
-    /// </summary>
-    [Benchmark]
-    public async Task ConsumeWithExpensiveHandler()
-    {
-        var consumer = new StreamConsumer(
-            _eventStore,
-            _checkpointStore,
-            $"consumer-expensive-{Guid.NewGuid()}",
-            new StreamConsumerOptions { BatchSize = 100 }
-        );
-
-        int processedCount = 0;
-        await consumer.ConsumeAsync(async (envelope, ct) =>
-        {
-            // Simulate expensive processing (e.g., database update)
-            await Task.Delay(1, ct);
-            processedCount++;
-        }, CancellationToken.None);
-    }
-
-    /// <summary>
     /// Benchmark: GetPosition after consumption.
     /// Measures cost of reading checkpoint.
     /// </summary>

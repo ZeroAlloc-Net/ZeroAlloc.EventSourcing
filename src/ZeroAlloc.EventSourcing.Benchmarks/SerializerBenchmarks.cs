@@ -8,8 +8,9 @@ namespace ZeroAlloc.EventSourcing.Benchmarks;
 /// Benchmarks comparing <see cref="BenchmarkSerializer"/> (System.Text.Json reflection) against
 /// <see cref="ZeroAllocEventSerializer"/> backed by a hand-wired <see cref="ISerializerDispatcher"/>.
 ///
-/// In production the dispatcher is source-generated (compile-time switch, no reflection),
-/// so the real gap is even larger than what this benchmark shows.
+/// In production the dispatcher is source-generated (compile-time switch, no reflection), so it
+/// also works under NativeAOT; this benchmark measures its cost once System.Text.Json has cached
+/// its reflection metadata.
 /// </summary>
 // Sub-microsecond range: let BenchmarkDotNet auto-tune iteration count rather than
 // using the low invocationCount from the I/O-bound benchmarks.

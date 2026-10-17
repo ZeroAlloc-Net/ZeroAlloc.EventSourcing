@@ -33,13 +33,22 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: true
 
 jobs:
+  # The benchmark project targets the library's LTS frameworks, which compile different
+  # code paths, so each framework is run on its own.
   smoke:
     if: github.event_name != 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        framework: [net8.0, net10.0]
     uses: ZeroAlloc-Net/.github/.github/workflows/benchmark-smoke.yml@main
     with:
       project: src/ZeroAlloc.EventSourcing.Benchmarks
-      framework: net10.0
+      framework: ${{ matrix.framework }}
       timeout-minutes: 20
+      dotnet-version: |
+        8.0.x
+        10.0.x
 
   full:
     name: full
