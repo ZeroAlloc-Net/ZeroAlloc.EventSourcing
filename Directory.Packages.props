@@ -11,8 +11,8 @@
     <PackageVersion Include="ZeroAlloc.Collections"              Version="1.2.5" />
     <PackageVersion Include="ZeroAlloc.AsyncEvents"              Version="1.1.11" />
     <PackageVersion Include="ZeroAlloc.ValueObjects"             Version="2.3.0" />
-    <PackageVersion Include="ZeroAlloc.Serialisation"            Version="2.9.0" />
-    <PackageVersion Include="ZeroAlloc.Serialisation.SystemTextJson" Version="2.9.0" />
+    <PackageVersion Include="ZeroAlloc.Serialisation"            Version="2.10.0" />
+    <PackageVersion Include="ZeroAlloc.Serialisation.SystemTextJson" Version="2.10.0" />
     <PackageVersion Include="ZeroAlloc.Pipeline"                 Version="1.4.4" />
     <PackageVersion Include="ZeroAlloc.Analyzers"                Version="1.12.0" />
     <PackageVersion Include="Meziantou.Analyzer"                 Version="3.0.317" />
