@@ -43,6 +43,12 @@ jobs:
         with:
           name: test-results
           path: "**/TestResults/*.trx"
+      # Shared ci-baseline gate: fails below the line-coverage floor, or when codecov.yml would
+      # let a coverage drop pass quietly.
+      - name: Coverage gate
+        uses: MarcelRoozekrans/ci-baseline/actions/coverage-gate@v1
+        with:
+          reports: TestResults/**/coverage.cobertura.xml
       - name: Upload coverage to Codecov
         if: '!cancelled()'
         uses: codecov/codecov-action@v7
