@@ -51,6 +51,13 @@
            Text="$(MSBuildProjectName): the built assembly %(_ZeroAllocPackedIdentity.Name) is version %(_ZeroAllocPackedIdentity.Version), but the package is $(PackageVersion), so the build did not get the release version. Pass -p:Version=$(PackageVersion) to every command that builds: dotnet build before a pack with --no-build, or dotnet pack itself. -p:PackageVersion alone labels the package without stamping the assembly." />
   </Target>
 
+  <!-- NuGetAudit as the ci-baseline nuget-audit job runs it, so a local restore shows the same advisories. -->
+  <PropertyGroup>
+    <NuGetAudit>true</NuGetAudit>
+    <NuGetAuditMode>all</NuGetAuditMode>
+    <NuGetAuditLevel>moderate</NuGetAuditLevel>
+  </PropertyGroup>
+
   <PropertyGroup>
     <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
     <Nullable>enable</Nullable>
