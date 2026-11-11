@@ -92,7 +92,7 @@ The [feature tour](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/blob
 - Snapshots with configurable policies, so loads replay only the newer events.
 - Stream consumers with checkpoints, batching, retry with backoff and FailFast, Skip or DeadLetter error handling.
 - Event upcasting, dead-letter stores and health checks.
-- Every package targets `net8.0`, `net9.0` and `net10.0`.
+- Every package targets `net8.0`, `net9.0`, `net10.0` and `net11.0`.
 
 Optional packages:
 

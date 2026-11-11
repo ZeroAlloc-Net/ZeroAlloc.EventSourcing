@@ -2,7 +2,7 @@
   <PropertyGroup>
     <!-- Override Directory.Build.props multi-TFM list. -->
     <TargetFrameworks></TargetFrameworks>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net11.0</TargetFramework>
     <OutputType>Exe</OutputType>
     <RootNamespace>ZeroAlloc.EventSourcing.Mediator.AotSmoke</RootNamespace>
     <IsPackable>false</IsPackable>
@@ -22,10 +22,10 @@
       stops PublishAot=true flowing into the netstandard2.0 generator project (NETSDK1207).
     -->
     <ProjectReference Include="..\..\src\ZeroAlloc.EventSourcing.Mediator\ZeroAlloc.EventSourcing.Mediator.csproj"
-                      SetTargetFramework="TargetFramework=net10.0"
+                      SetTargetFramework="TargetFramework=net11.0"
                       UndefineProperties="PublishAot" />
     <ProjectReference Include="..\..\src\ZeroAlloc.EventSourcing.InMemory\ZeroAlloc.EventSourcing.InMemory.csproj"
-                      SetTargetFramework="TargetFramework=net10.0" />
+                      SetTargetFramework="TargetFramework=net11.0" />
     <ProjectReference Include="..\..\src\ZeroAlloc.EventSourcing.Mediator.Generator\ZeroAlloc.EventSourcing.Mediator.Generator.csproj"
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="false"
