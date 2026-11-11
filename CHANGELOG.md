@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.7.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/compare/ZeroAlloc.EventSourcing-v1.6.5...ZeroAlloc.EventSourcing-v1.7.0) (2026-11-11)
+
+
+### Features
+
+* add net11.0 target ([#598](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/issues/598)) ([cffda8d](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/commit/cffda8d1e2f80cd5f9d7bfbce51283acde91ec22))
+
+
+### Documentation
+
+* add context7.json to claim the library on Context7 ([#600](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/issues/600)) ([5e99cf4](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/commit/5e99cf4dced47b4b7c56a57287b816d8cb652b52))
+
 ## [1.6.5](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/compare/ZeroAlloc.EventSourcing-v1.6.4...ZeroAlloc.EventSourcing-v1.6.5) (2026-10-18)
 
 
