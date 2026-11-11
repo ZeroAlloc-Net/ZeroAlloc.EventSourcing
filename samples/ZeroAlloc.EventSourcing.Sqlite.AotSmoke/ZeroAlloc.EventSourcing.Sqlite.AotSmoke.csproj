@@ -2,7 +2,7 @@
   <PropertyGroup>
     <!-- Override the multi-TFM list from Directory.Build.props -->
     <TargetFrameworks></TargetFrameworks>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net11.0</TargetFramework>
     <OutputType>Exe</OutputType>
     <RootNamespace>ZeroAlloc.EventSourcing.Sqlite.AotSmoke</RootNamespace>
     <IsPackable>false</IsPackable>
@@ -15,7 +15,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\ZeroAlloc.EventSourcing.Sqlite\ZeroAlloc.EventSourcing.Sqlite.csproj"
-                      SetTargetFramework="TargetFramework=net10.0" />
+                      SetTargetFramework="TargetFramework=net11.0" />
   </ItemGroup>
 
   <ItemGroup>
