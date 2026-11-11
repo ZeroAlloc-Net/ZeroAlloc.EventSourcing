@@ -8,3 +8,9 @@ on:
 jobs:
   api-compat:
     uses: ZeroAlloc-Net/.github/.github/workflows/api-compat.yml@main
+    with:
+      # global.json pins SDK 11, which the shared workflow does not install on its own
+      # (it installs only dotnet-version). SDK 10 stays for the ApiCompat tool.
+      dotnet-version: |
+        10.0.x
+        11.0.x
