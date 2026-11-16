@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.1](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/compare/ZeroAlloc.EventSourcing-v1.7.0...ZeroAlloc.EventSourcing-v1.7.1) (2026-11-16)
+
+
+### Bug Fixes
+
+* embed PDBs so Go to Definition shows the package source ([#625](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/issues/625)) ([fa9b0ba](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/commit/fa9b0bac0d1f6505761cd316db39147ef3fc46b1))
+
 ## [1.7.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/compare/ZeroAlloc.EventSourcing-v1.6.5...ZeroAlloc.EventSourcing-v1.7.0) (2026-11-11)
 
 
