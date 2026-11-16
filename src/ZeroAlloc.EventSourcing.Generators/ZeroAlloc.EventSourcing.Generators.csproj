@@ -22,17 +22,13 @@
   <!--
     Pack the generator DLL under analyzers/dotnet/cs. Without this, dotnet pack falls back
     to the default lib/<tfm>/ layout and consumers do not pick up the generator at all.
+    The PDB is embedded in the DLL, see Directory.Build.props, so no separate .pdb is packed.
   -->
   <ItemGroup>
     <None Include="$(OutputPath)\$(AssemblyName).dll"
           Pack="true"
           PackagePath="analyzers/dotnet/cs"
           Visible="false" />
-    <None Include="$(OutputPath)\$(AssemblyName).pdb"
-          Pack="true"
-          PackagePath="analyzers/dotnet/cs"
-          Visible="false"
-          Condition="Exists('$(OutputPath)\$(AssemblyName).pdb')" />
   </ItemGroup>
 
   <ItemGroup>
