@@ -103,9 +103,13 @@ public readonly struct EventStreamReader
     /// object per call; <c>await foreach</c> over the reader itself costs none.
     /// </summary>
     /// <returns>The events of the read.</returns>
+    /// <remarks>
+    /// A token set with <see cref="WithCancellation"/> carries over: it cancels every enumeration of the
+    /// result that does not pass a token of its own.
+    /// </remarks>
     public IAsyncEnumerable<EventEnvelope> AsAsyncEnumerable()
     {
-        if (_store is null)
+        if (_store is null && !_enumeratorToken.CanBeCanceled)
             return _source ?? EmptyAsync();
 
         return Iterate(this);
@@ -114,8 +118,17 @@ public readonly struct EventStreamReader
     private static async IAsyncEnumerable<EventEnvelope> Iterate(
         EventStreamReader reader, [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
-        await foreach (var envelope in reader.WithCancellation(cancellationToken).ConfigureAwait(false))
-            yield return envelope;
+        // GetAsyncEnumerator falls back to the reader's own token when this one cannot be cancelled.
+        var enumerator = reader.GetAsyncEnumerator(cancellationToken);
+        try
+        {
+            while (await enumerator.MoveNextAsync().ConfigureAwait(false))
+                yield return enumerator.Current;
+        }
+        finally
+        {
+            await enumerator.DisposeAsync().ConfigureAwait(false);
+        }
     }
 
 #pragma warning disable CS1998 // an empty iterator has nothing to await

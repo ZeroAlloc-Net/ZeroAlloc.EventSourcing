@@ -256,13 +256,60 @@ public class EventStoreReaderTests
             {
                 positions.Add(e.Position.Value);
                 await source.CancelAsync();
-                adapter.LastToken.ThrowIfCancellationRequested();
             }
         };
 
         await read.Should().ThrowAsync<OperationCanceledException>();
         positions.Should().Equal(1);
         adapter.Disposals.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task AsAsyncEnumerable_keeps_the_token_from_WithCancellation()
+    {
+        using var source = new CancellationTokenSource();
+        var adapter = new ScriptedAdapter(yields: true, Raw(1), Raw(2), Raw(3));
+        var events = Store(adapter).ReadAsync(Stream).WithCancellation(source.Token).AsAsyncEnumerable();
+        var positions = new List<long>();
+
+        var read = async () =>
+        {
+            await foreach (var e in events)
+            {
+                positions.Add(e.Position.Value);
+                await source.CancelAsync();
+            }
+        };
+
+        await read.Should().ThrowAsync<OperationCanceledException>();
+        positions.Should().Equal(1);
+    }
+
+    [Fact]
+    public async Task AsAsyncEnumerable_of_a_wrapped_source_keeps_the_token_from_WithCancellation()
+    {
+        using var source = new CancellationTokenSource();
+        await source.CancelAsync();
+        var events = new EventStreamReader(Endless()).WithCancellation(source.Token).AsAsyncEnumerable();
+
+        var read = async () =>
+        {
+            await foreach (var _ in events)
+            {
+            }
+        };
+
+        await read.Should().ThrowAsync<OperationCanceledException>();
+
+        static async IAsyncEnumerable<EventEnvelope> Endless([EnumeratorCancellation] CancellationToken ct = default)
+        {
+            while (true)
+            {
+                await Task.Yield();
+                ct.ThrowIfCancellationRequested();
+                yield return default;
+            }
+        }
     }
 
     [Fact]
@@ -351,17 +398,18 @@ public class EventStoreReaderTests
         {
             Reads++;
             LastToken = ct;
-            return Serve(from, int.MaxValue);
+            return Serve(from, int.MaxValue, ct);
         }
 
         public IAsyncEnumerable<RawEvent> ReadBatchAsync(StreamId id, StreamPosition from, int maxCount, CancellationToken ct = default)
         {
             BatchReads.Add((from.Value, maxCount));
             LastToken = ct;
-            return Serve(from, maxCount);
+            return Serve(from, maxCount, ct);
         }
 
-        private async IAsyncEnumerable<RawEvent> Serve(StreamPosition from, int maxCount, [EnumeratorCancellation] CancellationToken ct = default)
+        // Honours the token of the read, as a database adapter does.
+        private async IAsyncEnumerable<RawEvent> Serve(StreamPosition from, int maxCount, [EnumeratorCancellation] CancellationToken ct)
         {
             try
             {
@@ -374,6 +422,7 @@ public class EventStoreReaderTests
                         yield break;
                     if (yields)
                         await Task.Yield();
+                    ct.ThrowIfCancellationRequested();
                     yield return row;
                 }
             }

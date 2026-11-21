@@ -479,14 +479,20 @@ yourself, run the equivalent before starting 2.0:
 -- PostgreSQL
 ALTER TABLE projection_states ALTER COLUMN state TYPE BYTEA USING convert_to(state, 'UTF8');
 
--- SQL Server 2019 or later
+-- SQL Server 2019 or later. One transaction: XACT_ABORT rolls every step back on an error,
+-- so a failed run leaves the 1.x table as it was and can be run again.
+SET XACT_ABORT ON;
+BEGIN TRANSACTION;
 ALTER TABLE dbo.projection_states ADD state_utf8 VARBINARY(MAX) NULL;
 GO
 UPDATE dbo.projection_states
 SET state_utf8 = CONVERT(VARBINARY(MAX), CONVERT(VARCHAR(MAX), state COLLATE Latin1_General_100_BIN2_UTF8));
+GO
 ALTER TABLE dbo.projection_states DROP COLUMN state;
 EXEC sp_rename 'dbo.projection_states.state_utf8', 'state', 'COLUMN';
+GO
 ALTER TABLE dbo.projection_states ALTER COLUMN state VARBINARY(MAX) NOT NULL;
+COMMIT TRANSACTION;
 GO
 ```
 

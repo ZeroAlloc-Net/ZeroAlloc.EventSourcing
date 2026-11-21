@@ -48,7 +48,7 @@ public interface IEventStore
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxCount);
         return new EventStreamReader(
-            Internal.BoundedRead.Take(ReadAsync(id, from, ct).AsAsyncEnumerable(), maxCount, ct));
+            Internal.BoundedRead.Take(ReadAsync(id, from, ct), maxCount, ct));
     }
 
     /// <summary>Subscribes to events appended to a stream from <paramref name="from"/> onward.</summary>

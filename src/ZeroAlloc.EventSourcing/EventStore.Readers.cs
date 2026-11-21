@@ -23,8 +23,10 @@ public sealed partial class EventStore
     /// <remarks>
     /// <para>
     /// The state outlives the awaits inside <see cref="MoveNextAsync"/>, so it is an object, not a
-    /// field of the struct enumerator. It is pooled, one per thread, so a read allocates nothing in
-    /// the store once a thread has read before. <see cref="DisposeAsync"/> returns it to the pool.
+    /// field of the struct enumerator. It is pooled per thread, up to <see cref="PoolSize"/> states, so
+    /// a read allocates nothing in the store once a thread has read before, also when reads nest, as
+    /// a projection that reads another stream while it handles an event does.
+    /// <see cref="DisposeAsync"/> returns it to the pool.
     /// </para>
     /// <para>
     /// Every rental gets a new version, and the struct enumerator carries the version it was handed.
@@ -41,8 +43,11 @@ public sealed partial class EventStore
     /// </remarks>
     internal sealed class ReadState
     {
+        /// <summary>How many returned states a thread keeps: the nesting depth that reads without allocating.</summary>
+        internal const int PoolSize = 4;
+
         [ThreadStatic]
-        private static ReadState? t_cached;
+        private static ReadState?[]? t_pool;
 
         private EventStore? _store;
         private StreamId _id;
@@ -62,12 +67,32 @@ public sealed partial class EventStore
 
         public static ReadState Rent()
         {
-            var state = t_cached;
-            if (state is null)
-                return new ReadState();
+            if (t_pool is { } pool)
+            {
+                for (var i = 0; i < pool.Length; i++)
+                {
+                    if (pool[i] is { } state)
+                    {
+                        pool[i] = null;
+                        return state;
+                    }
+                }
+            }
 
-            t_cached = null;
-            return state;
+            return new ReadState();
+        }
+
+        private static void Return(ReadState state)
+        {
+            var pool = t_pool ??= new ReadState?[PoolSize];
+            for (var i = 0; i < pool.Length; i++)
+            {
+                if (pool[i] is null)
+                {
+                    pool[i] = state;
+                    return;
+                }
+            }
         }
 
         /// <summary>
@@ -242,7 +267,7 @@ public sealed partial class EventStore
             _rows = null;
             _event = null;
             _hasCurrent = false;
-            t_cached ??= this;
+            Return(this);
         }
     }
 }

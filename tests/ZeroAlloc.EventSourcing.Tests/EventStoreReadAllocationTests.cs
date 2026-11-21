@@ -54,6 +54,61 @@ public class EventStoreReadAllocationTests
         Assert.Equal(eventCount, read);
     }
 
+    /// <summary>
+    /// Reads that overlap on one thread, as a projection that reads another stream while it handles
+    /// an event does, each rent their own pooled state and allocate nothing either.
+    /// </summary>
+    [Fact]
+    public void OverlappingReads_OnOneThread_AllocateNothing()
+    {
+        var outerStore = new EventStore(new CachedReadAdapter(3), new CachedSerializer(), new ConstantRegistry());
+        var innerStore = new EventStore(new CachedReadAdapter(3), new CachedSerializer(), new ConstantRegistry());
+        var id = new StreamId("alloc-stream");
+        var read = 0;
+
+        AllocationGate.AssertBudget(
+            ReadCallBudgetBytes,
+            Iterations,
+            () => read = DrainNested(outerStore.ReadAsync(id), innerStore.ReadAsync(id)),
+            "two overlapping EventStore.ReadAsync enumerations");
+
+        Assert.Equal(6, read);
+    }
+
+    private static int DrainNested(EventStreamReader outer, EventStreamReader inner)
+    {
+        var outerEnumerator = outer.GetAsyncEnumerator();
+        var innerEnumerator = inner.GetAsyncEnumerator();
+        var count = 0;
+        try
+        {
+            while (Step(outerEnumerator))
+                count++;
+            while (Step(innerEnumerator))
+                count++;
+            return count;
+        }
+        finally
+        {
+            Complete(innerEnumerator.DisposeAsync());
+            Complete(outerEnumerator.DisposeAsync());
+        }
+
+        static bool Step(EventStreamReader.Enumerator enumerator)
+        {
+            var next = enumerator.MoveNextAsync();
+            if (!next.IsCompletedSuccessfully)
+                throw new InvalidOperationException("MoveNextAsync did not complete synchronously.");
+            return next.Result;
+        }
+
+        static void Complete(ValueTask task)
+        {
+            if (!task.IsCompletedSuccessfully)
+                throw new InvalidOperationException("DisposeAsync did not complete synchronously.");
+        }
+    }
+
     // The fake adapter completes every step synchronously, so the reader can be driven without
     // awaiting; a step that does not complete synchronously fails the test.
     private static int DrainSynchronously(EventStreamReader source)

@@ -9,6 +9,21 @@ namespace ZeroAlloc.EventSourcing.Internal;
 /// </summary>
 internal static class BoundedRead
 {
+    /// <summary>The first <paramref name="maxCount"/> events of <paramref name="source"/>, enumerated directly.</summary>
+    public static async IAsyncEnumerable<EventEnvelope> Take(
+        EventStreamReader source,
+        int maxCount,
+        [EnumeratorCancellation] CancellationToken ct = default)
+    {
+        var count = 0;
+        await foreach (var item in source.WithCancellation(ct).ConfigureAwait(false))
+        {
+            yield return item;
+            if (++count >= maxCount)
+                yield break;
+        }
+    }
+
     public static async IAsyncEnumerable<T> Take<T>(
         IAsyncEnumerable<T> source,
         int maxCount,
