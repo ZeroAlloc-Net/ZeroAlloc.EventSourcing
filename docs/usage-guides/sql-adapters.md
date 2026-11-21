@@ -473,9 +473,15 @@ work for `ReplayableProjection`. The `state` column of `projection_states` chang
 `EnsureSchemaAsync()` converts a 1.x table in place, once, under a lock, and stores each existing state
 as its UTF-8 bytes: the bytes a text serializer such as System.Text.Json writes, so JSON saved by 1.x
 loads unchanged. The SQL Server conversion needs SQL Server 2019 or later. If you manage the schema
-yourself, run the equivalent before starting 2.0. If you cancel the SQL Server script while it runs,
-run `ROLLBACK TRANSACTION` or close the session before you run it again: a cancelled statement does not
-always end the transaction.
+yourself, run the equivalent before starting 2.0.
+
+1.x and 2.0 instances cannot share a `projection_states` table during a rolling upgrade: 1.x can
+neither read nor write the converted column. Stop every 1.x instance that reads or writes projection
+state before the first 2.0 instance calls `EnsureSchemaAsync()`, or run the manual script below during
+that downtime.
+
+If you cancel the SQL Server script while it runs, run `ROLLBACK TRANSACTION` or close the session
+before you run it again: a cancelled statement does not always end the transaction.
 
 ```sql
 -- PostgreSQL
