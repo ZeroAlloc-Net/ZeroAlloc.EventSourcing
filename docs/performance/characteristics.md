@@ -2,7 +2,7 @@
 
 **Version:** 1.0  
 **Last Updated:** 2026-10-17  
-**Target Runtime:** .NET 8.0+
+**Target Runtime:** .NET 10 and .NET 11
 
 ## Overview
 

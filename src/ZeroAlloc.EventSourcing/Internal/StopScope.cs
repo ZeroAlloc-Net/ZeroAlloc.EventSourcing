@@ -36,11 +36,7 @@ namespace ZeroAlloc.EventSourcing.Internal;
 /// </remarks>
 internal sealed class StopScope : IDisposable
 {
-#if NET9_0_OR_GREATER
     private readonly Lock _gate = new();
-#else
-    private readonly object _gate = new();
-#endif
     private readonly CancellationTokenSource _cts = new();
     private readonly CancellationTokenRegistration _outer;
 
