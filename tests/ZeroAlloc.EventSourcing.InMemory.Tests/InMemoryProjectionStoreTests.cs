@@ -23,11 +23,11 @@ public class InMemoryProjectionStoreTests : ProjectionStoreContractTests
         var state = """{"orderId":"ORD-001","amount":99.99}""";
 
         // Act
-        await store.SaveAsync(key, state);
+        await store.SaveAsync(key, Utf8(state));
         var loaded = await store.LoadAsync(key);
 
         // Assert
-        loaded.Should().Be(state);
+        Text(loaded).Should().Be(state);
     }
 
     [Fact]
@@ -53,12 +53,12 @@ public class InMemoryProjectionStoreTests : ProjectionStoreContractTests
         var state2 = """{"sku":"ITEM-001","quantity":95}""";
 
         // Act
-        await store.SaveAsync(key, state1);
-        await store.SaveAsync(key, state2);
+        await store.SaveAsync(key, Utf8(state1));
+        await store.SaveAsync(key, Utf8(state2));
         var loaded = await store.LoadAsync(key);
 
         // Assert
-        loaded.Should().Be(state2);
+        Text(loaded).Should().Be(state2);
     }
 
     [Fact]
@@ -68,7 +68,7 @@ public class InMemoryProjectionStoreTests : ProjectionStoreContractTests
         var store = new InMemoryProjectionStore();
         var key = "PaymentProjection";
         var state = """{"paymentId":"PAY-001","status":"Completed"}""";
-        await store.SaveAsync(key, state);
+        await store.SaveAsync(key, Utf8(state));
 
         // Act
         await store.ClearAsync(key);
@@ -76,5 +76,20 @@ public class InMemoryProjectionStoreTests : ProjectionStoreContractTests
 
         // Assert
         loaded.Should().BeNull();
+    }
+
+    /// <summary>A load hands out the stored copy, so it allocates nothing.</summary>
+    [Fact]
+    public async Task Load_ReturnsTheStoredCopyEachTime()
+    {
+        var store = new InMemoryProjectionStore();
+        await store.SaveAsync("k", Utf8("state"));
+
+        var first = (await store.LoadAsync("k"))!.Value;
+        var second = (await store.LoadAsync("k"))!.Value;
+
+        System.Runtime.InteropServices.MemoryMarshal.TryGetArray(first, out var a).Should().BeTrue();
+        System.Runtime.InteropServices.MemoryMarshal.TryGetArray(second, out var b).Should().BeTrue();
+        b.Array.Should().BeSameAs(a.Array);
     }
 }

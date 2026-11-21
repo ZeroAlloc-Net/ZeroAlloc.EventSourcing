@@ -2,13 +2,13 @@
 id: index
 title: ZeroAlloc.EventSourcing
 slug: /
-description: Zero-allocation event sourcing library for .NET 8+.
+description: Zero-allocation event sourcing library for .NET 10 and .NET 11.
 sidebar_position: 1
 ---
 
 # ZeroAlloc.EventSourcing
 
-Zero-allocation event sourcing for .NET 8+. Struct-based aggregate state, in-memory and SQL backends, source-generated aggregate boilerplate, optional OpenTelemetry instrumentation.
+Zero-allocation event sourcing for .NET 10 and .NET 11. Struct-based aggregate state, in-memory and SQL backends, source-generated aggregate boilerplate, optional OpenTelemetry instrumentation.
 
 ```bash
 dotnet add package ZeroAlloc.EventSourcing

@@ -273,7 +273,7 @@ public class EveryEventOrderTotalsProjection : Projection<ImmutableDictionary<st
     public override async ValueTask HandleAsync(EventEnvelope @event, CancellationToken ct = default)
     {
         await base.HandleAsync(@event, ct);
-        await _projectionStore.SaveAsync("order-totals", JsonSerializer.Serialize(Current), ct);
+        await _projectionStore.SaveAsync("order-totals", JsonSerializer.SerializeToUtf8Bytes(Current), ct);
     }
 }
 // EFFICIENT: Batch writes; BatchedProjection calls FlushBatchAsync once per 100 events
@@ -296,7 +296,7 @@ public class BatchedOrderTotalsProjection : BatchedProjection<ImmutableDictionar
         => @event.Event is OrderPlacedEvent e ? current.SetItem(e.OrderId, e.Total) : current;
 
     protected override async ValueTask FlushBatchAsync(IReadOnlyList<EventEnvelope> batch, CancellationToken ct = default)
-        => await _projectionStore.SaveAsync("order-totals", JsonSerializer.Serialize(Current), ct);
+        => await _projectionStore.SaveAsync("order-totals", JsonSerializer.SerializeToUtf8Bytes(Current), ct);
 }
 ```
 

@@ -79,7 +79,7 @@ jobs:
   # Destinations: nuget.org and the .nupkg files attached to the GitHub release.
   # verify-command keeps the generator pack-layout check: the generator must land under
   # analyzers/dotnet/cs, not lib/, or it silently stops running for every consumer.
-  # dotnet-version adds the net8.0 and net9.0 runtimes that the test projects also target.
+  # dotnet-version adds the net10.0 runtime that the libraries and test projects also target.
   publish:
     needs: release-please
     if: needs.release-please.outputs.releases_created == 'true'
@@ -89,8 +89,6 @@ jobs:
       version: ${{ needs.release-please.outputs.version }}
       solution: ZeroAlloc.EventSourcing.slnx
       dotnet-version: |
-        8.0.x
-        9.0.x
         10.0.x
         11.0.x
       verify-command: bash scripts/verify-generator-pack-layout.sh "$PACKAGES_DIR"
@@ -138,10 +136,7 @@ jobs:
         uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
-          dotnet-version: |
-            8.0.x
-            9.0.x
-            10.0.x
+          dotnet-version: 10.0.x
       - name: Build
         run: dotnet build ZeroAlloc.EventSourcing.slnx --configuration Release -p:Version=${{ needs.release-please.outputs.version }}
       - name: Attach the SBOM to the GitHub release

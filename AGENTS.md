@@ -8,9 +8,9 @@ own and everything runs under NativeAOT.
 ## Layout
 - `src/` holds the packable libraries plus `ZeroAlloc.EventSourcing.Benchmarks`, which is not packed.
   The two generator projects (`Generators`, `Mediator.Generator`) target `netstandard2.0`, because they
-  load into the compiler. Everything else multi-targets `net8.0;net9.0;net10.0;net11.0` from
+  load into the compiler. Everything else multi-targets `net10.0;net11.0` from
   `Directory.Build.props`.
-- `tests/` projects override `TargetFrameworks` with one older runtime plus `net11.0`. `Aggregates.ConsumerTests`
+- `tests/` projects override `TargetFrameworks` with `net10.0;net11.0`. `Aggregates.ConsumerTests`
   has no `InternalsVisibleTo` and compiles every C# file under `docs/examples` against the public API only.
 - `samples/*AotSmoke` are NativeAOT apps on `net11.0` that CI publishes and runs. They are not examples.
 - `Directory.Packages.props` pins versions centrally, including transitive pins that patch vulnerable
@@ -19,8 +19,8 @@ own and everything runs under NativeAOT.
 ## Build and test
 Prerequisites: the SDK from `global.json` (11.0.100, roll forward to the latest feature band). Docker for the
 PostgreSQL, SQL Server and Kafka tests, which start their own containers through Testcontainers. Test
-projects target `net8.0`, `net9.0`, `net10.0` or `net11.0`, so running a test project needs the matching
-runtime installed, not only the SDK.
+projects target `net10.0` and `net11.0`, so running a test project needs the .NET 10 runtime installed
+next to the SDK.
 
 CI job `build` in `.github/workflows/ci.yml`:
 ```bash

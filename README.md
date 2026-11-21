@@ -11,7 +11,7 @@ Event sourcing for .NET with source-generated aggregates: appends allocate nothi
 
 ## Why ZeroAlloc.EventSourcing
 
-- **No allocation on the write path.** `EventStore.AppendAsync` and `AggregateRepository.SaveAsync` allocate 0 B of their own, asserted by exact-budget tests. A full stream read costs 96 B per call and nothing per event.
+- **No allocation on the write path.** `EventStore.AppendAsync` and `AggregateRepository.SaveAsync` allocate 0 B of their own, asserted by exact-budget tests. A full stream read allocates nothing of its own either: `ReadAsync` returns a struct reader.
 - **Works under NativeAOT and trimming.** Aggregate event dispatch and the event type registry are generated at compile time. CI publishes and runs an AOT app for the core and for every storage adapter.
 - **Compile-time diagnostics.** The generator tells you when an aggregate or projection cannot be generated, instead of it silently doing nothing at runtime.
 - **Tested against real databases.** SQL Server and PostgreSQL run through Testcontainers, SQLite in-process, with optimistic concurrency checked inside the transaction.
@@ -92,7 +92,7 @@ The [feature tour](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/blob
 - Snapshots with configurable policies, so loads replay only the newer events.
 - Stream consumers with checkpoints, batching, retry with backoff and FailFast, Skip or DeadLetter error handling.
 - Event upcasting, dead-letter stores and health checks.
-- Every package targets `net8.0`, `net9.0`, `net10.0` and `net11.0`.
+- Every runtime package targets `net10.0` and `net11.0`.
 
 Optional packages:
 

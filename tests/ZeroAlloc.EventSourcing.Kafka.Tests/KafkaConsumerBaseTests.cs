@@ -46,40 +46,17 @@ public sealed class KafkaConsumerBaseTests
         protected override Task InitializeAsync(CancellationToken ct) => Task.CompletedTask;
     }
 
-    // The two stubs below bind to the obsolete injected-consumer constructor, once without and
-    // once with the optional dead-letter store: the call shapes shipped before #379. They must
-    // keep compiling, and keep leaving the injected consumer open.
-#pragma warning disable ZAES002
-    private sealed class LegacyShapeStub(
-        IConsumer<string, byte[]> inner,
-        ICheckpointStore checkpointStore,
-        IEventSerializer serializer,
-        IEventTypeRegistry registry)
-        : KafkaConsumerBase(inner, checkpointStore, serializer, registry,
-                            "test-topic", TimeSpan.FromMilliseconds(50),
-                            new StreamConsumerOptions())
+    // Binds to the production constructor without a dead-letter store, added in the major that
+    // removed the optional parameter from its sibling, #381.
+    private sealed class ProductionStub(ICheckpointStore checkpointStore, IEventSerializer serializer, IEventTypeRegistry registry)
+        : KafkaConsumerBase("localhost:9092", "group", checkpointStore, serializer, registry,
+                            "test-topic", TimeSpan.FromMilliseconds(50), new StreamConsumerOptions())
     {
-        public override string ConsumerId => "legacy";
-        protected override IReadOnlyList<int> GetAssignedPartitions() => [0];
+        public override string ConsumerId => "production";
+        protected override IReadOnlyList<int> GetAssignedPartitions() => [];
         protected override Task InitializeAsync(CancellationToken ct) => Task.CompletedTask;
+        public IConsumer<string, byte[]> Consumer => _consumer;
     }
-
-    private sealed class LegacyShapeDeadLetterStub(
-        IConsumer<string, byte[]> inner,
-        ICheckpointStore checkpointStore,
-        IEventSerializer serializer,
-        IEventTypeRegistry registry,
-        StreamConsumerOptions options,
-        IDeadLetterStore deadLetterStore)
-        : KafkaConsumerBase(inner, checkpointStore, serializer, registry,
-                            "test-topic", TimeSpan.FromMilliseconds(50),
-                            options, deadLetterStore)
-    {
-        public override string ConsumerId => "legacy";
-        protected override IReadOnlyList<int> GetAssignedPartitions() => [0];
-        protected override Task InitializeAsync(CancellationToken ct) => Task.CompletedTask;
-    }
-#pragma warning restore ZAES002
 
     // ── helpers ───────────────────────────────────────────────────────────────
 
@@ -458,20 +435,25 @@ public sealed class KafkaConsumerBaseTests
         return (store, consumer, serializer, registry);
     }
 
-    // ── obsolete constructor shape ────────────────────────────────────────────
+    // ── production constructor without a dead-letter store ────────────────────
 
     [Fact]
-    public void ObsoleteConstructor_DoesNotDisposeInjectedConsumer()
+    public void ProductionConstructorWithoutDeadLetterStore_BuildsAndOwnsTheConsumer()
     {
-        var consumer = Substitute.For<IConsumer<string, byte[]>>();
-        var sut = new LegacyShapeStub(consumer, Substitute.For<ICheckpointStore>(),
-                                      Substitute.For<IEventSerializer>(),
-                                      Substitute.For<IEventTypeRegistry>());
+        var sut = new ProductionStub(Substitute.For<ICheckpointStore>(),
+                                     Substitute.For<IEventSerializer>(),
+                                     Substitute.For<IEventTypeRegistry>());
 
+        sut.Consumer.Should().NotBeNull();
         sut.Dispose();
+    }
 
-        consumer.DidNotReceive().Close();
-        consumer.DidNotReceive().Dispose();
+    [Fact]
+    public void ProductionConstructorWithoutDeadLetterStore_NullCheckpointStore_Throws()
+    {
+        var act = () => new ProductionStub(null!, Substitute.For<IEventSerializer>(), Substitute.For<IEventTypeRegistry>());
+
+        act.Should().Throw<ArgumentNullException>().WithParameterName("checkpointStore");
     }
 
     [Fact]
@@ -485,32 +467,6 @@ public sealed class KafkaConsumerBaseTests
         sut.Dispose();
 
         consumer.DidNotReceive().Close();
-        consumer.DidNotReceive().Dispose();
-    }
-
-    [Fact]
-    public async Task ObsoleteConstructor_StillRoutesToDeadLetterStore()
-    {
-        var consumer   = Substitute.For<IConsumer<string, byte[]>>();
-        var serializer = Substitute.For<IEventSerializer>();
-        var registry   = Substitute.For<IEventTypeRegistry>();
-        var deadLetter = Substitute.For<IDeadLetterStore>();
-
-        registry.TryGetType("OrderCreated", out _).Returns(x => { x[1] = typeof(object); return true; });
-        serializer.Deserialize(Arg.Any<ReadOnlyMemory<byte>>(), Arg.Any<Type>()).Returns(new object());
-
-        var messages = new Queue<ConsumeResult<string, byte[]>?>([MakeMessage(0, 1), null]);
-        consumer.Consume(Arg.Any<TimeSpan>()).Returns(_ => messages.Count > 0 ? messages.Dequeue() : null);
-
-        var options = new StreamConsumerOptions { MaxRetries = 0, ErrorStrategy = ErrorHandlingStrategy.DeadLetter };
-        var sut = new LegacyShapeDeadLetterStub(consumer, Substitute.For<ICheckpointStore>(),
-                                                serializer, registry, options, deadLetter);
-
-        await sut.ConsumeAsync((_, _) => throw new InvalidOperationException("poison"));
-
-        await deadLetter.Received(1).WriteAsync(
-            Arg.Any<string>(), Arg.Any<EventEnvelope>(),
-            Arg.Any<Exception>(), Arg.Any<CancellationToken>());
         consumer.DidNotReceive().Dispose();
     }
 

@@ -13,7 +13,7 @@ public sealed class PostgreSqlDeadLetterStore : IDeadLetterStore
 {
     private readonly NpgsqlDataSource _dataSource;
     private readonly IEventSerializer _serializer;
-    private readonly IEventTypeRegistry? _registry;
+    private readonly IEventTypeRegistry _registry;
 
     /// <summary>
     /// Initializes a new instance of <see cref="PostgreSqlDeadLetterStore"/>.
@@ -30,25 +30,6 @@ public sealed class PostgreSqlDeadLetterStore : IDeadLetterStore
         _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
         _serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
-    }
-
-    /// <summary>
-    /// Initializes a new instance of <see cref="PostgreSqlDeadLetterStore"/> that reads back the
-    /// serialized payload instead of the event object.
-    /// </summary>
-    /// <remarks>
-    /// Obsolete: <see cref="ReadAllAsync"/> puts the stored payload bytes in
-    /// <see cref="EventEnvelope.Event"/>, where the in-memory store puts the event object, so replay
-    /// code cannot treat the stores alike.
-    /// </remarks>
-    /// <param name="dataSource">The <see cref="NpgsqlDataSource"/> to use for connections.</param>
-    /// <param name="serializer">The serializer used to convert event payloads to bytes.</param>
-    /// <exception cref="ArgumentNullException">Thrown if either parameter is null.</exception>
-    [Obsolete(DeadLetterPayload.ObsoleteConstructor, DiagnosticId = DeadLetterPayload.ObsoleteConstructorId)]
-    public PostgreSqlDeadLetterStore(NpgsqlDataSource dataSource, IEventSerializer serializer)
-    {
-        _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
-        _serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
     }
 
     /// <summary>

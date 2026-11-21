@@ -37,8 +37,8 @@ public interface IEventStore
         StreamPosition expectedVersion,
         CancellationToken ct = default);
 
-    // Read events from a stream
-    IAsyncEnumerable<EventEnvelope> ReadAsync(
+    // Read events from a stream: a struct reader for await foreach
+    EventStreamReader ReadAsync(
         StreamId id,
         StreamPosition from = default,
         CancellationToken ct = default);
@@ -51,6 +51,24 @@ public interface IEventStore
         CancellationToken ct = default);
 }
 ```
+
+### Reading: EventStreamReader
+
+`ReadAsync` and `ReadBatchAsync` return an `EventStreamReader`, a struct with a struct enumerator. Enumerate
+it with `await foreach`; a read of `EventStore` then allocates nothing in the store:
+
+```csharp
+await foreach (var envelope in eventStore.ReadAsync(streamId).ConfigureAwait(false))
+{
+    // ...
+}
+```
+
+`ConfigureAwait` and `WithCancellation` work as on an `IAsyncEnumerable<T>`. Where an
+`IAsyncEnumerable<EventEnvelope>` is needed, for example for LINQ, call `AsAsyncEnumerable()`, which costs
+one object per call. A decorator returns the reader of the store it wraps; a store that produces its own
+events wraps them with `new EventStreamReader(events)`. Before 2.0 the read methods returned
+`IAsyncEnumerable<EventEnvelope>`.
 
 ### AppendAsync: Saving Events
 

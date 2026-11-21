@@ -28,7 +28,7 @@ services
     .WithTelemetry();                 // wraps each IAggregateRepository<,> with InstrumentedAggregateRepository<,>
 ```
 
-> Renamed from `UseEventSourcingTelemetry()` for consistency with the rest of the ecosystem. The old name remains as an `[Obsolete]` alias, diagnostic `ZAES001`, that delegates to `WithTelemetry()`; it is removed in the next major.
+> Renamed from `UseEventSourcingTelemetry()` for consistency with the rest of the ecosystem. Version 2.0 removed the old name, diagnostic `ZAES001`; call `WithTelemetry()`.
 
 The extension replaces each existing `IAggregateRepository<TAggregate, TId>` registration with `InstrumentedAggregateRepository<TAggregate, TId>` wrapping the original. Any code that resolves `IAggregateRepository<,>` gets the decorated version automatically. That covers `UseAggregateRepository` and hand-written registrations alike, such as a `SnapshotCachingRepositoryDecorator` registered with `AddScoped`; keyed registrations stay keyed, and every registration keeps its lifetime.
 

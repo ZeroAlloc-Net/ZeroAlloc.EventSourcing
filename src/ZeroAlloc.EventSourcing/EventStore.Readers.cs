@@ -5,107 +5,162 @@ namespace ZeroAlloc.EventSourcing;
 public sealed partial class EventStore
 {
     /// <summary>
-    /// The enumerable and enumerator behind <see cref="ReadAsync"/> and <see cref="ReadBatchAsync"/>.
+    /// Starts an enumeration of <see cref="ReadAsync"/> or <see cref="ReadBatchAsync"/>: rents a
+    /// <see cref="ReadState"/> and points it at the read's arguments.
+    /// </summary>
+    internal EventStreamReader.Enumerator Enumerate(
+        StreamId id, StreamPosition from, int maxCount, CancellationToken readToken, CancellationToken enumeratorToken)
+    {
+        var state = ReadState.Rent();
+        var version = state.Start(this, id, from, maxCount, readToken, enumeratorToken);
+        return new EventStreamReader.Enumerator(state, version);
+    }
+
+    /// <summary>
+    /// The state of one enumeration of an <see cref="EventStreamReader"/> over this store: the
+    /// adapter's enumerator, the deserialized event and, for a bounded read, the paging counters.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// A compiler-generated async iterator hoists every local into its class: the current
-    /// <see cref="EventEnvelope"/>, the <see cref="RawEvent"/> being read and the iterator's own
-    /// promise state, which came to 304 B per call. This reader keeps only the adapter's enumerator
-    /// and the deserialized event, and builds <see cref="Current"/> from the adapter's current row.
+    /// The state outlives the awaits inside <see cref="MoveNextAsync"/>, so it is an object, not a
+    /// field of the struct enumerator. It is pooled per thread, up to <see cref="PoolSize"/> states, so
+    /// a read allocates nothing in the store once a thread has read before, also when reads nest, as
+    /// a projection that reads another stream while it handles an event does.
+    /// <see cref="DisposeAsync"/> returns it to the pool.
     /// </para>
     /// <para>
-    /// Like a compiler-generated iterator, the object returned by the read is its own enumerator
-    /// for the first enumeration on the thread that created it; any other enumeration gets a fresh
-    /// copy, so the enumerable can be enumerated again, or concurrently. <see cref="MoveNextAsync"/>
-    /// uses <see cref="PoolingAsyncValueTaskMethodBuilder{TResult}"/>, so a step that completes
-    /// synchronously allocates nothing and one that has to wait for the adapter borrows a pooled box.
+    /// Every rental gets a new version, and the struct enumerator carries the version it was handed.
+    /// A copy of the enumerator that is used after its enumeration was disposed carries an old version:
+    /// it finds nothing to read and never touches the enumeration that rented the state since. That
+    /// is what makes the pooling safe; without the version a stale enumerator would silently read
+    /// another caller's stream.
+    /// </para>
+    /// <para>
+    /// <see cref="MoveNextAsync"/> uses <see cref="PoolingAsyncValueTaskMethodBuilder{TResult}"/>, so
+    /// a step that completes synchronously allocates nothing and one that has to wait for the adapter
+    /// borrows a pooled box.
     /// </para>
     /// </remarks>
-    private abstract class Reader : IAsyncEnumerable<EventEnvelope>, IAsyncEnumerator<EventEnvelope>
+    internal sealed class ReadState
     {
-        private const int Created = 0;
-        private const int Ready = 1;
-        private const int Running = 2;
-        private const int Finished = 3;
+        /// <summary>How many returned states a thread keeps: the nesting depth that reads without allocating.</summary>
+        internal const int PoolSize = 4;
 
-        private readonly int _creatorThreadId = Environment.CurrentManagedThreadId;
-        private readonly CancellationToken _readToken;
+        [ThreadStatic]
+        private static ReadState?[]? t_pool;
+
+        private EventStore? _store;
+        private StreamId _id;
+        private StreamPosition _from;
+        private StreamPosition _pageStart;
+        private int _maxCount;
+        private int _requested;
+        private int _rowsInPage;
+        private int _yielded;
+        private CancellationToken _token;
         private CancellationTokenSource? _linkedSource;
         private IAsyncEnumerator<RawEvent>? _rows;
         private object? _event;
         private bool _hasCurrent;
-        private int _state;
+        private bool _running;
+        private int _version;
 
-        protected Reader(EventStore store, StreamId id, CancellationToken ct)
+        public static ReadState Rent()
         {
-            Store = store;
-            Id = id;
-            _readToken = ct;
+            if (t_pool is { } pool)
+            {
+                for (var i = 0; i < pool.Length; i++)
+                {
+                    if (pool[i] is { } state)
+                    {
+                        pool[i] = null;
+                        return state;
+                    }
+                }
+            }
+
+            return new ReadState();
         }
 
-        protected EventStore Store { get; }
-
-        protected StreamId Id { get; }
-
-        /// <summary>The token the read was started with, which a second enumeration starts from again.</summary>
-        protected CancellationToken ReadToken => _readToken;
-
-        /// <summary>The token the adapter reads with: the read's token, the enumerator's, or both linked.</summary>
-        protected CancellationToken Token { get; private set; }
-
-        public EventEnvelope Current
+        private static void Return(ReadState state)
         {
-            get
+            var pool = t_pool ??= new ReadState?[PoolSize];
+            for (var i = 0; i < pool.Length; i++)
             {
-                if (!_hasCurrent || _rows is not { } rows)
-                    return default;
-
-                var raw = rows.Current;
-                return new EventEnvelope(Id, raw.Position, _event!, raw.Metadata);
+                if (pool[i] is null)
+                {
+                    pool[i] = state;
+                    return;
+                }
             }
         }
 
-        public IAsyncEnumerator<EventEnvelope> GetAsyncEnumerator(CancellationToken cancellationToken = default)
+        /// <summary>
+        /// Points the state at a read. <paramref name="maxCount"/> is zero for a read of the whole
+        /// stream. Returns the version the enumerator has to present.
+        /// </summary>
+        public int Start(
+            EventStore store, StreamId id, StreamPosition from, int maxCount,
+            CancellationToken readToken, CancellationToken enumeratorToken)
         {
-            var reader = _state == Created && _creatorThreadId == Environment.CurrentManagedThreadId
-                ? this
-                : Clone();
-            reader._state = Ready;
-            reader.CombineTokens(cancellationToken);
-            return reader;
+            _store = store;
+            _id = id;
+            _from = from;
+            _maxCount = maxCount;
+            _running = true;
+            CombineTokens(readToken, enumeratorToken);
+            return _version;
+        }
+
+        public EventEnvelope Current(int version)
+        {
+            if (version != _version || !_hasCurrent || _rows is not { } rows)
+                return default;
+
+            var raw = rows.Current;
+            return new EventEnvelope(_id, raw.Position, _event!, raw.Metadata);
+        }
+
+        public ValueTask<bool> MoveNextAsync(int version)
+            => version == _version && _running ? MoveNextCoreAsync() : new ValueTask<bool>(false);
+
+        public ValueTask DisposeAsync(int version)
+        {
+            if (version != _version)
+                return default;
+
+            var rows = _rows;
+            Reset();
+            return rows is null ? default : rows.DisposeAsync();
         }
 
         [AsyncMethodBuilder(typeof(PoolingAsyncValueTaskMethodBuilder<>))]
-        public async ValueTask<bool> MoveNextAsync()
+        private async ValueTask<bool> MoveNextCoreAsync()
         {
-            if (_state == Ready)
-                _state = Running;
-            else if (_state != Running)
-                return false;
-
+            var store = _store!;
             _hasCurrent = false;
             _event = null;
             try
             {
-                _rows ??= OpenPage();
+                _rows ??= OpenPage(store);
                 while (true)
                 {
                     if (await _rows.MoveNextAsync().ConfigureAwait(false))
                     {
                         var raw = _rows.Current;
-                        OnRow(raw);
-                        if (!Store.TryDeserialize(raw, out _event))
+                        _rowsInPage++;
+                        _from = raw.Position;
+                        if (!store.TryDeserialize(raw, out _event))
                             continue; // unknown event type, skipped for forward compatibility
 
-                        OnYield();
+                        _yielded++;
                         _hasCurrent = true;
                         return true;
                     }
 
                     // The adapter's enumerator is released as soon as its rows run out, as an
                     // await foreach over it would, so a SQL adapter frees its connection before
-                    // the caller disposes this reader.
+                    // the caller disposes the enumerator.
                     var page = _rows;
                     _rows = null;
                     await page.DisposeAsync().ConfigureAwait(false);
@@ -117,7 +172,7 @@ public sealed partial class EventStore
                         return false;
                     }
 
-                    _rows = OpenPage();
+                    _rows = OpenPage(store);
                 }
             }
             catch
@@ -135,126 +190,27 @@ public sealed partial class EventStore
             }
         }
 
-        public ValueTask DisposeAsync()
-        {
-            _hasCurrent = false;
-            _event = null;
-            Finish();
-            if (_rows is not { } rows)
-                return default;
-
-            _rows = null;
-            return rows.DisposeAsync();
-        }
-
         /// <summary>Starts the adapter read for the next page, or for the whole stream.</summary>
-        protected abstract IAsyncEnumerator<RawEvent> OpenPage();
-
-        /// <summary>Called for every row the adapter returns, including skipped ones.</summary>
-        protected virtual void OnRow(in RawEvent raw)
+        private IAsyncEnumerator<RawEvent> OpenPage(EventStore store)
         {
-        }
-
-        /// <summary>Called for every row handed to the caller.</summary>
-        protected virtual void OnYield()
-        {
-        }
-
-        /// <summary>Whether the adapter has to be asked for more rows once the current ones run out.</summary>
-        protected virtual bool HasNextPage() => false;
-
-        /// <summary>A reader with the same arguments, for a second enumeration.</summary>
-        protected abstract Reader Clone();
-
-        private void CombineTokens(CancellationToken enumeratorToken)
-        {
-            // The same rules as [EnumeratorCancellation] on a compiler-generated iterator.
-            if (!_readToken.CanBeCanceled || _readToken.Equals(enumeratorToken))
-            {
-                Token = enumeratorToken.CanBeCanceled ? enumeratorToken : _readToken;
-            }
-            else if (!enumeratorToken.CanBeCanceled)
-            {
-                Token = _readToken;
-            }
-            else
-            {
-                _linkedSource = CancellationTokenSource.CreateLinkedTokenSource(_readToken, enumeratorToken);
-                Token = _linkedSource.Token;
-            }
-        }
-
-        private void Finish()
-        {
-            _state = Finished;
-            if (_linkedSource is { } linked)
-            {
-                _linkedSource = null;
-                linked.Dispose();
-            }
-        }
-    }
-
-    /// <summary>Reads a whole stream with one adapter read.</summary>
-    private sealed class StreamReader : Reader
-    {
-        private readonly StreamPosition _from;
-
-        public StreamReader(EventStore store, StreamId id, StreamPosition from, CancellationToken ct)
-            : base(store, id, ct)
-        {
-            _from = from;
-        }
-
-        protected override IAsyncEnumerator<RawEvent> OpenPage()
-            => Store._adapter.ReadAsync(Id, _from, Token).GetAsyncEnumerator();
-
-        protected override Reader Clone() => new StreamReader(Store, Id, _from, ReadToken);
-    }
-
-    /// <summary>
-    /// Reads at most <c>maxCount</c> events, one bounded adapter read per page. A page whose rows
-    /// held unknown event types leaves the batch short, so the rows after it are read.
-    /// </summary>
-    private sealed class BatchReader : Reader
-    {
-        private readonly StreamPosition _start;
-        private readonly int _maxCount;
-        private StreamPosition _from;
-        private StreamPosition _pageStart;
-        private int _requested;
-        private int _rowsInPage;
-        private int _yielded;
-
-        public BatchReader(EventStore store, StreamId id, StreamPosition from, int maxCount, CancellationToken ct)
-            : base(store, id, ct)
-        {
-            _start = from;
-            _from = from;
-            _maxCount = maxCount;
-        }
-
-        protected override IAsyncEnumerator<RawEvent> OpenPage()
-        {
-            _requested = _maxCount - _yielded;
             _pageStart = _from;
             _rowsInPage = 0;
-            return Store._adapter.ReadBatchAsync(Id, _from, _requested, Token).GetAsyncEnumerator();
+            if (_maxCount == 0)
+                return store._adapter.ReadAsync(_id, _from, _token).GetAsyncEnumerator();
+
+            _requested = _maxCount - _yielded;
+            return store._adapter.ReadBatchAsync(_id, _from, _requested, _token).GetAsyncEnumerator();
         }
 
-        protected override void OnRow(in RawEvent raw)
+        /// <summary>
+        /// Whether the adapter has to be asked for more rows once the current ones run out. A read
+        /// of the whole stream is one adapter read. A bounded read whose page held unknown event
+        /// types is short, so the rows after it are read.
+        /// </summary>
+        private bool HasNextPage()
         {
-            _rowsInPage++;
-            _from = raw.Position;
-        }
-
-        protected override void OnYield() => _yielded++;
-
-        protected override bool HasNextPage()
-        {
-            // A short page is the end of the stream. A full page that held unknown types leaves
-            // the batch short, so the rows after it are read.
-            if (_yielded == _maxCount || _rowsInPage < _requested)
+            // A short page is the end of the stream.
+            if (_maxCount == 0 || _yielded == _maxCount || _rowsInPage < _requested)
                 return false;
 
             // The next page starts after the last row of this one; an adapter whose positions do
@@ -266,6 +222,52 @@ public sealed partial class EventStore
             return true;
         }
 
-        protected override Reader Clone() => new BatchReader(Store, Id, _start, _maxCount, ReadToken);
+        private void CombineTokens(CancellationToken readToken, CancellationToken enumeratorToken)
+        {
+            // The same rules as [EnumeratorCancellation] on a compiler-generated iterator.
+            if (!readToken.CanBeCanceled || readToken.Equals(enumeratorToken))
+            {
+                _token = enumeratorToken.CanBeCanceled ? enumeratorToken : readToken;
+            }
+            else if (!enumeratorToken.CanBeCanceled)
+            {
+                _token = readToken;
+            }
+            else
+            {
+                _linkedSource = CancellationTokenSource.CreateLinkedTokenSource(readToken, enumeratorToken);
+                _token = _linkedSource.Token;
+            }
+        }
+
+        private void Finish()
+        {
+            _running = false;
+            if (_linkedSource is { } linked)
+            {
+                _linkedSource = null;
+                linked.Dispose();
+            }
+        }
+
+        /// <summary>Ends the enumeration, invalidates its version and returns the state to the pool.</summary>
+        private void Reset()
+        {
+            Finish();
+            _version++;
+            _store = null;
+            _id = default;
+            _from = default;
+            _pageStart = default;
+            _maxCount = 0;
+            _requested = 0;
+            _rowsInPage = 0;
+            _yielded = 0;
+            _token = default;
+            _rows = null;
+            _event = null;
+            _hasCurrent = false;
+            Return(this);
+        }
     }
 }

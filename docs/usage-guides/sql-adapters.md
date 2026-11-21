@@ -460,6 +460,60 @@ The adapters own their table layout. `EnsureSchemaAsync()` creates it and migrat
 older versions; for example it adds and backfills `global_position` in tables that predate global
 reads. Don't change the adapter tables yourself; keep your own data in your own tables.
 
+### Projection state in 2.0
+
+Version 2.0 stores projection state as bytes, so binary serializers such as MemoryPack and MessagePack
+work for `ReplayableProjection`. The `state` column of `projection_states` changes type:
+
+| Store | 1.x | 2.0 |
+|-------|-----|-----|
+| `PostgreSqlProjectionStore` | `TEXT` | `BYTEA` |
+| `SqlServerProjectionStore` | `NVARCHAR(MAX)` | `VARBINARY(MAX)` |
+
+`EnsureSchemaAsync()` converts a 1.x table in place, once, under a lock, and stores each existing state
+as its UTF-8 bytes: the bytes a text serializer such as System.Text.Json writes, so JSON saved by 1.x
+loads unchanged. The SQL Server conversion needs SQL Server 2019 or later. If you manage the schema
+yourself, run the equivalent before starting 2.0.
+
+1.x and 2.0 instances cannot share a `projection_states` table during a rolling upgrade: 1.x can
+neither read nor write the converted column. Stop every 1.x instance that reads or writes projection
+state before the first 2.0 instance calls `EnsureSchemaAsync()`, or run the manual script below during
+that downtime.
+
+If you cancel the SQL Server script while it runs, run `ROLLBACK TRANSACTION` or close the session
+before you run it again: a cancelled statement does not always end the transaction.
+
+```sql
+-- PostgreSQL
+ALTER TABLE projection_states ALTER COLUMN state TYPE BYTEA USING convert_to(state, 'UTF8');
+
+-- SQL Server 2019 or later. One batch in one transaction: any error rolls every step back
+-- and leaves the 1.x table as it was, so the script can be run again. Run it in a session
+-- with no open transaction, so its COMMIT really commits and its ROLLBACK touches nothing else.
+IF @@TRANCOUNT > 0
+BEGIN
+    -- RAISERROR, not THROW: under XACT_ABORT a THROW would roll back the open transaction.
+    RAISERROR('Run the projection_states migration in a session with no open transaction.', 16, 1);
+    RETURN;
+END;
+SET IMPLICIT_TRANSACTIONS OFF;
+SET XACT_ABORT ON;
+BEGIN TRY
+    BEGIN TRANSACTION;
+    ALTER TABLE dbo.projection_states ADD state_utf8 VARBINARY(MAX) NULL;
+    EXEC (N'UPDATE dbo.projection_states SET state_utf8 = CONVERT(VARBINARY(MAX),
+        CONVERT(VARCHAR(MAX), state COLLATE Latin1_General_100_BIN2_UTF8));');
+    ALTER TABLE dbo.projection_states DROP COLUMN state;
+    EXEC sp_rename 'dbo.projection_states.state_utf8', 'state', 'COLUMN';
+    EXEC (N'ALTER TABLE dbo.projection_states ALTER COLUMN state VARBINARY(MAX) NOT NULL;');
+    COMMIT TRANSACTION;
+END TRY
+BEGIN CATCH
+    IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+    THROW;
+END CATCH;
+```
+
 ### Event Migration
 
 Don't rewrite stored events when an event's shape changes. Register an upcaster: events are

@@ -21,11 +21,7 @@ public sealed class InMemoryEventStoreAdapter : IEventStoreAdapter
     // merging and sorting every stream. Appends to different streams are serialized by the lock,
     // which is acceptable for a test double.
     private readonly List<InMemoryStream.StoredEntry> _globalLog = new();
-#if NET9_0_OR_GREATER
     private readonly Lock _globalLock = new();
-#else
-    private readonly object _globalLock = new();
-#endif
 
     /// <inheritdoc/>
     public ValueTask<Result<AppendResult, StoreError>> AppendAsync(

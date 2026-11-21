@@ -81,7 +81,7 @@ for a full example.
 
 ## Minimum Requirements
 
-- **.NET 8+**
+- **.NET 10 or .NET 11**
 - **C# 12+**
 
 ## First Steps

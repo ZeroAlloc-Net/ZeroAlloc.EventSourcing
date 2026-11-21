@@ -99,42 +99,6 @@ public class EventSourcingBuilderExtensionsTests
         builder.UsePostgreSqlSnapshotStore<TestState>(FakePgCs).Should().BeSameAs(builder);
     }
 
-    // ── PostgreSQL snapshot, deprecated open generic ─────────────────────────
-
-#pragma warning disable ZAES003 // the deprecated open-generic registration is still under test
-    [Fact]
-    public void UsePostgreSqlSnapshotStore_Obsolete_RegistersOpenGeneric()
-    {
-        var services = BaseServices();
-        services.AddEventSourcing().UsePostgreSqlSnapshotStore(FakePgCs);
-
-        var provider = services.BuildServiceProvider();
-        provider.GetRequiredService<ISnapshotStore<TestState>>()
-                .Should().BeOfType<PostgreSqlSnapshotStore<TestState>>();
-    }
-
-    [Fact]
-    public void UsePostgreSqlSnapshotStore_Obsolete_DoesNotOverwriteUserSnapshotStore()
-    {
-        var services = BaseServices();
-        var custom = new StubSnapshotStore();
-        services.AddSingleton<ISnapshotStore<TestState>>(custom);
-
-        services.AddEventSourcing().UsePostgreSqlSnapshotStore(FakePgCs);
-
-        var provider = services.BuildServiceProvider();
-        provider.GetRequiredService<ISnapshotStore<TestState>>().Should().BeSameAs(custom);
-    }
-
-    [Fact]
-    public void UsePostgreSqlSnapshotStore_Obsolete_ReturnsBuilder_ForChaining()
-    {
-        var services = BaseServices();
-        var builder = services.AddEventSourcing();
-        builder.UsePostgreSqlSnapshotStore(FakePgCs).Should().BeSameAs(builder);
-    }
-#pragma warning restore ZAES003
-
     // ── PostgreSQL dead-letter ───────────────────────────────────────────────
 
     [Fact]

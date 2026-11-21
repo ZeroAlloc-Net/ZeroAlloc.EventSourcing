@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <!-- Override Directory.Build.props multi-targeting — test projects pick their own TFMs, one older runtime plus net11.0 -->
+    <!-- Override Directory.Build.props multi-targeting — test projects pick their own TFMs, net10.0 and net11.0 -->
     <TargetFrameworks>net10.0;net11.0</TargetFrameworks>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>

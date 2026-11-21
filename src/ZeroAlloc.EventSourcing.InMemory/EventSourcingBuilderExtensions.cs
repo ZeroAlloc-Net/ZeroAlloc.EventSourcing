@@ -54,31 +54,6 @@ public static class EventSourcingBuilderExtensions
     }
 
     /// <summary>
-    /// Registers <see cref="InMemorySnapshotStore{TState}"/> as the open-generic
-    /// <see cref="ISnapshotStore{TState}"/>.
-    /// </summary>
-    /// <remarks>
-    /// Snapshots are held in memory and lost on application restart.
-    /// Use only for testing or single-process applications.
-    /// <para>
-    /// Obsolete: the open-generic registration throws under NativeAOT for every snapshot state,
-    /// because <see cref="ISnapshotStore{TState}"/> requires a value type and the container
-    /// cannot build a value-type instantiation of an open generic without dynamic code.
-    /// </para>
-    /// </remarks>
-    [Obsolete("Use UseInMemorySnapshotStore<TState>() once per aggregate state type. The open-generic "
-        + "registration cannot resolve a value-type state under NativeAOT. "
-        + "This overload will be removed in the next major version.", DiagnosticId = "ZAES003")]
-    public static EventSourcingBuilder UseInMemorySnapshotStore(this EventSourcingBuilder builder)
-    {
-        builder.Services.TryAdd(
-            ServiceDescriptor.Singleton(
-                typeof(ISnapshotStore<>),
-                typeof(InMemorySnapshotStore<>)));
-        return builder;
-    }
-
-    /// <summary>
     /// Registers <see cref="InMemoryDeadLetterStore"/> as <see cref="IDeadLetterStore"/>.
     /// </summary>
     /// <remarks>

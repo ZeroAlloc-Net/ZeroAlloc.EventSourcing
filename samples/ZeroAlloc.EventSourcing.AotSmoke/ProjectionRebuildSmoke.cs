@@ -19,8 +19,8 @@ public sealed record DepositTotals(int Deposits, decimal Balance)
 internal sealed partial class ProjectionJsonContext : JsonSerializerContext;
 
 /// <summary>
-/// Rebuilds through the ISerializer constructor, which is the AOT-safe path; the constructors
-/// without a serializer carry RequiresUnreferencedCode and RequiresDynamicCode.
+/// Rebuilds through the ISerializer constructor, the only constructor since the reflection-based
+/// ones were removed in 2.0.
 /// </summary>
 internal sealed class DepositTotalsProjection : ReplayableProjection<DepositTotals>
 {
@@ -66,9 +66,9 @@ internal static class ProjectionRebuildSmoke
         var saved = await projectionStore.LoadAsync("deposit-totals");
         if (saved is null)
             return Fail("the rebuilt state was not saved");
-        var restored = JsonSerializer.Deserialize(saved, ProjectionJsonContext.Default.DepositTotals);
+        var restored = JsonSerializer.Deserialize(saved.Value.Span, ProjectionJsonContext.Default.DepositTotals);
         if (restored != expected)
-            return Fail($"saved state expected {expected}, got {restored} from {saved}");
+            return Fail($"saved state expected {expected}, got {restored}");
 
         return 0;
     }

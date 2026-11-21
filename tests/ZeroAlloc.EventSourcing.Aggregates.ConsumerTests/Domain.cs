@@ -58,7 +58,7 @@ internal sealed class ReadRecordingEventStore(IEventStore inner) : IEventStore
         StreamId id, ReadOnlyMemory<object> events, StreamPosition expectedVersion, CancellationToken ct = default)
         => inner.AppendAsync(id, events, expectedVersion, ct);
 
-    public IAsyncEnumerable<EventEnvelope> ReadAsync(StreamId id, StreamPosition from = default, CancellationToken ct = default)
+    public EventStreamReader ReadAsync(StreamId id, StreamPosition from = default, CancellationToken ct = default)
     {
         ReadsFrom.Add(from);
         return inner.ReadAsync(id, from, ct);

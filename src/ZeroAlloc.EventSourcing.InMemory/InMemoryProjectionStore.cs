@@ -9,27 +9,26 @@ namespace ZeroAlloc.EventSourcing.InMemory;
 /// </summary>
 public sealed class InMemoryProjectionStore : IProjectionStore
 {
-    private readonly ConcurrentDictionary<string, string> _projections = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, byte[]> _projections = new(StringComparer.Ordinal);
 
     /// <inheritdoc/>
-    public ValueTask SaveAsync(string key, string state, CancellationToken ct = default)
+    /// <remarks>Copies <paramref name="state"/>, so the caller may reuse its buffer.</remarks>
+    public ValueTask SaveAsync(string key, ReadOnlyMemory<byte> state, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
-        _projections[key] = state;
+        _projections[key] = state.ToArray();
         return default;
     }
 
     /// <inheritdoc/>
-    public ValueTask<string?> LoadAsync(string key, CancellationToken ct = default)
+    /// <remarks>Returns the stored copy without copying it again, so a load allocates nothing.</remarks>
+    public ValueTask<ReadOnlyMemory<byte>?> LoadAsync(string key, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
 
-        if (_projections.TryGetValue(key, out var state))
-        {
-            return ValueTask.FromResult<string?>(state);
-        }
-
-        return ValueTask.FromResult<string?>(null);
+        return _projections.TryGetValue(key, out var state)
+            ? ValueTask.FromResult<ReadOnlyMemory<byte>?>(state)
+            : ValueTask.FromResult<ReadOnlyMemory<byte>?>(null);
     }
 
     /// <inheritdoc/>

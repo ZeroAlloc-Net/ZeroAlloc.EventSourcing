@@ -128,7 +128,7 @@ public sealed class CustomProjectionsDocTests
         await CustomProjectionsUsage.BatchedUsage(eventStore, projectionStore);
 
         var saved = await projectionStore.LoadAsync("order-totals");
-        System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, decimal>>(saved!)!.Should().HaveCount(150);
+        System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, decimal>>(saved!.Value.Span)!.Should().HaveCount(150);
     }
 
     [Fact]
@@ -220,7 +220,7 @@ public sealed class CustomProjectionsDocTests
         var expected = new Dictionary<string, decimal> { ["2"] = 7m };
         projection.Current.Should().BeEquivalentTo(expected);
         var saved = await projectionStore.LoadAsync("rebuilt-order-totals");
-        System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, decimal>>(saved!).Should().BeEquivalentTo(expected);
+        System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, decimal>>(saved!.Value.Span).Should().BeEquivalentTo(expected);
     }
 
     private sealed class RecordingEmail : IEmailService

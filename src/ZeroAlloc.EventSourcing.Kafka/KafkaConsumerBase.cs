@@ -41,6 +41,24 @@ public abstract class KafkaConsumerBase : IStreamConsumer, IDisposable
     protected static string CheckpointKey(string consumerId, int partition)
         => $"{consumerId}:p{partition}";
 
+    /// <summary>
+    /// Production constructor without a dead-letter store — builds a Confluent.Kafka consumer
+    /// internally.
+    /// </summary>
+    protected KafkaConsumerBase(
+        string bootstrapServers,
+        string? groupId,
+        ICheckpointStore checkpointStore,
+        IEventSerializer serializer,
+        IEventTypeRegistry registry,
+        string topic,
+        TimeSpan pollTimeout,
+        StreamConsumerOptions options)
+        : this(bootstrapServers, groupId, checkpointStore, serializer, registry, topic, pollTimeout,
+               options, deadLetterStore: null)
+    {
+    }
+
     /// <summary>Production constructor — builds a Confluent.Kafka consumer internally.</summary>
     protected KafkaConsumerBase(
         string bootstrapServers,
@@ -51,7 +69,7 @@ public abstract class KafkaConsumerBase : IStreamConsumer, IDisposable
         string topic,
         TimeSpan pollTimeout,
         StreamConsumerOptions options,
-        IDeadLetterStore? deadLetterStore = null)
+        IDeadLetterStore? deadLetterStore)
     {
         _checkpointStore = checkpointStore ?? throw new ArgumentNullException(nameof(checkpointStore));
         _serializer      = serializer      ?? throw new ArgumentNullException(nameof(serializer));
@@ -71,28 +89,6 @@ public abstract class KafkaConsumerBase : IStreamConsumer, IDisposable
         };
         _consumer     = BuildConsumer(config);
         _ownsConsumer = true;
-    }
-
-    /// <summary>Internal constructor for testing — accepts an injected IConsumer.</summary>
-    /// <remarks>
-    /// Obsolete: this overload and the production constructor both carry an optional parameter,
-    /// which violates RS0026. Call the constructor that takes <c>ownsConsumer</c> and pass
-    /// <see langword="false"/>; it behaves identically.
-    /// </remarks>
-    [Obsolete("Use the constructor that takes ownsConsumer and pass false. "
-        + "This overload will be removed in the next major version.", DiagnosticId = "ZAES002")]
-    protected internal KafkaConsumerBase(
-        IConsumer<string, byte[]> consumer,
-        ICheckpointStore checkpointStore,
-        IEventSerializer serializer,
-        IEventTypeRegistry registry,
-        string topic,
-        TimeSpan pollTimeout,
-        StreamConsumerOptions options,
-        IDeadLetterStore? deadLetterStore = null)
-        : this(consumer, checkpointStore, serializer, registry, topic, pollTimeout, options,
-               deadLetterStore, ownsConsumer: false)
-    {
     }
 
     /// <summary>

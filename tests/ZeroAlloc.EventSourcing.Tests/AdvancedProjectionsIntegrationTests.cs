@@ -232,7 +232,7 @@ public class AdvancedProjectionsIntegrationTests
 
         // Step 3: Snapshot current state to projection store
         var key = $"OrderSnapshot-{streamId.Value}";
-        var serialized = System.Text.Json.JsonSerializer.Serialize(projection1.Current);
+        var serialized = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(projection1.Current);
         await projectionStore.SaveAsync(key, serialized);
 
         // Step 4: Simulate a crash/restart - rebuild projection from events

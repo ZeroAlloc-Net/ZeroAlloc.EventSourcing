@@ -60,17 +60,4 @@ public class WithTelemetryTests
         var act = () => builder.WithTelemetry();
         act.Should().NotThrow();
     }
-
-    [Fact]
-    public void UseEventSourcingTelemetry_LegacyShim_DecoratesAggregateRepository()
-    {
-        var services = BaseServicesWithFakeRepository();
-#pragma warning disable CS0618 // exercise the legacy shim
-        services.AddEventSourcing().UseEventSourcingTelemetry();
-#pragma warning restore CS0618
-
-        using var provider = services.BuildServiceProvider();
-        var repo = provider.GetRequiredService<IAggregateRepository<FakeAggregate, OrderId>>();
-        repo.Should().BeOfType<InstrumentedAggregateRepository<FakeAggregate, OrderId>>();
-    }
 }

@@ -298,7 +298,7 @@ public class NestedAndGenericTypeTests
     [Fact]
     public void AggregateInANonPartialContainingType_ReportsZAES005AndGeneratesNothingForIt()
     {
-        // Outer is not partial; Middle is. The warning names the outermost non-partial type.
+        // Outer is not partial; Middle is. The error names the outermost non-partial type.
         var nested = $$"""
             using ZeroAlloc.EventSourcing.Aggregates;
             namespace Shop;
@@ -317,14 +317,14 @@ public class NestedAndGenericTypeTests
         run.Exceptions.Should().BeEmpty();
         var diagnostic = run.GeneratorDiagnostics.Should().ContainSingle().Subject;
         diagnostic.Id.Should().Be("ZAES005");
-        diagnostic.Severity.Should().Be(DiagnosticSeverity.Warning);
+        diagnostic.Severity.Should().Be(DiagnosticSeverity.Error);
         diagnostic.GetMessage().Should().Be(
             "Aggregate or projection 'Shop.Outer.Middle.Order' is nested in 'Shop.Outer', which is not partial, "
             + "so no code is generated for it. Declare every containing type partial.");
         run.LocatedText(diagnostic).Should().Be("Order");
         run.HintNames.Should().BeEquivalentTo(CartSources);
         // Without the generated ApplyEvent the aggregate stays abstract; nothing else fails.
-        run.Errors.Select(e => e.Id).Should().BeEquivalentTo(["CS0534"]);
+        run.Errors.Select(e => e.Id).Should().BeEquivalentTo(["ZAES005", "CS0534"]);
     }
 
     [Fact]
@@ -442,6 +442,7 @@ public class NestedAndGenericTypeTests
         run.Exceptions.Should().BeEmpty();
         var diagnostic = run.GeneratorDiagnostics.Should().ContainSingle().Subject;
         diagnostic.Id.Should().Be("ZAES005");
+        diagnostic.Severity.Should().Be(DiagnosticSeverity.Error);
         diagnostic.GetMessage().Should().Contain("'Shop.Reporting.Summary' is nested in 'Shop.Reporting'");
         run.HintNames.Should().BeEquivalentTo(CartSources);
     }

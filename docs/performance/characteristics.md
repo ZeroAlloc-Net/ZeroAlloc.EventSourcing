@@ -2,7 +2,7 @@
 
 **Version:** 1.0  
 **Last Updated:** 2026-10-17  
-**Target Runtime:** .NET 8.0+
+**Target Runtime:** .NET 10 and .NET 11
 
 ## Overview
 
@@ -24,7 +24,7 @@ In steady state (after JIT warmup), what the library itself allocates:
 |-----------|------------|-------|
 | Append | 0 B | `EventStore` itself, asserted by `EventStoreAllocationTests`; the adapter allocates what its driver needs |
 | Aggregate save | 0 B | Asserted by `AggregateRepositoryAllocationTests` |
-| Read a stream | 96 B per call, nothing per event | The reader object; asserted by `EventStoreReadAllocationTests` |
+| Read a stream | 0 B | `ReadAsync` returns a struct reader over pooled state; asserted by `EventStoreReadAllocationTests` |
 | Replay state | 0 B | State is a struct on the stack |
 | Snapshot read, in-memory store | 0 B | |
 
@@ -164,7 +164,7 @@ Impact: Reduces pause times by 50-70% at cost of slightly higher memory usage.
 
 ZeroAlloc.EventSourcing delivers:
 
-- **No allocation of its own** on the write path, and 96 B per read
+- **No allocation of its own** on the write path or the read path
 - **Predictable performance** (replay cost scales linearly with event count)
 - **Snapshot support** for scaling to large aggregates
 - **Cache-efficient** struct-based state representation
