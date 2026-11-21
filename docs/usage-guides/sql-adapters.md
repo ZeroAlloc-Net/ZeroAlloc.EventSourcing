@@ -484,10 +484,14 @@ ALTER TABLE projection_states ALTER COLUMN state TYPE BYTEA USING convert_to(sta
 -- SQL Server 2019 or later. One batch in one transaction: any error rolls every step back
 -- and leaves the 1.x table as it was, so the script can be run again. Run it in a session
 -- with no open transaction, so its COMMIT really commits and its ROLLBACK touches nothing else.
+IF @@TRANCOUNT > 0
+BEGIN
+    -- RAISERROR, not THROW: under XACT_ABORT a THROW would roll back the open transaction.
+    RAISERROR('Run the projection_states migration in a session with no open transaction.', 16, 1);
+    RETURN;
+END;
 SET IMPLICIT_TRANSACTIONS OFF;
 SET XACT_ABORT ON;
-IF @@TRANCOUNT > 0
-    THROW 50000, 'Run the projection_states migration in a session with no open transaction.', 1;
 BEGIN TRY
     BEGIN TRANSACTION;
     ALTER TABLE dbo.projection_states ADD state_utf8 VARBINARY(MAX) NULL;
