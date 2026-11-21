@@ -84,7 +84,7 @@ public class AggregateRepositoryAllocationTests
                 new AppendResult(id, new StreamPosition(expectedVersion.Value + events.Length))));
         }
 
-        public IAsyncEnumerable<EventEnvelope> ReadAsync(StreamId id, StreamPosition from = default, CancellationToken ct = default)
+        public EventStreamReader ReadAsync(StreamId id, StreamPosition from = default, CancellationToken ct = default)
             => throw new NotSupportedException();
 
         public ValueTask<IEventSubscription> SubscribeAsync(

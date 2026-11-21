@@ -523,7 +523,7 @@ public class MongoEventStoreAdapter : IEventStoreAdapter
         // Insert events into MongoDB collection
     }
 
-    public IAsyncEnumerable<EventEnvelope> ReadAsync(...)
+    public IAsyncEnumerable<RawEvent> ReadAsync(...)
     {
         // Query events from MongoDB
     }

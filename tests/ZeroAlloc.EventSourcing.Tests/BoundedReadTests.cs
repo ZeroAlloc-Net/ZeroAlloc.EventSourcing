@@ -119,6 +119,8 @@ public class BoundedReadTests
     private static RawEvent Raw(string eventType, long position)
         => new(new StreamPosition(position), eventType, Encoding.UTF8.GetBytes("{}"), EventMetadata.New(eventType));
 
+    private static Task<List<EventEnvelope>> ToListAsync(EventStreamReader source) => ToListAsync(source.AsAsyncEnumerable());
+
     private static async Task<List<T>> ToListAsync<T>(IAsyncEnumerable<T> source)
     {
         var list = new List<T>();
@@ -189,8 +191,11 @@ public class BoundedReadTests
     /// <summary>A store that implements only the unbounded read, as stores written before #473 do.</summary>
     private sealed class UnboundedOnlyStore(int count) : IEventStore
     {
-        public async IAsyncEnumerable<EventEnvelope> ReadAsync(
-            StreamId id, StreamPosition from = default, [EnumeratorCancellation] CancellationToken ct = default)
+        public EventStreamReader ReadAsync(StreamId id, StreamPosition from = default, CancellationToken ct = default)
+            => new(Events(id, from, ct));
+
+        private async IAsyncEnumerable<EventEnvelope> Events(
+            StreamId id, StreamPosition from, [EnumeratorCancellation] CancellationToken ct = default)
         {
             await Task.Yield();
             for (var i = from.Value + 1; i <= count; i++)

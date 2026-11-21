@@ -241,7 +241,7 @@ public sealed class WithTelemetryRegistrationTests
     {
         var store = Substitute.For<IEventStore>();
         store.ReadAsync(Arg.Any<StreamId>(), Arg.Any<StreamPosition>(), Arg.Any<CancellationToken>())
-             .Returns(_ => Empty());
+             .Returns(_ => new EventStreamReader(Empty()));
         return store;
 
         static async IAsyncEnumerable<EventEnvelope> Empty()

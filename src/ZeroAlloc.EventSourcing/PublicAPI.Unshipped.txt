@@ -1,3 +1,28 @@
 #nullable enable
 ZeroAlloc.EventSourcing.IProjectionStore.LoadAsync(string! key, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<System.ReadOnlyMemory<byte>?>
 ZeroAlloc.EventSourcing.IProjectionStore.SaveAsync(string! key, System.ReadOnlyMemory<byte> state, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+ZeroAlloc.EventSourcing.ConfiguredEventStreamReader
+ZeroAlloc.EventSourcing.ConfiguredEventStreamReader.ConfiguredEventStreamReader() -> void
+ZeroAlloc.EventSourcing.ConfiguredEventStreamReader.Enumerator
+ZeroAlloc.EventSourcing.ConfiguredEventStreamReader.Enumerator.Current.get -> ZeroAlloc.EventSourcing.EventEnvelope
+ZeroAlloc.EventSourcing.ConfiguredEventStreamReader.Enumerator.DisposeAsync() -> System.Runtime.CompilerServices.ConfiguredValueTaskAwaitable
+ZeroAlloc.EventSourcing.ConfiguredEventStreamReader.Enumerator.Enumerator() -> void
+ZeroAlloc.EventSourcing.ConfiguredEventStreamReader.Enumerator.MoveNextAsync() -> System.Runtime.CompilerServices.ConfiguredValueTaskAwaitable<bool>
+ZeroAlloc.EventSourcing.ConfiguredEventStreamReader.GetAsyncEnumerator() -> ZeroAlloc.EventSourcing.ConfiguredEventStreamReader.Enumerator
+ZeroAlloc.EventSourcing.ConfiguredEventStreamReader.WithCancellation(System.Threading.CancellationToken cancellationToken) -> ZeroAlloc.EventSourcing.ConfiguredEventStreamReader
+ZeroAlloc.EventSourcing.EventStore.ReadAsync(ZeroAlloc.EventSourcing.StreamId id, ZeroAlloc.EventSourcing.StreamPosition from = default(ZeroAlloc.EventSourcing.StreamPosition), System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> ZeroAlloc.EventSourcing.EventStreamReader
+ZeroAlloc.EventSourcing.EventStore.ReadBatchAsync(ZeroAlloc.EventSourcing.StreamId id, ZeroAlloc.EventSourcing.StreamPosition from, int maxCount, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> ZeroAlloc.EventSourcing.EventStreamReader
+ZeroAlloc.EventSourcing.EventStreamReader
+ZeroAlloc.EventSourcing.EventStreamReader.AsAsyncEnumerable() -> System.Collections.Generic.IAsyncEnumerable<ZeroAlloc.EventSourcing.EventEnvelope>!
+ZeroAlloc.EventSourcing.EventStreamReader.ConfigureAwait(bool continueOnCapturedContext) -> ZeroAlloc.EventSourcing.ConfiguredEventStreamReader
+ZeroAlloc.EventSourcing.EventStreamReader.Enumerator
+ZeroAlloc.EventSourcing.EventStreamReader.Enumerator.Current.get -> ZeroAlloc.EventSourcing.EventEnvelope
+ZeroAlloc.EventSourcing.EventStreamReader.Enumerator.DisposeAsync() -> System.Threading.Tasks.ValueTask
+ZeroAlloc.EventSourcing.EventStreamReader.Enumerator.Enumerator() -> void
+ZeroAlloc.EventSourcing.EventStreamReader.Enumerator.MoveNextAsync() -> System.Threading.Tasks.ValueTask<bool>
+ZeroAlloc.EventSourcing.EventStreamReader.EventStreamReader() -> void
+ZeroAlloc.EventSourcing.EventStreamReader.EventStreamReader(System.Collections.Generic.IAsyncEnumerable<ZeroAlloc.EventSourcing.EventEnvelope>! source) -> void
+ZeroAlloc.EventSourcing.EventStreamReader.GetAsyncEnumerator(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> ZeroAlloc.EventSourcing.EventStreamReader.Enumerator
+ZeroAlloc.EventSourcing.EventStreamReader.WithCancellation(System.Threading.CancellationToken cancellationToken) -> ZeroAlloc.EventSourcing.EventStreamReader
+ZeroAlloc.EventSourcing.IEventStore.ReadAsync(ZeroAlloc.EventSourcing.StreamId id, ZeroAlloc.EventSourcing.StreamPosition from = default(ZeroAlloc.EventSourcing.StreamPosition), System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> ZeroAlloc.EventSourcing.EventStreamReader
+ZeroAlloc.EventSourcing.IEventStore.ReadBatchAsync(ZeroAlloc.EventSourcing.StreamId id, ZeroAlloc.EventSourcing.StreamPosition from, int maxCount, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> ZeroAlloc.EventSourcing.EventStreamReader

@@ -29,8 +29,9 @@ mapping, metadata and the hand-off of the raw events. Reads go through the in-me
 | Read a 100-event stream | 12,216 B |
 | Read 10 streams of 10 events | 21,360 B |
 
-Read allocations include the in-memory adapter's snapshot of the stream; the library's own share
-is the 96 B reader listed under [Allocations](#allocations).
+Read allocations include the in-memory adapter's snapshot of the stream. These figures were measured
+with 1.x, which added a 96 B reader per read; since 2.0 the library's own share is 0 B, see
+[Allocations](#allocations).
 
 ## Snapshot Storage
 
@@ -149,9 +150,12 @@ What the library itself allocates, measured with allocation-free test doubles fo
 |---|---:|---|
 | `EventStore.AppendAsync`, 1 to 64 events | 0 B | `EventStoreAllocationTests` |
 | `AggregateRepository.SaveAsync` | 0 B | `AggregateRepositoryAllocationTests` |
-| `EventStore.ReadAsync`, one full read of 1 or 100 events | 96 B per call, none per event | `EventStoreReadAllocationTests` |
+| `EventStore.ReadAsync` and `ReadBatchAsync`, one full read of 1 or 100 events | 0 B | `EventStoreReadAllocationTests` |
 
-The 96 B is the reader object `ReadAsync` returns, which is also its enumerator. Removing it means returning a struct reader instead of `IAsyncEnumerable<EventEnvelope>`, a breaking change held for the next major ([#512](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/issues/512)). Storage adapters and serializers add their own allocations on top, as the SQLite numbers above show.
+`ReadAsync` returns the struct `EventStreamReader`, whose enumeration state is pooled per thread
+([#512](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/issues/512)). In 1.x it returned
+`IAsyncEnumerable<EventEnvelope>` and allocated a 96 B reader per call. Storage adapters and serializers
+add their own allocations on top, as the SQLite numbers above show.
 
 ## Methodology
 

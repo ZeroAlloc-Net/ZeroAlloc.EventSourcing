@@ -18,7 +18,13 @@ public interface IEventStore
         CancellationToken ct = default);
 
     /// <summary>Reads the events of a stream after <paramref name="from"/>. The bound is exclusive: the events with a position greater than <paramref name="from"/>, so <see cref="StreamPosition.Start"/> reads the whole stream.</summary>
-    IAsyncEnumerable<EventEnvelope> ReadAsync(
+    /// <remarks>
+    /// Enumerate the returned <see cref="EventStreamReader"/> with <c>await foreach</c>; call
+    /// <see cref="EventStreamReader.AsAsyncEnumerable"/> where an <see cref="IAsyncEnumerable{T}"/> is needed.
+    /// An implementation that produces its own events wraps them with
+    /// <see cref="EventStreamReader(IAsyncEnumerable{EventEnvelope})"/>.
+    /// </remarks>
+    EventStreamReader ReadAsync(
         StreamId id,
         StreamPosition from = default,
         CancellationToken ct = default);
@@ -34,14 +40,15 @@ public interface IEventStore
     /// events. <see cref="EventStore"/> overrides it to bound the query the adapter runs.
     /// </remarks>
     /// <exception cref="ArgumentOutOfRangeException"><paramref name="maxCount"/> is zero or negative.</exception>
-    IAsyncEnumerable<EventEnvelope> ReadBatchAsync(
+    EventStreamReader ReadBatchAsync(
         StreamId id,
         StreamPosition from,
         int maxCount,
         CancellationToken ct = default)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxCount);
-        return Internal.BoundedRead.Take(ReadAsync(id, from, ct), maxCount, ct);
+        return new EventStreamReader(
+            Internal.BoundedRead.Take(ReadAsync(id, from, ct).AsAsyncEnumerable(), maxCount, ct));
     }
 
     /// <summary>Subscribes to events appended to a stream from <paramref name="from"/> onward.</summary>

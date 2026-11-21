@@ -73,11 +73,15 @@ public sealed partial class EventStore : IEventStore
     /// Each call allocates one small reader object, which is also the enumerator for the first
     /// enumeration on the calling thread. Nothing is allocated per event by the store itself.
     /// </remarks>
-    public IAsyncEnumerable<EventEnvelope> ReadAsync(
+    /// <remarks>
+    /// An <c>await foreach</c> over the returned reader allocates nothing in the store: the state of
+    /// the enumeration is pooled, one per thread. The adapter and the serializer may allocate.
+    /// </remarks>
+    public EventStreamReader ReadAsync(
         StreamId id,
         StreamPosition from = default,
         CancellationToken ct = default)
-        => new StreamReader(this, id, from, ct);
+        => new(this, id, from, maxCount: 0, ct);
 
     /// <inheritdoc/>
     /// <remarks>
@@ -86,14 +90,14 @@ public sealed partial class EventStore : IEventStore
     /// are skipped, as in <see cref="ReadAsync"/>; when that leaves the batch short, the next rows are
     /// read, so a short batch still means the end of the stream.
     /// </remarks>
-    public IAsyncEnumerable<EventEnvelope> ReadBatchAsync(
+    public EventStreamReader ReadBatchAsync(
         StreamId id,
         StreamPosition from,
         int maxCount,
         CancellationToken ct = default)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxCount);
-        return new BatchReader(this, id, from, maxCount, ct);
+        return new(this, id, from, maxCount, ct);
     }
 
     /// <summary>

@@ -12,15 +12,16 @@ public class EventStoreReadAllocationTests
 {
     private const int Iterations = 1_000;
 
-    // Each call allocates the one reader object behind EventStore.ReadAsync: 96 B, measured on
-    // net9.0. It was 304 B while ReadAsync was a compiler-generated async iterator, see issue 504.
-    // Nothing is allocated per event, which the 1- and 100-event cases pin.
-    private const int ReadCallBudgetBytes = 96;
+    // A read allocates nothing: ReadAsync returns a struct reader whose enumeration state is
+    // pooled per thread, issue 512. It was 96 B for the reader object while ReadAsync returned an
+    // IAsyncEnumerable, and 304 B while that was a compiler-generated async iterator, issue 504.
+    // Nothing is allocated per event either, which the 1- and 100-event cases pin.
+    private const int ReadCallBudgetBytes = 0;
 
     [Theory]
     [InlineData(1)]
     [InlineData(100)]
-    public void ReadAsync_WithAllocationFreeCollaborators_AllocatesOnlyTheReaderPerCall(int eventCount)
+    public void ReadAsync_WithAllocationFreeCollaborators_AllocatesNothing(int eventCount)
     {
         var store = new EventStore(new CachedReadAdapter(eventCount), new CachedSerializer(), new ConstantRegistry());
         var id = new StreamId("alloc-stream");
@@ -35,9 +36,27 @@ public class EventStoreReadAllocationTests
         Assert.Equal(eventCount, read);
     }
 
-    // The fake adapter completes every step synchronously, so the iterator can be driven without
+    [Theory]
+    [InlineData(1)]
+    [InlineData(100)]
+    public void ReadBatchAsync_WithAllocationFreeCollaborators_AllocatesNothing(int eventCount)
+    {
+        var store = new EventStore(new CachedReadAdapter(eventCount), new CachedSerializer(), new ConstantRegistry());
+        var id = new StreamId("alloc-stream");
+        var read = 0;
+
+        AllocationGate.AssertBudget(
+            ReadCallBudgetBytes,
+            Iterations,
+            () => read = DrainSynchronously(store.ReadBatchAsync(id, StreamPosition.Start, eventCount)),
+            $"EventStore.ReadBatchAsync over {eventCount} events");
+
+        Assert.Equal(eventCount, read);
+    }
+
+    // The fake adapter completes every step synchronously, so the reader can be driven without
     // awaiting; a step that does not complete synchronously fails the test.
-    private static int DrainSynchronously(IAsyncEnumerable<EventEnvelope> source)
+    private static int DrainSynchronously(EventStreamReader source)
     {
         var count = 0;
         var enumerator = source.GetAsyncEnumerator();
@@ -105,6 +124,9 @@ public class EventStoreReadAllocationTests
         public RawEvent Current => _events[_index];
 
         public IAsyncEnumerable<RawEvent> ReadAsync(StreamId id, StreamPosition from, CancellationToken ct = default)
+            => this;
+
+        public IAsyncEnumerable<RawEvent> ReadBatchAsync(StreamId id, StreamPosition from, int maxCount, CancellationToken ct = default)
             => this;
 
         public IAsyncEnumerator<RawEvent> GetAsyncEnumerator(CancellationToken cancellationToken = default)
