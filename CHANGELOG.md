@@ -1,5 +1,26 @@
 # Changelog
 
+## [2.0.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/compare/ZeroAlloc.EventSourcing-v1.7.1...ZeroAlloc.EventSourcing-v2.0.0) (2026-11-21)
+
+
+### ⚠ BREAKING CHANGES
+
+* net8.0 and net9.0 assets are no longer shipped; the APIs obsoleted as ZAES001 to ZAES004 and ZAES008 are removed; `IProjectionStore` saves and loads `ReadOnlyMemory<byte>` instead of `string`, and the SQL `projection_states.state` column moves to `BYTEA` and `VARBINARY(MAX)`; `IEventStore.ReadAsync` and `ReadBatchAsync` return the `EventStreamReader` struct instead of `IAsyncEnumerable<EventEnvelope>`; ZAES005 is now an error. See the migration notes in the release.
+
+### Features
+
+* add a KafkaConsumerBase production constructor without a dead-letter store ([bb34482](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/commit/bb34482689606a8d93467913c59f180cf4b09c11))
+* convert 1.x text projection state columns to binary in EnsureSchemaAsync ([bb34482](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/commit/bb34482689606a8d93467913c59f180cf4b09c11))
+* remove the obsolete ZAES001 to ZAES004 APIs and the ZAES008 ReplayableProjection constructors ([bb34482](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/commit/bb34482689606a8d93467913c59f180cf4b09c11))
+* return a struct reader from the IEventStore read methods so a read allocates nothing ([bb34482](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/commit/bb34482689606a8d93467913c59f180cf4b09c11))
+* store projection state as bytes so binary serializers such as MemoryPack and MessagePack work ([bb34482](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/commit/bb34482689606a8d93467913c59f180cf4b09c11))
+* target net10.0 and net11.0, drop net8.0 and net9.0 ([bb34482](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/commit/bb34482689606a8d93467913c59f180cf4b09c11))
+
+
+### Bug Fixes
+
+* report ZAES005 as an error instead of skipping generation silently ([bb34482](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/commit/bb34482689606a8d93467913c59f180cf4b09c11))
+
 ## [1.7.1](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/compare/ZeroAlloc.EventSourcing-v1.7.0...ZeroAlloc.EventSourcing-v1.7.1) (2026-11-16)
 
 
