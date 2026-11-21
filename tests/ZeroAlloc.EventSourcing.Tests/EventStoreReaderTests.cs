@@ -336,6 +336,15 @@ public class EventStoreReaderTests
     }
 
     [Fact]
+    public void AsAsyncEnumerable_of_a_default_reader_returns_one_shared_empty_sequence()
+    {
+        var first = default(EventStreamReader).AsAsyncEnumerable();
+        var second = default(EventStreamReader).AsAsyncEnumerable();
+
+        second.Should().BeSameAs(first);
+    }
+
+    [Fact]
     public void A_reader_over_null_is_rejected()
     {
         var act = () => new EventStreamReader(null!);

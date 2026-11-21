@@ -110,7 +110,7 @@ public readonly struct EventStreamReader
     public IAsyncEnumerable<EventEnvelope> AsAsyncEnumerable()
     {
         if (_store is null && !_enumeratorToken.CanBeCanceled)
-            return _source ?? EmptyAsync();
+            return _source ?? AsyncEnumerable.Empty<EventEnvelope>();
 
         return Iterate(this);
     }
@@ -130,13 +130,6 @@ public readonly struct EventStreamReader
             await enumerator.DisposeAsync().ConfigureAwait(false);
         }
     }
-
-#pragma warning disable CS1998 // an empty iterator has nothing to await
-    private static async IAsyncEnumerable<EventEnvelope> EmptyAsync()
-    {
-        yield break;
-    }
-#pragma warning restore CS1998
 
     /// <summary>The enumerator of an <see cref="EventStreamReader"/>.</summary>
     /// <remarks>
