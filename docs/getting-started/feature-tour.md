@@ -167,4 +167,4 @@ The decorator emits, under the `ZeroAlloc.EventSourcing` activity-source/meter n
 
 Any OpenTelemetry SDK wired to the process picks up all three instruments automatically.
 
-Spans and metrics sit at the aggregate-repository layer: every published version of the package decorates `IAggregateRepository<,>`, not `IEventStore`. `UseEventSourcingTelemetry()` is an `[Obsolete]` alias that delegates to `WithTelemetry()`. See [Telemetry](../telemetry.md) for the full guide.
+Spans and metrics sit at the aggregate-repository layer: every published version of the package decorates `IAggregateRepository<,>`, not `IEventStore`. Version 2.0 removed the old `UseEventSourcingTelemetry()` alias; call `WithTelemetry()`. See [Telemetry](../telemetry.md) for the full guide.

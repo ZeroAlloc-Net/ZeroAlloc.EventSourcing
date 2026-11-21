@@ -12,7 +12,7 @@ public sealed class SqlServerDeadLetterStore : IDeadLetterStore
 {
     private readonly string _connectionString;
     private readonly IEventSerializer _serializer;
-    private readonly IEventTypeRegistry? _registry;
+    private readonly IEventTypeRegistry _registry;
 
     /// <summary>
     /// Initializes a new instance of <see cref="SqlServerDeadLetterStore"/>.
@@ -33,27 +33,6 @@ public sealed class SqlServerDeadLetterStore : IDeadLetterStore
         _connectionString = connectionString;
         _serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
-    }
-
-    /// <summary>
-    /// Initializes a new instance of <see cref="SqlServerDeadLetterStore"/> that reads back the
-    /// serialized payload instead of the event object.
-    /// </summary>
-    /// <remarks>
-    /// Obsolete: <see cref="ReadAllAsync"/> puts the stored payload bytes in
-    /// <see cref="EventEnvelope.Event"/>, where the in-memory store puts the event object, so replay
-    /// code cannot treat the stores alike.
-    /// </remarks>
-    /// <param name="connectionString">A valid SQL Server connection string.</param>
-    /// <param name="serializer">The serializer used to convert event payloads to bytes.</param>
-    /// <exception cref="ArgumentException">Thrown if <paramref name="connectionString"/> is null, empty, or whitespace-only.</exception>
-    /// <exception cref="ArgumentNullException">Thrown if <paramref name="serializer"/> is null.</exception>
-    [Obsolete(DeadLetterPayload.ObsoleteConstructor, DiagnosticId = DeadLetterPayload.ObsoleteConstructorId)]
-    public SqlServerDeadLetterStore(string connectionString, IEventSerializer serializer)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
-        _connectionString = connectionString;
-        _serializer = serializer ?? throw new ArgumentNullException(nameof(serializer));
     }
 
     /// <summary>

@@ -38,27 +38,6 @@ public sealed class PostgreSqlDeadLetterStoreTests(PostgreSqlContainerFixture fi
         act.Should().Throw<ArgumentNullException>().WithParameterName("registry");
     }
 
-    // The obsolete constructor keeps its behaviour until the next major removes it: without a
-    // registry it cannot resolve the event type, so it reads back the stored payload bytes.
-    [Fact]
-    public async Task ObsoleteConstructor_ReadsBackThePayloadBytes()
-    {
-#pragma warning disable ZAES004
-        var store = new PostgreSqlDeadLetterStore(_dataSource, new JsonEventSerializer());
-#pragma warning restore ZAES004
-        var envelope = new EventEnvelope(
-            new StreamId("s"), new StreamPosition(1), new DeadLetterTestEvent("o", 1),
-            new EventMetadata(Guid.NewGuid(), "UnregisteredEvent", DateTimeOffset.UtcNow, null, null));
-        await store.WriteAsync("consumer-1", envelope, new InvalidOperationException("boom"));
-
-        var results = new List<DeadLetterEntry>();
-        await foreach (var e in store.ReadAllAsync())
-            results.Add(e);
-
-        var payload = results.Should().ContainSingle().Which.Envelope.Event.Should().BeOfType<byte[]>().Subject;
-        JsonSerializer.Deserialize<DeadLetterTestEvent>(payload).Should().Be(new DeadLetterTestEvent("o", 1));
-    }
-
     [Fact]
     public async Task EnsureSchemaAsync_UpgradesTableFromBeforeMetadataColumns()
     {

@@ -158,13 +158,10 @@ public sealed record CustomerTotals(string CustomerId, decimal Total, int OrderC
 /// <summary>A record read model whose first event updates the starting value with <c>with</c>.</summary>
 public sealed class CustomerTotalsProjection : ReplayableProjection<CustomerTotals>
 {
-    // Pins the obsolete reflection-based constructor, ZAES008, until the next major removes it: #381.
-#pragma warning disable ZAES008
     public CustomerTotalsProjection()
-        : base(CustomerTotals.Empty)
+        : base(CustomerTotals.Empty, TestProjectionSerializers.CustomerTotals)
     {
     }
-#pragma warning restore ZAES008
 
     public override string GetProjectionKey() => "customer-totals";
 
@@ -198,15 +195,13 @@ public sealed class OrderAmountsProjection : ReplayableProjection<System.Collect
     public void SetCurrent(System.Collections.Immutable.ImmutableDictionary<string, decimal> value) => Current = value;
 }
 
-/// <summary>A value-type read model that uses the parameterless constructor.</summary>
+/// <summary>A value-type read model.</summary>
 public sealed class OrderCountProjection : ReplayableProjection<int>
 {
-    // Pins the obsolete reflection-based constructor, ZAES008, until the next major removes it: #381.
-#pragma warning disable ZAES008
     public OrderCountProjection()
+        : base(0, TestProjectionSerializers.Int32)
     {
     }
-#pragma warning restore ZAES008
 
     public override string GetProjectionKey() => "order-count";
 
@@ -214,22 +209,6 @@ public sealed class OrderCountProjection : ReplayableProjection<int>
         => @event.Event is OrderPlacedEvent ? current + 1 : current;
 
     public void SetCurrent(int value) => Current = value;
-}
-
-/// <summary>
-/// A projection on the parameterless constructor that sets <c>Current</c> itself, the pattern that predates
-/// the initial-state constructor. A rebuild resets it to <c>default</c>, as before.
-/// </summary>
-public sealed class LegacyStartingValueProjection : ReplayableProjection<int>
-{
-    // Pins the obsolete reflection-based constructor, ZAES008, until the next major removes it: #381.
-#pragma warning disable ZAES008
-    public LegacyStartingValueProjection() => Current = 50;
-#pragma warning restore ZAES008
-
-    public override string GetProjectionKey() => "legacy";
-
-    protected override int Apply(int current, EventEnvelope @event) => current + 1;
 }
 
 public class ReplayableProjectionInitialStateTests
@@ -247,7 +226,6 @@ public class ReplayableProjectionInitialStateTests
         new CustomerTotalsProjection().Current.Should().BeSameAs(CustomerTotals.Empty);
         new OrderAmountsProjection().Current.Should().BeEmpty();
         new OrderCountProjection().Current.Should().Be(0);
-        new LegacyStartingValueProjection().Current.Should().Be(50);
     }
 
     [Fact]
@@ -263,7 +241,8 @@ public class ReplayableProjectionInitialStateTests
 
         projection.Current.Should().Be(new CustomerTotals(string.Empty, 15m, 2));
         var saved = await projectionStore.LoadAsync("customer-totals");
-        System.Text.Json.JsonSerializer.Deserialize<CustomerTotals>(saved!).Should().Be(projection.Current);
+        System.Text.Json.JsonSerializer.Deserialize(saved!, ReplayableProjectionJsonContext.Default.CustomerTotals)
+            .Should().Be(projection.Current);
     }
 
     [Fact]
@@ -285,7 +264,7 @@ public class ReplayableProjectionInitialStateTests
     }
 
     [Fact]
-    public async Task Rebuild_ParameterlessConstructor_StillResetsToDefault()
+    public async Task Rebuild_ValueTypeReadModel_StartsFromTheInitialState()
     {
         var streamId = new StreamId("orders");
         var eventStore = await StoreWith(streamId, new OrderPlacedEvent("A", 10m), new OrderPlacedEvent("B", 5m));
@@ -297,18 +276,6 @@ public class ReplayableProjectionInitialStateTests
 
         projection.Current.Should().Be(2);
         (await projectionStore.LoadAsync("order-count")).Should().Be("2");
-    }
-
-    [Fact]
-    public async Task Rebuild_ParameterlessConstructorThatSetsCurrent_ResetsToDefaultAsBefore()
-    {
-        var streamId = new StreamId("orders");
-        var eventStore = await StoreWith(streamId, new OrderPlacedEvent("A", 10m));
-        var projection = new LegacyStartingValueProjection();
-
-        await projection.RebuildAsync(new InMemoryProjectionStore(), streamId, eventStore);
-
-        projection.Current.Should().Be(1);
     }
 
     [Fact]

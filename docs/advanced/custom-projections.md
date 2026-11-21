@@ -606,11 +606,8 @@ reuses the same instance.
 such as MemoryPack or MessagePack generally is not; binary state is tracked in
 [#425](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/issues/425).
 
-The constructors without a serializer, `base()` and `base(initialState)`, save the read model with
-reflection-based `System.Text.Json` instead. They are obsolete,
-[ZAES008](../diagnostics.md#zaes008), and removed in the next major version. They also carry
-`[RequiresUnreferencedCode]` and `[RequiresDynamicCode]`, so the trim and NativeAOT analyzers report
-a projection that uses them.
+Version 2.0 removed the constructors without a serializer, `base()` and `base(initialState)`, which saved
+the read model with reflection-based `System.Text.Json`; see [ZAES008](../diagnostics.md#zaes008).
 
 The projection answers queries from the partial state while it rebuilds. To keep serving the old
 state until the rebuild is done, rebuild a new instance and switch over, as

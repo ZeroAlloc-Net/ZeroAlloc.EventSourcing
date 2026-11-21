@@ -96,31 +96,6 @@ public sealed class HealthCheckRegistrationTests : IDisposable
             b => b.AddPostgreSqlEventStore(o => o.ConnectionString = ConnectionString),
             "postgresql-event-store");
 
-    // ── event store: obsolete overloads still honour every parameter ──────────
-
-#pragma warning disable ZAES002
-    [Fact]
-    public void EventStoreCheck_ObsoleteConnectionString_AppliesNameFailureStatusAndTags()
-        => ShouldBeCustom<PostgreSqlEventStoreHealthCheck>(
-            b => b.AddPostgreSqlEventStore(ConnectionString, "custom", HealthStatus.Degraded, CustomTags));
-
-    [Fact]
-    public void EventStoreCheck_ObsoleteDataSource_AppliesNameFailureStatusAndTags()
-        => ShouldBeCustom<PostgreSqlEventStoreHealthCheck>(
-            b => b.AddPostgreSqlEventStore(_dataSource, "custom", HealthStatus.Degraded, CustomTags));
-
-    [Fact]
-    public void EventStoreCheck_ObsoleteNamedTagsOnly_KeepsDefaultName()
-    {
-        var (registration, provider) = Register(b => b.AddPostgreSqlEventStore(ConnectionString, tags: CustomTags));
-        using (provider)
-        {
-            registration.Name.Should().Be("postgresql-event-store");
-            registration.Tags.Should().BeEquivalentTo(CustomTags);
-        }
-    }
-#pragma warning restore ZAES002
-
     // ── checkpoint store: plain overloads ─────────────────────────────────────
 
     [Fact]
@@ -160,20 +135,6 @@ public sealed class HealthCheckRegistrationTests : IDisposable
         => ShouldBeDefault<PostgreSqlCheckpointStoreHealthCheck>(
             b => b.AddPostgreSqlCheckpointStore(o => o.DataSource = _dataSource),
             "postgresql-checkpoint-store");
-
-    // ── checkpoint store: obsolete overloads still honour every parameter ─────
-
-#pragma warning disable ZAES002
-    [Fact]
-    public void CheckpointStoreCheck_ObsoleteConnectionString_AppliesNameFailureStatusAndTags()
-        => ShouldBeCustom<PostgreSqlCheckpointStoreHealthCheck>(
-            b => b.AddPostgreSqlCheckpointStore(ConnectionString, "custom", HealthStatus.Degraded, CustomTags));
-
-    [Fact]
-    public void CheckpointStoreCheck_ObsoleteDataSource_AppliesNameFailureStatusAndTags()
-        => ShouldBeCustom<PostgreSqlCheckpointStoreHealthCheck>(
-            b => b.AddPostgreSqlCheckpointStore(_dataSource, "custom", HealthStatus.Degraded, CustomTags));
-#pragma warning restore ZAES002
 
     // ── options validation ────────────────────────────────────────────────────
 

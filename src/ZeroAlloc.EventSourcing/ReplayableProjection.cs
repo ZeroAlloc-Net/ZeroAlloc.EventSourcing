@@ -1,7 +1,5 @@
 using System.Buffers;
-using System.Diagnostics.CodeAnalysis;
 using System.Text;
-using System.Text.Json;
 using ZeroAlloc.Serialisation;
 
 namespace ZeroAlloc.EventSourcing;
@@ -63,68 +61,10 @@ namespace ZeroAlloc.EventSourcing;
 /// </example>
 public abstract class ReplayableProjection<TReadModel> : Projection<TReadModel>
 {
-    private const string ReflectionSerializationMessage =
-        "RebuildAsync saves the read model with reflection-based System.Text.Json, which is not trim- or "
-        + "NativeAOT-safe. Use the constructor that takes an ISerializer<TReadModel> instead.";
-
-    private const string ObsoleteReflectionConstructor =
-        "This constructor saves the read model with reflection-based System.Text.Json, which is not trim- or "
-        + "NativeAOT-safe. Use the constructor that also takes an ISerializer<TReadModel>. "
-        + "This constructor will be removed in the next major version.";
-
-    private const string ObsoleteReflectionConstructorId = "ZAES008";
-
     private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
 
     private readonly TReadModel _initialState;
     private readonly Func<TReadModel, string> _serializeState;
-
-    /// <summary>
-    /// Initializes the projection with <see cref="Projection{TReadModel}.Current"/> at <c>default(TReadModel)</c>.
-    /// <see cref="RebuildAsync"/> resets to <c>default(TReadModel)</c> as well, and saves the read model with
-    /// reflection-based System.Text.Json.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <c>default</c> is a valid empty state for a struct, but <see langword="null"/> for a record, class or
-    /// collection.
-    /// </para>
-    /// <para>
-    /// Obsolete, ZAES008: reflection-based serialization is not trim- or NativeAOT-safe. Use
-    /// <see cref="ReplayableProjection{TReadModel}(TReadModel, ISerializer{TReadModel})"/>, passing
-    /// <c>default</c> as the initial state to keep this constructor's behaviour.
-    /// </para>
-    /// </remarks>
-    [Obsolete(ObsoleteReflectionConstructor, DiagnosticId = ObsoleteReflectionConstructorId)]
-    [RequiresUnreferencedCode(ReflectionSerializationMessage)]
-    [RequiresDynamicCode(ReflectionSerializationMessage)]
-    protected ReplayableProjection()
-        : this(default!)
-    {
-    }
-
-    /// <summary>
-    /// Initializes the projection with <see cref="Projection{TReadModel}.Current"/> at
-    /// <paramref name="initialState"/>. <see cref="RebuildAsync"/> resets to the same value before it replays
-    /// the stream, and saves the read model with reflection-based System.Text.Json.
-    /// </summary>
-    /// <remarks>
-    /// Obsolete, ZAES008: reflection-based serialization is not trim- or NativeAOT-safe. Use
-    /// <see cref="ReplayableProjection{TReadModel}(TReadModel, ISerializer{TReadModel})"/>.
-    /// </remarks>
-    /// <param name="initialState">
-    /// The read model before any event is applied, for example <c>ImmutableDictionary&lt;string, decimal&gt;.Empty</c>.
-    /// The same instance is reused on every rebuild, so it should be immutable.
-    /// </param>
-    [Obsolete(ObsoleteReflectionConstructor, DiagnosticId = ObsoleteReflectionConstructorId)]
-    [RequiresUnreferencedCode(ReflectionSerializationMessage)]
-    [RequiresDynamicCode(ReflectionSerializationMessage)]
-    protected ReplayableProjection(TReadModel initialState)
-    {
-        _initialState = initialState;
-        _serializeState = static state => JsonSerializer.Serialize(state);
-        Current = initialState;
-    }
 
     /// <summary>
     /// Initializes the projection with <see cref="Projection{TReadModel}.Current"/> at
@@ -173,9 +113,9 @@ public abstract class ReplayableProjection<TReadModel> : Projection<TReadModel>
     /// <para>
     /// This method:
     /// <list type="number">
-    /// <item><description>Resets <see cref="Projection{TReadModel}.Current"/> to the initial state passed to the constructor, or <c>default(TReadModel)</c></description></item>
+    /// <item><description>Resets <see cref="Projection{TReadModel}.Current"/> to the initial state passed to the constructor</description></item>
     /// <item><description>Replays all events from the event store via the provided eventStore</description></item>
-    /// <item><description>Saves the rebuilt state to the projection store, with the <see cref="ISerializer{T}"/> passed to the constructor, or reflection-based System.Text.Json</description></item>
+    /// <item><description>Saves the rebuilt state to the projection store, with the <see cref="ISerializer{T}"/> passed to the constructor</description></item>
     /// </list>
     /// </para>
     /// <para>

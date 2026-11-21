@@ -60,15 +60,6 @@ public static class EventSourcingBuilderExtensions
         return builder;
     }
 
-    /// <summary>
-    /// Legacy alias for <see cref="WithTelemetry"/>. Use <see cref="WithTelemetry"/> instead.
-    /// </summary>
-    /// <param name="builder">The <see cref="EventSourcingBuilder"/> to configure.</param>
-    /// <returns>The same <paramref name="builder"/> instance for chaining.</returns>
-    [Obsolete("Use WithTelemetry() instead. Will be removed in the next major.", DiagnosticId = "ZAES001")]
-    public static EventSourcingBuilder UseEventSourcingTelemetry(this EventSourcingBuilder builder)
-        => builder.WithTelemetry();
-
     // The service type is IAggregateRepository<,>, so the instance always implements the
     // non-generic IAggregateRepository and its Accept hands back the closed type arguments.
     private static object Decorate(object? inner, Type serviceType)

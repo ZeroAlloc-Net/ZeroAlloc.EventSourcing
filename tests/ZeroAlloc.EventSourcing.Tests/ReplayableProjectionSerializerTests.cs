@@ -17,6 +17,7 @@ namespace ZeroAlloc.EventSourcing.Tests;
 [JsonSerializable(typeof(CustomerTotals))]
 [JsonSerializable(typeof(OrderReadModel))]
 [JsonSerializable(typeof(System.Collections.Immutable.ImmutableDictionary<string, decimal>))]
+[JsonSerializable(typeof(int))]
 internal sealed partial class ReplayableProjectionJsonContext : JsonSerializerContext;
 
 /// <summary>The serializers the test projections pass to the <see cref="ReplayableProjection{TReadModel}"/> constructor.</summary>
@@ -27,6 +28,12 @@ internal static class TestProjectionSerializers
 
     public static SystemTextJsonSerializer<System.Collections.Immutable.ImmutableDictionary<string, decimal>> OrderAmounts { get; }
         = new(ReplayableProjectionJsonContext.Default.ImmutableDictionaryStringDecimal);
+
+    public static SystemTextJsonSerializer<CustomerTotals> CustomerTotals { get; }
+        = new(ReplayableProjectionJsonContext.Default.CustomerTotals);
+
+    public static SystemTextJsonSerializer<int> Int32 { get; }
+        = new(ReplayableProjectionJsonContext.Default.Int32);
 }
 
 public sealed class SerializedCustomerTotalsProjection : ReplayableProjection<CustomerTotals>

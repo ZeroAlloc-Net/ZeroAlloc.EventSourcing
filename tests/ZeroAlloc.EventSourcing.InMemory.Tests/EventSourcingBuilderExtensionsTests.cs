@@ -105,19 +105,6 @@ public class EventSourcingBuilderExtensionsTests
     }
 
     [Fact]
-    public void UseInMemorySnapshotStore_Obsolete_RegistersOpenGeneric()
-    {
-        var services = BaseServices();
-#pragma warning disable ZAES003 // the deprecated open-generic registration is still under test
-        services.AddEventSourcing().UseInMemorySnapshotStore();
-#pragma warning restore ZAES003
-
-        var provider = services.BuildServiceProvider();
-        provider.GetRequiredService<ISnapshotStore<TestState>>()
-                .Should().BeOfType<InMemorySnapshotStore<TestState>>();
-    }
-
-    [Fact]
     public void UseInMemoryDeadLetterStore_RegistersInMemoryDeadLetterStore()
     {
         var services = BaseServices();
@@ -151,16 +138,6 @@ public class EventSourcingBuilderExtensionsTests
     }
 
     [Fact]
-    public void UseInMemorySnapshotStore_Obsolete_ReturnsBuilder_ForChaining()
-    {
-        var services = BaseServices();
-        var builder = services.AddEventSourcing();
-#pragma warning disable ZAES003 // the deprecated open-generic registration is still under test
-        builder.UseInMemorySnapshotStore().Should().BeSameAs(builder);
-#pragma warning restore ZAES003
-    }
-
-    [Fact]
     public void UseInMemoryDeadLetterStore_ReturnsBuilder_ForChaining()
     {
         var services = BaseServices();
@@ -174,23 +151,6 @@ public class EventSourcingBuilderExtensionsTests
         var services = BaseServices();
         var builder = services.AddEventSourcing();
         builder.UseInMemoryProjectionStore().Should().BeSameAs(builder);
-    }
-
-    [Fact]
-    public void UseInMemorySnapshotStore_Obsolete_DoesNotOverwriteUserSnapshotStore()
-    {
-        var services = BaseServices();
-        // NSubstitute/Castle cannot proxy ISnapshotStore<TestState> when TestState is a private struct
-        // (Castle DynamicProxy requires type parameter to be accessible). Use a hand-written stub.
-        var custom = new StubSnapshotStore();
-        services.AddSingleton<ISnapshotStore<TestState>>(custom);
-
-#pragma warning disable ZAES003 // the deprecated open-generic registration is still under test
-        services.AddEventSourcing().UseInMemorySnapshotStore();
-#pragma warning restore ZAES003
-
-        var provider = services.BuildServiceProvider();
-        provider.GetRequiredService<ISnapshotStore<TestState>>().Should().BeSameAs(custom);
     }
 
     [Fact]

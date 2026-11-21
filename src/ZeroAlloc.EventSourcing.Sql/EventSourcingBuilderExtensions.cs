@@ -67,43 +67,6 @@ public static class EventSourcingBuilderExtensions
     }
 
     /// <summary>
-    /// Registers <see cref="PostgreSqlSnapshotStore{TState}"/> as the open-generic
-    /// <see cref="ISnapshotStore{TState}"/> implementation.
-    /// </summary>
-    /// <remarks>
-    /// Also registers a <see cref="NpgsqlDataSource"/> singleton using
-    /// <see cref="NpgsqlDataSource.Create(string)"/> if one is not already present.
-    /// Uses <c>TryAdd</c> — an existing open-generic registration is not overwritten.
-    /// <para>
-    /// Because <see cref="PostgreSqlSnapshotStore{TState}"/> accepts an optional
-    /// <see cref="IEventSerializer"/>, a registered <see cref="IEventSerializer"/> will
-    /// be injected automatically; if none is registered the store operates without
-    /// serialization support.
-    /// </para>
-    /// <para>
-    /// Obsolete: the open-generic registration throws under NativeAOT for every snapshot state,
-    /// because <see cref="ISnapshotStore{TState}"/> requires a value type and the container
-    /// cannot build a value-type instantiation of an open generic without dynamic code.
-    /// </para>
-    /// </remarks>
-    /// <param name="builder">The <see cref="EventSourcingBuilder"/> to configure.</param>
-    /// <param name="connectionString">A valid PostgreSQL connection string.</param>
-    /// <returns>The same <paramref name="builder"/> for method chaining.</returns>
-    [Obsolete("Use UsePostgreSqlSnapshotStore<TState>(connectionString) once per aggregate state type. "
-        + "The open-generic registration cannot resolve a value-type state under NativeAOT. "
-        + "This overload will be removed in the next major version.", DiagnosticId = "ZAES003")]
-    public static EventSourcingBuilder UsePostgreSqlSnapshotStore(
-        this EventSourcingBuilder builder, string connectionString)
-    {
-        builder.Services.TryAddSingleton(_ => NpgsqlDataSource.Create(connectionString));
-        builder.Services.TryAdd(
-            ServiceDescriptor.Singleton(
-                typeof(ISnapshotStore<>),
-                typeof(PostgreSqlSnapshotStore<>)));
-        return builder;
-    }
-
-    /// <summary>
     /// Registers <see cref="PostgreSqlDeadLetterStore"/> as <see cref="IDeadLetterStore"/>.
     /// </summary>
     /// <remarks>
@@ -250,11 +213,6 @@ public static class EventSourcingBuilderExtensions
     private const string EventStoreHealthCheckName = "postgresql-event-store";
     private const string CheckpointStoreHealthCheckName = "postgresql-checkpoint-store";
 
-    private const string ObsoleteHealthCheckOverload =
-        "Use the overload that takes only the connection string or data source, or the overload "
-        + "taking Action<PostgreSqlHealthCheckOptions> to set the name, failure status or tags. "
-        + "This overload will be removed in the next major version.";
-
     /// <summary>
     /// Registers <see cref="PostgreSqlEventStoreHealthCheck"/> under the name
     /// <c>postgresql-event-store</c>. Performs a <c>SELECT 1</c> on a pooled
@@ -321,51 +279,6 @@ public static class EventSourcingBuilderExtensions
     }
 
     /// <summary>
-    /// Registers <see cref="PostgreSqlEventStoreHealthCheck"/> with the health check system.
-    /// Performs a <c>SELECT 1</c> on a pooled connection for the connection string.
-    /// </summary>
-    /// <remarks>
-    /// Obsolete: this overload and its <see cref="NpgsqlDataSource"/> sibling both carry optional
-    /// parameters, which violates RS0026.
-    /// </remarks>
-    /// <param name="builder">The health checks builder.</param>
-    /// <param name="connectionString">PostgreSQL connection string used to create the data source.</param>
-    /// <param name="name">Health check registration name. Defaults to <c>postgresql-event-store</c>.</param>
-    /// <param name="failureStatus">Status to report on failure. Defaults to <see cref="HealthStatus.Unhealthy"/>.</param>
-    /// <param name="tags">Optional tags for filtering.</param>
-    /// <returns>The same <paramref name="builder"/> for method chaining.</returns>
-    [Obsolete(ObsoleteHealthCheckOverload, DiagnosticId = "ZAES002")]
-    public static IHealthChecksBuilder AddPostgreSqlEventStore(
-        this IHealthChecksBuilder builder,
-        string connectionString,
-        string name = EventStoreHealthCheckName,
-        HealthStatus? failureStatus = null,
-        IEnumerable<string>? tags = null)
-        => AddEventStoreCheck(builder, connectionString, name, failureStatus, tags);
-
-    /// <summary>
-    /// Registers <see cref="PostgreSqlEventStoreHealthCheck"/> using an existing <see cref="NpgsqlDataSource"/>.
-    /// </summary>
-    /// <remarks>
-    /// Obsolete: this overload and its connection-string sibling both carry optional
-    /// parameters, which violates RS0026.
-    /// </remarks>
-    /// <param name="builder">The health checks builder.</param>
-    /// <param name="dataSource">An existing <see cref="NpgsqlDataSource"/> to use.</param>
-    /// <param name="name">Health check registration name. Defaults to <c>postgresql-event-store</c>.</param>
-    /// <param name="failureStatus">Status to report on failure. Defaults to <see cref="HealthStatus.Unhealthy"/>.</param>
-    /// <param name="tags">Optional tags for filtering.</param>
-    /// <returns>The same <paramref name="builder"/> for method chaining.</returns>
-    [Obsolete(ObsoleteHealthCheckOverload, DiagnosticId = "ZAES002")]
-    public static IHealthChecksBuilder AddPostgreSqlEventStore(
-        this IHealthChecksBuilder builder,
-        NpgsqlDataSource dataSource,
-        string name = EventStoreHealthCheckName,
-        HealthStatus? failureStatus = null,
-        IEnumerable<string>? tags = null)
-        => AddEventStoreCheck(builder, dataSource, name, failureStatus, tags);
-
-    /// <summary>
     /// Registers <see cref="PostgreSqlCheckpointStoreHealthCheck"/> under the name
     /// <c>postgresql-checkpoint-store</c>. Performs a <c>SELECT 1</c> on a pooled
     /// connection for the connection string.
@@ -429,51 +342,6 @@ public static class EventSourcingBuilderExtensions
             ? AddCheckpointStoreCheck(builder, dataSource, name, options.FailureStatus, options.Tags)
             : AddCheckpointStoreCheck(builder, options.ConnectionString!, name, options.FailureStatus, options.Tags);
     }
-
-    /// <summary>
-    /// Registers <see cref="PostgreSqlCheckpointStoreHealthCheck"/> with the health check system.
-    /// Performs a <c>SELECT 1</c> on a pooled connection for the connection string.
-    /// </summary>
-    /// <remarks>
-    /// Obsolete: this overload and its <see cref="NpgsqlDataSource"/> sibling both carry optional
-    /// parameters, which violates RS0026.
-    /// </remarks>
-    /// <param name="builder">The health checks builder.</param>
-    /// <param name="connectionString">PostgreSQL connection string used to create the data source.</param>
-    /// <param name="name">Health check registration name. Defaults to <c>postgresql-checkpoint-store</c>.</param>
-    /// <param name="failureStatus">Status to report on failure. Defaults to <see cref="HealthStatus.Unhealthy"/>.</param>
-    /// <param name="tags">Optional tags for filtering.</param>
-    /// <returns>The same <paramref name="builder"/> for method chaining.</returns>
-    [Obsolete(ObsoleteHealthCheckOverload, DiagnosticId = "ZAES002")]
-    public static IHealthChecksBuilder AddPostgreSqlCheckpointStore(
-        this IHealthChecksBuilder builder,
-        string connectionString,
-        string name = CheckpointStoreHealthCheckName,
-        HealthStatus? failureStatus = null,
-        IEnumerable<string>? tags = null)
-        => AddCheckpointStoreCheck(builder, connectionString, name, failureStatus, tags);
-
-    /// <summary>
-    /// Registers <see cref="PostgreSqlCheckpointStoreHealthCheck"/> using an existing <see cref="NpgsqlDataSource"/>.
-    /// </summary>
-    /// <remarks>
-    /// Obsolete: this overload and its connection-string sibling both carry optional
-    /// parameters, which violates RS0026.
-    /// </remarks>
-    /// <param name="builder">The health checks builder.</param>
-    /// <param name="dataSource">An existing <see cref="NpgsqlDataSource"/> to use.</param>
-    /// <param name="name">Health check registration name. Defaults to <c>postgresql-checkpoint-store</c>.</param>
-    /// <param name="failureStatus">Status to report on failure. Defaults to <see cref="HealthStatus.Unhealthy"/>.</param>
-    /// <param name="tags">Optional tags for filtering.</param>
-    /// <returns>The same <paramref name="builder"/> for method chaining.</returns>
-    [Obsolete(ObsoleteHealthCheckOverload, DiagnosticId = "ZAES002")]
-    public static IHealthChecksBuilder AddPostgreSqlCheckpointStore(
-        this IHealthChecksBuilder builder,
-        NpgsqlDataSource dataSource,
-        string name = CheckpointStoreHealthCheckName,
-        HealthStatus? failureStatus = null,
-        IEnumerable<string>? tags = null)
-        => AddCheckpointStoreCheck(builder, dataSource, name, failureStatus, tags);
 
     private static PostgreSqlHealthCheckOptions Configure(Action<PostgreSqlHealthCheckOptions> configure)
     {

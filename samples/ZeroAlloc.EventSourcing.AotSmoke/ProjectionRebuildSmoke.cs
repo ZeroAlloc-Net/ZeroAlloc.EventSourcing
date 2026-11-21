@@ -19,8 +19,8 @@ public sealed record DepositTotals(int Deposits, decimal Balance)
 internal sealed partial class ProjectionJsonContext : JsonSerializerContext;
 
 /// <summary>
-/// Rebuilds through the ISerializer constructor, which is the AOT-safe path; the constructors
-/// without a serializer carry RequiresUnreferencedCode and RequiresDynamicCode.
+/// Rebuilds through the ISerializer constructor, the only constructor since the reflection-based
+/// ones were removed in 2.0.
 /// </summary>
 internal sealed class DepositTotalsProjection : ReplayableProjection<DepositTotals>
 {
