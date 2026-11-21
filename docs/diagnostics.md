@@ -1,11 +1,13 @@
 # Diagnostics
 
 The source generators in `ZeroAlloc.EventSourcing.Generators` report these diagnostics. Each one
-means that nothing is generated for the aggregate or projection it points at.
+means that nothing is generated for the aggregate or projection it points at. ZAES005 and ZAES007 are
+errors, because the code you asked for would silently not exist; ZAES006 is a warning, because a generic
+type may dispatch by hand without the generator.
 
 | ID | Severity | Title |
 |----|----------|-------|
-| [ZAES005](#zaes005) | Warning | Containing type of an aggregate or projection is not partial |
+| [ZAES005](#zaes005) | Error | Containing type of an aggregate or projection is not partial |
 | [ZAES006](#zaes006) | Warning | Generic aggregate or projection is not generated |
 | [ZAES007](#zaes007) | Error | File-local aggregate or projection is not generated |
 
@@ -18,8 +20,10 @@ through `[Obsolete]`. Version 2.0 removed those APIs; see [Removed APIs](#remove
 
 An aggregate or projection nested in another type is generated into the real nested type. To do
 that, the generated file reopens every containing type as `partial`, so each containing type has to
-be declared `partial`. When one is not, the generator reports ZAES005 on the aggregate or projection,
-naming the outermost containing type that is not partial, and generates nothing for it.
+be declared `partial`. When one is not, the generator reports the error ZAES005 on the aggregate or
+projection, naming the outermost containing type that is not partial, and generates nothing for it.
+Version 1.x reported ZAES005 as a warning, so a build passed without the generated code unless warnings
+were errors; since 2.0 the build fails.
 
 ```csharp
 public static class Retail                  // ZAES005: Retail is not partial

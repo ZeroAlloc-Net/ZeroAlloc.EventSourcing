@@ -11,7 +11,8 @@ internal static class Diagnostics
 
     /// <summary>
     /// A nested aggregate or projection whose containing type is not <c>partial</c>. The generated code
-    /// has to reopen every containing type, so nothing is generated for it.
+    /// has to reopen every containing type, so nothing is generated for it. An error since 2.0: the
+    /// user asked for code that does not exist, ZeroAlloc-Net/.github#48.
     /// </summary>
     public static readonly DiagnosticDescriptor ZAES005_ContainingTypeNotPartial = new(
         id: "ZAES005",
@@ -19,7 +20,7 @@ internal static class Diagnostics
         messageFormat: "Aggregate or projection '{0}' is nested in '{1}', which is not partial, "
             + "so no code is generated for it. Declare every containing type partial.",
         category: Category,
-        defaultSeverity: DiagnosticSeverity.Warning,
+        defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true,
         helpLinkUri: "https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/blob/main/docs/diagnostics.md#zaes005");
 
