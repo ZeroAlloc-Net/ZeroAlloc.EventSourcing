@@ -70,10 +70,6 @@ public sealed partial class EventStore : IEventStore
 
     /// <inheritdoc/>
     /// <remarks>
-    /// Each call allocates one small reader object, which is also the enumerator for the first
-    /// enumeration on the calling thread. Nothing is allocated per event by the store itself.
-    /// </remarks>
-    /// <remarks>
     /// An <c>await foreach</c> over the returned reader allocates nothing in the store: the state of
     /// the enumeration is pooled, one per thread. The adapter and the serializer may allocate.
     /// </remarks>

@@ -129,11 +129,16 @@ public sealed class SqlServerProjectionStore : IProjectionStore
     }
 
     // SqlClient sends a byte[] parameter; Offset and Size select the saved bytes inside it, so a state
-    // backed by an array is sent without a copy.
+    // backed by an array is sent without a copy. SqlClient reads Size 0 as "not set" and then sends the
+    // rest of the array from Offset, so an empty state is sent as an empty array instead.
     private static SqlParameter StateParameter(ReadOnlyMemory<byte> state)
     {
         var parameter = new SqlParameter("@state", SqlDbType.VarBinary, -1);
-        if (System.Runtime.InteropServices.MemoryMarshal.TryGetArray(state, out var segment))
+        if (state.IsEmpty)
+        {
+            parameter.Value = Array.Empty<byte>();
+        }
+        else if (System.Runtime.InteropServices.MemoryMarshal.TryGetArray(state, out var segment))
         {
             parameter.Value = segment.Array;
             parameter.Offset = segment.Offset;

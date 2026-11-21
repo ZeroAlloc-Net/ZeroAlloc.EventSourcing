@@ -100,6 +100,23 @@ public abstract class ProjectionStoreContractTests
         loaded!.Value.Length.Should().Be(0);
     }
 
+    /// <summary>
+    /// An empty slice of a larger buffer, such as a rented buffer with nothing written yet, saves an
+    /// empty state, not the rest of the buffer.
+    /// </summary>
+    [Fact]
+    public async Task EmptySliceOfALargerBuffer_SavesEmpty()
+    {
+        var store = CreateStore();
+        var buffer = new byte[8];
+
+        await store.SaveAsync("empty-slice", buffer.AsMemory(3, 0));
+
+        var loaded = await store.LoadAsync("empty-slice");
+        loaded.Should().NotBeNull();
+        loaded!.Value.Length.Should().Be(0);
+    }
+
     /// <summary>A state that is a slice of a larger buffer saves only the slice.</summary>
     [Fact]
     public async Task SliceOfALargerBuffer_SavesOnlyTheSlice()
