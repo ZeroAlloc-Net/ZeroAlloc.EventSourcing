@@ -1,5 +1,1 @@
 #nullable enable
-ZeroAlloc.EventSourcing.Sql.PostgreSqlProjectionStore.LoadAsync(string! key, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<System.ReadOnlyMemory<byte>?>
-ZeroAlloc.EventSourcing.Sql.PostgreSqlProjectionStore.SaveAsync(string! key, System.ReadOnlyMemory<byte> state, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
-ZeroAlloc.EventSourcing.Sql.SqlServerProjectionStore.LoadAsync(string! key, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<System.ReadOnlyMemory<byte>?>
-ZeroAlloc.EventSourcing.Sql.SqlServerProjectionStore.SaveAsync(string! key, System.ReadOnlyMemory<byte> state, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
