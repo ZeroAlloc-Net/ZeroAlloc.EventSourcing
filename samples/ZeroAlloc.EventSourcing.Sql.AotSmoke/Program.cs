@@ -101,12 +101,16 @@ static async Task RunStoresAsync(IServiceProvider provider, string label)
 
     var projections = provider.GetRequiredService<IProjectionStore>();
     var key = Smoke.Unique("projection");
-    await projections.SaveAsync(key, "{\"total\":6}").ConfigureAwait(false);
+    // Binary state with a NUL byte, which the 1.x text column could not store, #425.
+    byte[] saved = [0x7B, 0x00, 0xFF, 0x7D];
+    await projections.SaveAsync(key, saved).ConfigureAwait(false);
     var state = await projections.LoadAsync(key).ConfigureAwait(false);
-    Smoke.Check(string.Equals(state, "{\"total\":6}", StringComparison.Ordinal), $"{label}: projection read back {state}");
+    Smoke.Check(
+        state is { } bytes && bytes.Span.SequenceEqual(saved),
+        $"{label}: projection read back {(state is { } b ? Convert.ToHexString(b.Span) : "nothing")}, expected 7B00FF7D");
     await projections.ClearAsync(key).ConfigureAwait(false);
     state = await projections.LoadAsync(key).ConfigureAwait(false);
-    Smoke.Check(state is null, $"{label}: projection read back {state} after clear, expected none");
+    Smoke.Check(state is null, $"{label}: projection read back a state after clear, expected none");
 }
 
 static async Task CheckHealthyAsync(IHealthCheck check, string label)

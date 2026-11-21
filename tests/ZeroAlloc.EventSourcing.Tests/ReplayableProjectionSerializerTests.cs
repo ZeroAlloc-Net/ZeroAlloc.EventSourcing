@@ -100,22 +100,26 @@ public class ReplayableProjectionSerializerTests
         var expected = new CustomerTotals(string.Empty, 15m, 2);
         projection.Current.Should().Be(expected);
         var saved = await projectionStore.LoadAsync("serialized-customer-totals");
-        saved.Should().Be("""{"customerId":"","total":15,"orderCount":2}""");
-        System.Text.Json.JsonSerializer.Deserialize(saved!, ReplayableProjectionJsonContext.Default.CustomerTotals)
+        Encoding.UTF8.GetString(saved!.Value.Span).Should().Be("""{"customerId":"","total":15,"orderCount":2}""");
+        System.Text.Json.JsonSerializer.Deserialize(saved.Value.Span, ReplayableProjectionJsonContext.Default.CustomerTotals)
             .Should().Be(expected);
     }
 
+    /// <summary>
+    /// A binary serializer's output, which is not valid UTF-8, is saved byte for byte. Until #425 the
+    /// rebuild decoded the output as strict UTF-8 and threw.
+    /// </summary>
     [Fact]
-    public async Task Rebuild_SerializerWritesInvalidUtf8_ThrowsAndSavesNothing()
+    public async Task Rebuild_BinarySerializer_SavesItsBytesUnchanged()
     {
         var streamId = new StreamId("customer-1");
         var eventStore = await StoreWith(streamId, new OrderPlacedEvent("A", 10m));
         var projectionStore = new InMemoryProjectionStore();
         var projection = new SerializedCustomerTotalsProjection(new BinaryCustomerTotalsSerializer());
 
-        var act = async () => await projection.RebuildAsync(projectionStore, streamId, eventStore);
+        await projection.RebuildAsync(projectionStore, streamId, eventStore);
 
-        await act.Should().ThrowAsync<DecoderFallbackException>();
-        (await projectionStore.LoadAsync("serialized-customer-totals")).Should().BeNull();
+        var saved = await projectionStore.LoadAsync("serialized-customer-totals");
+        saved!.Value.ToArray().Should().Equal(new byte[] { 0x01, 0xFF, 0xFE });
     }
 }

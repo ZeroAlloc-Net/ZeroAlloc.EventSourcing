@@ -241,7 +241,7 @@ public class ReplayableProjectionInitialStateTests
 
         projection.Current.Should().Be(new CustomerTotals(string.Empty, 15m, 2));
         var saved = await projectionStore.LoadAsync("customer-totals");
-        System.Text.Json.JsonSerializer.Deserialize(saved!, ReplayableProjectionJsonContext.Default.CustomerTotals)
+        System.Text.Json.JsonSerializer.Deserialize(saved!.Value.Span, ReplayableProjectionJsonContext.Default.CustomerTotals)
             .Should().Be(projection.Current);
     }
 
@@ -259,7 +259,7 @@ public class ReplayableProjectionInitialStateTests
 
         projection.Current.Should().BeEquivalentTo(new Dictionary<string, decimal> { ["B"] = 5m });
         var saved = await projectionStore.LoadAsync("order-amounts");
-        System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, decimal>>(saved!)
+        System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, decimal>>(saved!.Value.Span)
             .Should().BeEquivalentTo(new Dictionary<string, decimal> { ["B"] = 5m });
     }
 
@@ -275,7 +275,7 @@ public class ReplayableProjectionInitialStateTests
         await projection.RebuildAsync(projectionStore, streamId, eventStore);
 
         projection.Current.Should().Be(2);
-        (await projectionStore.LoadAsync("order-count")).Should().Be("2");
+        (await projectionStore.LoadAsync("order-count"))!.Value.ToArray().Should().Equal("2"u8.ToArray());
     }
 
     [Fact]

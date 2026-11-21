@@ -36,12 +36,17 @@ internal static class SqlServerSchema
     /// <param name="createTableSql">Idempotent SQL that creates the table and adds missing columns.</param>
     /// <param name="columns">The columns that must be <c>NVARCHAR</c>.</param>
     /// <param name="ct">A cancellation token.</param>
+    /// <param name="utf8BinaryColumn">
+    /// A <c>NOT NULL</c> column that must be <c>VARBINARY(MAX)</c>. When it is still <c>NVARCHAR</c>,
+    /// its text is converted to UTF-8 bytes in place.
+    /// </param>
     internal static async ValueTask EnsureTableAsync(
         string connectionString,
         string table,
         string createTableSql,
         NVarCharColumn[] columns,
-        CancellationToken ct)
+        CancellationToken ct,
+        string? utf8BinaryColumn = null)
     {
         using var conn = new SqlConnection(connectionString);
         await conn.OpenAsync(ct).ConfigureAwait(false);
@@ -54,7 +59,61 @@ internal static class SqlServerSchema
         if (varcharColumns.Count > 0)
             await ConvertAsync(conn, tx, table, varcharColumns, ct).ConfigureAwait(false);
 
+        if (utf8BinaryColumn is not null)
+            await ConvertTextToUtf8BinaryAsync(conn, tx, table, utf8BinaryColumn, ct).ConfigureAwait(false);
+
         await tx.CommitAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Converts <paramref name="column"/> from <c>NVARCHAR</c> to <c>VARBINARY(MAX) NOT NULL</c>,
+    /// storing each value as its UTF-8 bytes. Does nothing when the column is not <c>NVARCHAR</c>.
+    /// </summary>
+    /// <remarks>
+    /// A direct <c>ALTER COLUMN</c> would keep the UTF-16 bytes of each value, so the value is
+    /// converted to <c>VARCHAR</c> under a UTF-8 collation first, SQL Server 2019 or later, and the
+    /// bytes of that go into a new column that replaces the old one. Each step is its own batch,
+    /// because a batch cannot refer to a column that it adds.
+    /// </remarks>
+    private static async ValueTask ConvertTextToUtf8BinaryAsync(
+        SqlConnection conn, SqlTransaction tx, string table, string column, CancellationToken ct)
+    {
+        using (var cmd = conn.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = """
+                SELECT COUNT(*) FROM sys.columns c
+                WHERE c.object_id = OBJECT_ID(@table) AND c.name = @column
+                  AND TYPE_NAME(c.system_type_id) = 'nvarchar'
+                """;
+            cmd.Parameters.AddWithValue("@table", "dbo." + table);
+            cmd.Parameters.AddWithValue("@column", column);
+            var count = Convert.ToInt32(await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false), CultureInfo.InvariantCulture);
+            if (count == 0)
+                return;
+        }
+
+        var qualified = "dbo." + Quote(table);
+        var temporary = column + "_utf8";
+        await ExecuteAsync(conn, tx,
+            $"ALTER TABLE {qualified} ADD {Quote(temporary)} VARBINARY(MAX) NULL;", ct).ConfigureAwait(false);
+        await ExecuteAsync(conn, tx,
+            $"UPDATE {qualified} SET {Quote(temporary)} = CONVERT(VARBINARY(MAX), "
+            + $"CONVERT(VARCHAR(MAX), {Quote(column)} COLLATE Latin1_General_100_BIN2_UTF8));", ct).ConfigureAwait(false);
+        await ExecuteAsync(conn, tx,
+            $"ALTER TABLE {qualified} DROP COLUMN {Quote(column)};", ct).ConfigureAwait(false);
+
+        using (var rename = conn.CreateCommand())
+        {
+            rename.Transaction = tx;
+            rename.CommandText = "EXEC sp_rename @from, @to, 'COLUMN';";
+            rename.Parameters.AddWithValue("@from", $"dbo.{table}.{temporary}");
+            rename.Parameters.AddWithValue("@to", column);
+            await rename.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+
+        await ExecuteAsync(conn, tx,
+            $"ALTER TABLE {qualified} ALTER COLUMN {Quote(column)} VARBINARY(MAX) NOT NULL;", ct).ConfigureAwait(false);
     }
 
     private static async ValueTask AcquireLockAsync(SqlConnection conn, SqlTransaction tx, string table, CancellationToken ct)

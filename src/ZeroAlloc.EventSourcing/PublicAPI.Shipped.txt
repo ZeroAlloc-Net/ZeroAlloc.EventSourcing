@@ -183,8 +183,6 @@ ZeroAlloc.EventSourcing.InMemoryCheckpointStore.ReadAsync(string! consumerId, Sy
 ZeroAlloc.EventSourcing.InMemoryCheckpointStore.WriteAsync(string! consumerId, ZeroAlloc.EventSourcing.StreamPosition position, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 ZeroAlloc.EventSourcing.IProjectionStore
 ZeroAlloc.EventSourcing.IProjectionStore.ClearAsync(string! key, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
-ZeroAlloc.EventSourcing.IProjectionStore.LoadAsync(string! key, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<string?>
-ZeroAlloc.EventSourcing.IProjectionStore.SaveAsync(string! key, string! state, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
 ZeroAlloc.EventSourcing.IRetryPolicy
 ZeroAlloc.EventSourcing.IRetryPolicy.GetDelay(int attemptNumber) -> System.TimeSpan
 ZeroAlloc.EventSourcing.ISnapshotPolicy

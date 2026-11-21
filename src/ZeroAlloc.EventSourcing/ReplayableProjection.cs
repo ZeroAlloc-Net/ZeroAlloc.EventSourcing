@@ -1,5 +1,4 @@
 using System.Buffers;
-using System.Text;
 using ZeroAlloc.Serialisation;
 
 namespace ZeroAlloc.EventSourcing;
@@ -61,10 +60,8 @@ namespace ZeroAlloc.EventSourcing;
 /// </example>
 public abstract class ReplayableProjection<TReadModel> : Projection<TReadModel>
 {
-    private static readonly UTF8Encoding StrictUtf8 = new(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true);
-
     private readonly TReadModel _initialState;
-    private readonly Func<TReadModel, string> _serializeState;
+    private readonly ISerializer<TReadModel> _serializer;
 
     /// <summary>
     /// Initializes the projection with <see cref="Projection{TReadModel}.Current"/> at
@@ -72,28 +69,22 @@ public abstract class ReplayableProjection<TReadModel> : Projection<TReadModel>
     /// the stream, and saves the read model with <paramref name="serializer"/>. Trim- and NativeAOT-safe.
     /// </summary>
     /// <remarks>
-    /// <see cref="IProjectionStore"/> stores text, so <paramref name="serializer"/> must write UTF-8 text, for
-    /// example ZeroAlloc.Serialisation.SystemTextJson's <c>SystemTextJsonSerializer&lt;T&gt;</c> over a
-    /// <c>JsonTypeInfo&lt;T&gt;</c> from a <c>JsonSerializerContext</c>. <see cref="RebuildAsync"/> throws a
-    /// <see cref="DecoderFallbackException"/> when the output is not valid UTF-8, as the output of a binary
-    /// serializer such as MemoryPack or MessagePack generally is not.
+    /// <see cref="IProjectionStore"/> stores bytes, so any ZeroAlloc.Serialisation serializer works: a text
+    /// serializer such as ZeroAlloc.Serialisation.SystemTextJson's <c>SystemTextJsonSerializer&lt;T&gt;</c> over a
+    /// <c>JsonTypeInfo&lt;T&gt;</c> from a <c>JsonSerializerContext</c>, or a binary one such as MemoryPack or
+    /// MessagePack. <see cref="RebuildAsync"/> saves the serializer's output as it is, without decoding it.
     /// </remarks>
     /// <param name="initialState">
     /// The read model before any event is applied, for example <c>ImmutableDictionary&lt;string, decimal&gt;.Empty</c>.
     /// The same instance is reused on every rebuild, so it should be immutable.
     /// </param>
-    /// <param name="serializer">The serializer that writes the rebuilt read model as UTF-8 text.</param>
+    /// <param name="serializer">The serializer that writes the rebuilt read model.</param>
     /// <exception cref="ArgumentNullException"><paramref name="serializer"/> is <see langword="null"/>.</exception>
     protected ReplayableProjection(TReadModel initialState, ISerializer<TReadModel> serializer)
     {
         ArgumentNullException.ThrowIfNull(serializer);
         _initialState = initialState;
-        _serializeState = state =>
-        {
-            var buffer = new ArrayBufferWriter<byte>();
-            serializer.Serialize(buffer, state);
-            return StrictUtf8.GetString(buffer.WrittenSpan);
-        };
+        _serializer = serializer;
         Current = initialState;
     }
 
@@ -127,9 +118,6 @@ public abstract class ReplayableProjection<TReadModel> : Projection<TReadModel>
     /// <param name="eventStore">The event store containing the events to replay.</param>
     /// <param name="ct">Cancellation token for graceful shutdown (default: <see cref="CancellationToken.None"/>).</param>
     /// <returns>A completed <see cref="ValueTask"/>.</returns>
-    /// <exception cref="DecoderFallbackException">
-    /// The <see cref="ISerializer{T}"/> passed to the constructor did not write valid UTF-8 text.
-    /// </exception>
     public async ValueTask RebuildAsync(IProjectionStore store, StreamId streamId, IEventStore eventStore, CancellationToken ct = default)
     {
         ct.ThrowIfCancellationRequested();
@@ -144,9 +132,10 @@ public abstract class ReplayableProjection<TReadModel> : Projection<TReadModel>
             await HandleAsync(@event, ct).ConfigureAwait(false);
         }
 
-        // Serialize and save the rebuilt state
+        // Serialize and save the rebuilt state as the serializer wrote it
         var key = GetProjectionKey();
-        var serialized = _serializeState(Current);
-        await store.SaveAsync(key, serialized, ct).ConfigureAwait(false);
+        var buffer = new ArrayBufferWriter<byte>();
+        _serializer.Serialize(buffer, Current);
+        await store.SaveAsync(key, buffer.WrittenMemory, ct).ConfigureAwait(false);
     }
 }

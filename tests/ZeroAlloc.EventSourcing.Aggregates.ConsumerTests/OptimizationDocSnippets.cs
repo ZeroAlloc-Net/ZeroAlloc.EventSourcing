@@ -62,7 +62,7 @@ public class EveryEventOrderTotalsProjection : Projection<ImmutableDictionary<st
     public override async ValueTask HandleAsync(EventEnvelope @event, CancellationToken ct = default)
     {
         await base.HandleAsync(@event, ct);
-        await _projectionStore.SaveAsync("order-totals", JsonSerializer.Serialize(Current), ct);
+        await _projectionStore.SaveAsync("order-totals", JsonSerializer.SerializeToUtf8Bytes(Current), ct);
     }
 }
 // --- end snippet ---
@@ -88,7 +88,7 @@ public class BatchedOrderTotalsProjection : BatchedProjection<ImmutableDictionar
         => @event.Event is OrderPlacedEvent e ? current.SetItem(e.OrderId, e.Total) : current;
 
     protected override async ValueTask FlushBatchAsync(IReadOnlyList<EventEnvelope> batch, CancellationToken ct = default)
-        => await _projectionStore.SaveAsync("order-totals", JsonSerializer.Serialize(Current), ct);
+        => await _projectionStore.SaveAsync("order-totals", JsonSerializer.SerializeToUtf8Bytes(Current), ct);
 }
 // --- end snippet ---
 
@@ -237,13 +237,13 @@ public sealed class OptimizationDocTests
 
         public int Saves { get; private set; }
 
-        public ValueTask SaveAsync(string key, string state, CancellationToken ct = default)
+        public ValueTask SaveAsync(string key, ReadOnlyMemory<byte> state, CancellationToken ct = default)
         {
             Saves++;
             return _inner.SaveAsync(key, state, ct);
         }
 
-        public ValueTask<string?> LoadAsync(string key, CancellationToken ct = default) => _inner.LoadAsync(key, ct);
+        public ValueTask<ReadOnlyMemory<byte>?> LoadAsync(string key, CancellationToken ct = default) => _inner.LoadAsync(key, ct);
 
         public ValueTask ClearAsync(string key, CancellationToken ct = default) => _inner.ClearAsync(key, ct);
     }

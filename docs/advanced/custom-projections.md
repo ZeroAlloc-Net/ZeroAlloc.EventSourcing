@@ -281,7 +281,7 @@ public class OrderTotalsBatchedProjection : BatchedProjection<ImmutableDictionar
     // Called when 100 events have been applied, and by FlushAsync
     protected override async ValueTask FlushBatchAsync(IReadOnlyList<EventEnvelope> batch, CancellationToken ct = default)
     {
-        await _store.SaveAsync("order-totals", JsonSerializer.Serialize(Current), ct);
+        await _store.SaveAsync("order-totals", JsonSerializer.SerializeToUtf8Bytes(Current), ct);
     }
 }
 ```
@@ -472,14 +472,14 @@ public class PersistentOrderTotalsProjection : Projection<OrderTotals>
     }
 
     public ValueTask SaveAsync(CancellationToken ct = default)
-        => _store.SaveAsync(Key, JsonSerializer.Serialize(Current), ct);
+        => _store.SaveAsync(Key, JsonSerializer.SerializeToUtf8Bytes(Current), ct);
 
     /// <summary>Restores the saved state; returns the position to resume reading after.</summary>
     public async ValueTask<StreamPosition> LoadAsync(CancellationToken ct = default)
     {
-        var json = await _store.LoadAsync(Key, ct);
-        if (json is not null)
-            Current = JsonSerializer.Deserialize<OrderTotals>(json)!;
+        var saved = await _store.LoadAsync(Key, ct);
+        if (saved is { } json)
+            Current = JsonSerializer.Deserialize<OrderTotals>(json.Span)!;
         return new StreamPosition(Current.LastPosition);
     }
 }
@@ -601,10 +601,10 @@ Do not set `Current` in the constructor of a `ReplayableProjection` instead: a r
 to the initial state passed to the base constructor. Pass an immutable value, since every rebuild
 reuses the same instance.
 
-`IProjectionStore` stores text, so the serializer must write UTF-8 text. `RebuildAsync` throws a
-`DecoderFallbackException` for output that is not valid UTF-8, as the output of a binary serializer
-such as MemoryPack or MessagePack generally is not; binary state is tracked in
-[#425](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/issues/425).
+`IProjectionStore` stores bytes, so any ZeroAlloc.Serialisation serializer works: a text serializer
+such as System.Text.Json writes UTF-8, and a binary serializer such as MemoryPack or MessagePack writes
+its own format. `RebuildAsync` saves the serializer's output as it is. The PostgreSQL store keeps it in
+a `BYTEA` column and the SQL Server store in a `VARBINARY(MAX)` column.
 
 Version 2.0 removed the constructors without a serializer, `base()` and `base(initialState)`, which saved
 the read model with reflection-based `System.Text.Json`; see [ZAES008](../diagnostics.md#zaes008).

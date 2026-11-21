@@ -66,9 +66,9 @@ internal static class ProjectionRebuildSmoke
         var saved = await projectionStore.LoadAsync("deposit-totals");
         if (saved is null)
             return Fail("the rebuilt state was not saved");
-        var restored = JsonSerializer.Deserialize(saved, ProjectionJsonContext.Default.DepositTotals);
+        var restored = JsonSerializer.Deserialize(saved.Value.Span, ProjectionJsonContext.Default.DepositTotals);
         if (restored != expected)
-            return Fail($"saved state expected {expected}, got {restored} from {saved}");
+            return Fail($"saved state expected {expected}, got {restored}");
 
         return 0;
     }
