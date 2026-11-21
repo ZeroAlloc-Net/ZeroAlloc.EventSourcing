@@ -116,6 +116,45 @@ public class BoundedReadTests
         read.Select(e => e.Position.Value).Should().Equal(3, 4, 5);
     }
 
+    /// <summary>
+    /// The default ReadBatchAsync keeps a token the store's reader was configured with when the
+    /// caller passes none: an already-cancelled stop token still cancels the bounded read.
+    /// </summary>
+    [Fact]
+    public async Task Store_default_ReadBatchAsync_keeps_the_readers_configured_token()
+    {
+        using var stop = new CancellationTokenSource();
+        await stop.CancelAsync();
+        IEventStore store = new StoppableStore(stop.Token);
+
+        var read = async () => await ToListAsync(store.ReadBatchAsync(Stream, StreamPosition.Start, 1));
+
+        await read.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    /// <summary>A store whose reader carries a stop token, set with WithCancellation.</summary>
+    private sealed class StoppableStore(CancellationToken stop) : IEventStore
+    {
+        public EventStreamReader ReadAsync(StreamId id, StreamPosition from = default, CancellationToken ct = default)
+            => new EventStreamReader(Events(id)).WithCancellation(stop);
+
+        private static async IAsyncEnumerable<EventEnvelope> Events(
+            StreamId id, [EnumeratorCancellation] CancellationToken ct = default)
+        {
+            await Task.Yield();
+            ct.ThrowIfCancellationRequested();
+            yield return new EventEnvelope(id, new StreamPosition(1), new TestEvent { Value = 1 }, EventMetadata.New(nameof(TestEvent)));
+        }
+
+        public ValueTask<Result<AppendResult, StoreError>> AppendAsync(
+            StreamId id, ReadOnlyMemory<object> events, StreamPosition expectedVersion, CancellationToken ct = default)
+            => throw new NotSupportedException();
+
+        public ValueTask<IEventSubscription> SubscribeAsync(
+            StreamId id, StreamPosition from, Func<EventEnvelope, CancellationToken, ValueTask> handler, CancellationToken ct = default)
+            => throw new NotSupportedException();
+    }
+
     private static RawEvent Raw(string eventType, long position)
         => new(new StreamPosition(position), eventType, Encoding.UTF8.GetBytes("{}"), EventMetadata.New(eventType));
 

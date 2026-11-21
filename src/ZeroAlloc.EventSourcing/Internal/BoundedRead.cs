@@ -15,8 +15,12 @@ internal static class BoundedRead
         int maxCount,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
+        // A token that cannot be cancelled would replace one the source was configured with.
+        if (ct.CanBeCanceled)
+            source = source.WithCancellation(ct);
+
         var count = 0;
-        await foreach (var item in source.WithCancellation(ct).ConfigureAwait(false))
+        await foreach (var item in source.ConfigureAwait(false))
         {
             yield return item;
             if (++count >= maxCount)
