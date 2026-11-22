@@ -22,7 +22,12 @@
     <PackageVersion Include="xunit"                              Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio"          Version="4.0.1" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk"             Version="18.12.0" />
-    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp"      Version="5.12.0" />
+    <!-- 5.0.0 is the compiler of SDK 10.0.1xx, the oldest supported SDK. The generators run in the
+         consumer's compiler, and one built against a newer Roslyn is skipped there with CS9057. Test
+         projects use it too. Do not raise it without raising the minimum SDK; the shared Renovate
+         preset holds it below 5.1 and the roslyn-floor CI job checks the packed DLLs.
+         See ZeroAlloc-Net/.github#77. -->
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp"      Version="5.0.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.Analyzers"   Version="5.12.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" Version="5.6.0" />
     <PackageVersion Include="AwesomeAssertions"                   Version="9.6.0" />

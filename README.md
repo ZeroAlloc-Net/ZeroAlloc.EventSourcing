@@ -26,6 +26,8 @@ dotnet add package ZeroAlloc.EventSourcing.InMemory
 
 The generator package emits the aggregate dispatch. The AOT-safe event serialiser comes from ZeroAlloc.Serialisation, which the core package brings in.
 
+The generators need the .NET 10 SDK 10.0.100 or later, or Visual Studio 2026 or later. They are built against Roslyn 5.0, and an older compiler skips them with warning CS9057, after which the generated event type registry and aggregate dispatch are missing. Version 2.0.0 was built against Roslyn 5.12 and loads only in the .NET 11 SDK; on .NET 10, use 2.0.1 or later. ZeroAlloc.Serialisation 2.11.1, a dependency, ships a generator built against Roslyn 5.9. That generator currently needs SDK 10.0.4xx, which runs Roslyn 5.9. On older .NET 10 SDKs the build warns with CS9057 and its generated methods, such as `AddOrderPlacedSerializer()` and `AddSerializerDispatcher()`, are missing. This is tracked in ZeroAlloc-Net/.github#77.
+
 ## Quick start
 
 ```csharp

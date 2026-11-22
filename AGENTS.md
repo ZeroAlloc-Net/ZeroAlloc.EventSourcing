@@ -43,7 +43,34 @@ Fast inner loop, no Docker needed (verified):
 dotnet test tests/ZeroAlloc.EventSourcing.InMemory.Tests -c Release -f net11.0
 ```
 
+CI job `sdk10-consumer` needs a 10.0.1xx SDK; `tests/ZeroAlloc.EventSourcing.Sdk10Smoke/global.json` pins
+10.0.100 with `rollForward: latestPatch`, so a newer band cannot stand in for it. It builds and runs a
+consumer of the packed packages with Roslyn 5.0:
+
+```bash
+dotnet pack src/ZeroAlloc.EventSourcing -c Release -o artifacts -p:Version=9.9.9-local.sha$(git rev-parse --short HEAD)
+dotnet pack src/ZeroAlloc.EventSourcing.Aggregates -c Release -o artifacts -p:Version=9.9.9-local.sha$(git rev-parse --short HEAD)
+dotnet pack src/ZeroAlloc.EventSourcing.Generators -c Release -o artifacts -p:Version=9.9.9-local.sha$(git rev-parse --short HEAD)
+cd tests/ZeroAlloc.EventSourcing.Sdk10Smoke/Consumer
+dotnet run -c Release -p:ZeroAllocEventSourcingVersion=9.9.9-local.sha$(git rev-parse --short HEAD)
+```
+
+CI job `roslyn-floor` calls the shared `roslyn-floor.yml` from ZeroAlloc-Net/.github: it packs the
+solution and fails when a packed DLL references Roslyn above 5.0.0.
+
 ## Conventions and gotchas
+- `ZeroAlloc.EventSourcing.Generators` and `ZeroAlloc.EventSourcing.Mediator.Generator` reference
+  `Microsoft.CodeAnalysis.CSharp` 5.0.0, the compiler of SDK band 10.0.1xx, the oldest supported SDK, set
+  once in `Directory.Packages.props`. A compiler older than the Roslyn a generator references skips it with
+  `CS9057`, and nothing is generated. The shared Renovate preset holds it below 5.1. If a newer Roslyn API
+  is needed, change the code; raise the floor only together with the minimum SDK. Test projects use the
+  same version.
+- Several dependencies ship generators built against Roslyn 5.9 (`ZeroAlloc.Collections`,
+  `ZeroAlloc.ValueObjects`, `ZeroAlloc.Serialisation`, `ZeroAlloc.Telemetry`, `ZeroAlloc.StateMachine`,
+  `ZeroAlloc.AsyncEvents`, `ZeroAlloc.Mediator`). On a 10.0.1xx SDK those are skipped with `CS9057` until
+  the dependencies are raised to releases built against 5.0.0; the `sdk10-consumer` job keeps `CS9057` a
+  warning for that reason, and covers `ZeroAlloc.EventSourcing.Generators` only. The Mediator bridge
+  generator is not covered until `ZeroAlloc.Mediator` ships its patch. Tracked in ZeroAlloc-Net/.github#77.
 - Warnings are errors. `RS0016` and `RS0017` are forced errors even if `TreatWarningsAsErrors` is turned
   off. A new public symbol goes in that package's `PublicAPI.Unshipped.txt`. Do not edit
   `PublicAPI.Shipped.txt` outside a release; the release PR moves entries (job `release-tracking`).
