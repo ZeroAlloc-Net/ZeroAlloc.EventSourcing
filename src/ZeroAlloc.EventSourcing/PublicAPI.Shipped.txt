@@ -74,6 +74,15 @@ ZeroAlloc.EventSourcing.CommitStrategy
 ZeroAlloc.EventSourcing.CommitStrategy.AfterBatch = 1 -> ZeroAlloc.EventSourcing.CommitStrategy
 ZeroAlloc.EventSourcing.CommitStrategy.AfterEvent = 0 -> ZeroAlloc.EventSourcing.CommitStrategy
 ZeroAlloc.EventSourcing.CommitStrategy.Manual = 2 -> ZeroAlloc.EventSourcing.CommitStrategy
+ZeroAlloc.EventSourcing.ConfiguredEventStreamReader
+ZeroAlloc.EventSourcing.ConfiguredEventStreamReader.ConfiguredEventStreamReader() -> void
+ZeroAlloc.EventSourcing.ConfiguredEventStreamReader.Enumerator
+ZeroAlloc.EventSourcing.ConfiguredEventStreamReader.Enumerator.Current.get -> ZeroAlloc.EventSourcing.EventEnvelope
+ZeroAlloc.EventSourcing.ConfiguredEventStreamReader.Enumerator.DisposeAsync() -> System.Runtime.CompilerServices.ConfiguredValueTaskAwaitable
+ZeroAlloc.EventSourcing.ConfiguredEventStreamReader.Enumerator.Enumerator() -> void
+ZeroAlloc.EventSourcing.ConfiguredEventStreamReader.Enumerator.MoveNextAsync() -> System.Runtime.CompilerServices.ConfiguredValueTaskAwaitable<bool>
+ZeroAlloc.EventSourcing.ConfiguredEventStreamReader.GetAsyncEnumerator() -> ZeroAlloc.EventSourcing.ConfiguredEventStreamReader.Enumerator
+ZeroAlloc.EventSourcing.ConfiguredEventStreamReader.WithCancellation(System.Threading.CancellationToken cancellationToken) -> ZeroAlloc.EventSourcing.ConfiguredEventStreamReader
 ZeroAlloc.EventSourcing.DeadLetterEntry
 ZeroAlloc.EventSourcing.DeadLetterEntry.<Clone>$() -> ZeroAlloc.EventSourcing.DeadLetterEntry!
 ZeroAlloc.EventSourcing.DeadLetterEntry.ConsumerId.get -> string!
@@ -140,7 +149,21 @@ ZeroAlloc.EventSourcing.EventSourcingBuilderUpcasterExtensions
 ZeroAlloc.EventSourcing.EventStore
 ZeroAlloc.EventSourcing.EventStore.AppendAsync(ZeroAlloc.EventSourcing.StreamId id, System.ReadOnlyMemory<object!> events, ZeroAlloc.EventSourcing.StreamPosition expectedVersion, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeroAlloc.Results.Result<ZeroAlloc.EventSourcing.AppendResult, ZeroAlloc.EventSourcing.StoreError!>>
 ZeroAlloc.EventSourcing.EventStore.EventStore(ZeroAlloc.EventSourcing.IEventStoreAdapter! adapter, ZeroAlloc.EventSourcing.IEventSerializer! serializer, ZeroAlloc.EventSourcing.IEventTypeRegistry! registry, ZeroAlloc.EventSourcing.IUpcasterPipeline? upcasterPipeline = null) -> void
+ZeroAlloc.EventSourcing.EventStore.ReadAsync(ZeroAlloc.EventSourcing.StreamId id, ZeroAlloc.EventSourcing.StreamPosition from = default(ZeroAlloc.EventSourcing.StreamPosition), System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> ZeroAlloc.EventSourcing.EventStreamReader
+ZeroAlloc.EventSourcing.EventStore.ReadBatchAsync(ZeroAlloc.EventSourcing.StreamId id, ZeroAlloc.EventSourcing.StreamPosition from, int maxCount, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> ZeroAlloc.EventSourcing.EventStreamReader
 ZeroAlloc.EventSourcing.EventStore.SubscribeAsync(ZeroAlloc.EventSourcing.StreamId id, ZeroAlloc.EventSourcing.StreamPosition from, System.Func<ZeroAlloc.EventSourcing.EventEnvelope, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask>! handler, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeroAlloc.EventSourcing.IEventSubscription!>
+ZeroAlloc.EventSourcing.EventStreamReader
+ZeroAlloc.EventSourcing.EventStreamReader.AsAsyncEnumerable() -> System.Collections.Generic.IAsyncEnumerable<ZeroAlloc.EventSourcing.EventEnvelope>!
+ZeroAlloc.EventSourcing.EventStreamReader.ConfigureAwait(bool continueOnCapturedContext) -> ZeroAlloc.EventSourcing.ConfiguredEventStreamReader
+ZeroAlloc.EventSourcing.EventStreamReader.Enumerator
+ZeroAlloc.EventSourcing.EventStreamReader.Enumerator.Current.get -> ZeroAlloc.EventSourcing.EventEnvelope
+ZeroAlloc.EventSourcing.EventStreamReader.Enumerator.DisposeAsync() -> System.Threading.Tasks.ValueTask
+ZeroAlloc.EventSourcing.EventStreamReader.Enumerator.Enumerator() -> void
+ZeroAlloc.EventSourcing.EventStreamReader.Enumerator.MoveNextAsync() -> System.Threading.Tasks.ValueTask<bool>
+ZeroAlloc.EventSourcing.EventStreamReader.EventStreamReader() -> void
+ZeroAlloc.EventSourcing.EventStreamReader.EventStreamReader(System.Collections.Generic.IAsyncEnumerable<ZeroAlloc.EventSourcing.EventEnvelope>! source) -> void
+ZeroAlloc.EventSourcing.EventStreamReader.GetAsyncEnumerator(System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> ZeroAlloc.EventSourcing.EventStreamReader.Enumerator
+ZeroAlloc.EventSourcing.EventStreamReader.WithCancellation(System.Threading.CancellationToken cancellationToken) -> ZeroAlloc.EventSourcing.EventStreamReader
 ZeroAlloc.EventSourcing.ExponentialBackoffRetryPolicy
 ZeroAlloc.EventSourcing.ExponentialBackoffRetryPolicy.ExponentialBackoffRetryPolicy(int initialDelayMs = 100, int maxDelayMs = 30000) -> void
 ZeroAlloc.EventSourcing.ExponentialBackoffRetryPolicy.GetDelay(int attemptNumber) -> System.TimeSpan
@@ -158,6 +181,8 @@ ZeroAlloc.EventSourcing.IEventSerializer.Deserialize(System.ReadOnlyMemory<byte>
 ZeroAlloc.EventSourcing.IEventSerializer.Serialize<TEvent>(TEvent event) -> System.ReadOnlyMemory<byte>
 ZeroAlloc.EventSourcing.IEventStore
 ZeroAlloc.EventSourcing.IEventStore.AppendAsync(ZeroAlloc.EventSourcing.StreamId id, System.ReadOnlyMemory<object!> events, ZeroAlloc.EventSourcing.StreamPosition expectedVersion, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeroAlloc.Results.Result<ZeroAlloc.EventSourcing.AppendResult, ZeroAlloc.EventSourcing.StoreError!>>
+ZeroAlloc.EventSourcing.IEventStore.ReadAsync(ZeroAlloc.EventSourcing.StreamId id, ZeroAlloc.EventSourcing.StreamPosition from = default(ZeroAlloc.EventSourcing.StreamPosition), System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> ZeroAlloc.EventSourcing.EventStreamReader
+ZeroAlloc.EventSourcing.IEventStore.ReadBatchAsync(ZeroAlloc.EventSourcing.StreamId id, ZeroAlloc.EventSourcing.StreamPosition from, int maxCount, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> ZeroAlloc.EventSourcing.EventStreamReader
 ZeroAlloc.EventSourcing.IEventStore.SubscribeAsync(ZeroAlloc.EventSourcing.StreamId id, ZeroAlloc.EventSourcing.StreamPosition from, System.Func<ZeroAlloc.EventSourcing.EventEnvelope, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask>! handler, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeroAlloc.EventSourcing.IEventSubscription!>
 ZeroAlloc.EventSourcing.IEventStoreAdapter
 ZeroAlloc.EventSourcing.IEventStoreAdapter.AppendAsync(ZeroAlloc.EventSourcing.StreamId id, System.ReadOnlyMemory<ZeroAlloc.EventSourcing.RawEvent> events, ZeroAlloc.EventSourcing.StreamPosition expectedVersion, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<ZeroAlloc.Results.Result<ZeroAlloc.EventSourcing.AppendResult, ZeroAlloc.EventSourcing.StoreError!>>
@@ -179,6 +204,8 @@ ZeroAlloc.EventSourcing.InMemoryCheckpointStore.ReadAsync(string! consumerId, Sy
 ZeroAlloc.EventSourcing.InMemoryCheckpointStore.WriteAsync(string! consumerId, ZeroAlloc.EventSourcing.StreamPosition position, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task!
 ZeroAlloc.EventSourcing.IProjectionStore
 ZeroAlloc.EventSourcing.IProjectionStore.ClearAsync(string! key, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+ZeroAlloc.EventSourcing.IProjectionStore.LoadAsync(string! key, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<System.ReadOnlyMemory<byte>?>
+ZeroAlloc.EventSourcing.IProjectionStore.SaveAsync(string! key, System.ReadOnlyMemory<byte> state, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
 ZeroAlloc.EventSourcing.IRetryPolicy
 ZeroAlloc.EventSourcing.IRetryPolicy.GetDelay(int attemptNumber) -> System.TimeSpan
 ZeroAlloc.EventSourcing.ISnapshotPolicy
