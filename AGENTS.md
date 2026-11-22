@@ -48,7 +48,7 @@ CI job `sdk10-consumer` needs a 10.0.1xx SDK; `tests/ZeroAlloc.EventSourcing.Sdk
 consumer of the packed packages with Roslyn 5.0:
 
 ```bash
-v=9.9.9-local.sha$(git rev-parse --short HEAD).$(date +%s).$$
+v=9.9.9-local.sha$(git rev-parse --short HEAD).$(date +%s).r$(od -An -N4 -tx4 /dev/urandom | tr -d " ")
 dotnet pack src/ZeroAlloc.EventSourcing -c Release -o artifacts -p:Version="$v"
 dotnet pack src/ZeroAlloc.EventSourcing.Aggregates -c Release -o artifacts -p:Version="$v"
 dotnet pack src/ZeroAlloc.EventSourcing.Generators -c Release -o artifacts -p:Version="$v"
