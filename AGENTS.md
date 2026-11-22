@@ -48,11 +48,12 @@ CI job `sdk10-consumer` needs a 10.0.1xx SDK; `tests/ZeroAlloc.EventSourcing.Sdk
 consumer of the packed packages with Roslyn 5.0:
 
 ```bash
-dotnet pack src/ZeroAlloc.EventSourcing -c Release -o artifacts -p:Version=9.9.9-local.sha$(git rev-parse --short HEAD)
-dotnet pack src/ZeroAlloc.EventSourcing.Aggregates -c Release -o artifacts -p:Version=9.9.9-local.sha$(git rev-parse --short HEAD)
-dotnet pack src/ZeroAlloc.EventSourcing.Generators -c Release -o artifacts -p:Version=9.9.9-local.sha$(git rev-parse --short HEAD)
+v=9.9.9-local.sha$(git rev-parse --short HEAD).$(date +%s).r$(od -An -N4 -tx4 /dev/urandom | tr -d " ")
+dotnet pack src/ZeroAlloc.EventSourcing -c Release -o artifacts -p:Version="$v"
+dotnet pack src/ZeroAlloc.EventSourcing.Aggregates -c Release -o artifacts -p:Version="$v"
+dotnet pack src/ZeroAlloc.EventSourcing.Generators -c Release -o artifacts -p:Version="$v"
 cd tests/ZeroAlloc.EventSourcing.Sdk10Smoke/Consumer
-dotnet run -c Release -p:ZeroAllocEventSourcingVersion=9.9.9-local.sha$(git rev-parse --short HEAD)
+dotnet run -c Release -p:ZeroAllocEventSourcingVersion="$v"
 ```
 
 CI job `roslyn-floor` calls the shared `roslyn-floor.yml` from ZeroAlloc-Net/.github: it packs the
