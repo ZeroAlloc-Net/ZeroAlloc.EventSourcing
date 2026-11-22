@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.1](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/compare/ZeroAlloc.EventSourcing-v2.0.0...ZeroAlloc.EventSourcing-v2.0.1) (2026-11-22)
+
+
+### Bug Fixes
+
+* build the generators against Roslyn 5.0 so every .NET 10 SDK loads them ([#646](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/issues/646)) ([6ac50fa](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/commit/6ac50fa6761bf83136b4ee061ce61c82dfd75b46))
+
 ## [2.0.0](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/compare/ZeroAlloc.EventSourcing-v1.7.1...ZeroAlloc.EventSourcing-v2.0.0) (2026-11-21)
 
 
