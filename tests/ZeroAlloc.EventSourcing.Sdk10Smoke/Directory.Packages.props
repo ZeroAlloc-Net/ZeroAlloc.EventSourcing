@@ -1,0 +1,7 @@
+<Project>
+  <!-- Stops the central package management of the repository: this project stands in for a
+       consumer, and takes the package versions it names itself. -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+</Project>

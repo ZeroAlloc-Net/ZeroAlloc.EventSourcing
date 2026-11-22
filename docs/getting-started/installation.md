@@ -27,6 +27,8 @@ dotnet add package ZeroAlloc.EventSourcing.Sql
 dotnet add package ZeroAlloc.EventSourcing.Generators
 ```
 
+The generators need the .NET 10 SDK 10.0.100 or later, or Visual Studio 2026 or later. They are built against Roslyn 5.0, and an older compiler skips them with warning CS9057, after which the generated event type registry and aggregate dispatch are missing. Version 2.0.0 was built against Roslyn 5.12 and loads only in the .NET 11 SDK; on .NET 10, use 2.0.1 or later.
+
 **For source-generated, allocation-friendly serialization:**
 ```bash
 dotnet add package ZeroAlloc.Serialisation

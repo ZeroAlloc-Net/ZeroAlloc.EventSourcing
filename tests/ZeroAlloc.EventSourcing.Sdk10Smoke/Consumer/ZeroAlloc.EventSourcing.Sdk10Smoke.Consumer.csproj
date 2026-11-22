@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Builds a consumer of the packed ZeroAlloc.EventSourcing, .Aggregates and .Generators packages with the oldest supported
+    .NET SDK band, 10.0.1xx, whose compiler is Roslyn 5.0. The ZeroAlloc.EventSourcing.Generators package ships the aggregate dispatch generator in analyzers/dotnet/cs.
+    A generator built against a newer Roslyn than the compiler that loads it is skipped with
+    CS9057, and the build then fails because the generated code is missing.
+
+    CS9057 itself is not an error here: ZeroAlloc.Collections 1.3.1, ZeroAlloc.ValueObjects 2.4.1,
+    ZeroAlloc.Serialisation 2.11.1, ZeroAlloc.Telemetry 1.14.1, ZeroAlloc.StateMachine 1.8.1 and
+    ZeroAlloc.AsyncEvents, dependencies of the packages, ship generators built against Roslyn 5.9,
+    which this SDK skips with that warning. They stay visible in the build log and are tracked in
+    ZeroAlloc-Net/.github#77.
+
+    The parent folder's global.json pins the 10.0.1xx band with rollForward latestPatch, so a
+    newer band cannot stand in for it. Run locally with a 10.0.1xx SDK installed:
+      dotnet pack ZeroAlloc.EventSourcing.slnx -c Release -o artifacts -p:Version=9.9.9-local.sha$(git rev-parse HEAD | cut -c1-7)
+      cd tests/ZeroAlloc.EventSourcing.Sdk10Smoke/Consumer
+      dotnet run -c Release -p:ZeroAllocEventSourcingVersion=9.9.9-local.sha$(git rev-parse HEAD | cut -c1-7)
+    Not part of the solution; the sdk10-consumer job in ci.yml runs it.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <WarningsAsErrors>$(WarningsAsErrors);CS8032</WarningsAsErrors>
+  </PropertyGroup>
+
+  <Target Name="RequireZeroAllocEventSourcingVersion" BeforeTargets="CollectPackageReferences">
+    <Error Condition="'$(ZeroAllocEventSourcingVersion)' == ''"
+           Text="Pass the version of the packed packages: -p:ZeroAllocEventSourcingVersion=..." />
+  </Target>
+
+  <ItemGroup>
+    <PackageReference Include="ZeroAlloc.EventSourcing" Version="[$(ZeroAllocEventSourcingVersion)]" />
+    <PackageReference Include="ZeroAlloc.EventSourcing.Aggregates" Version="[$(ZeroAllocEventSourcingVersion)]" />
+    <PackageReference Include="ZeroAlloc.EventSourcing.Generators" Version="[$(ZeroAllocEventSourcingVersion)]" />
+  </ItemGroup>
+</Project>

@@ -37,10 +37,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- VersionOverride pins the generator to Roslyn 5.0.0 so the compiled DLL is loadable by the SDK
-         compiler (currently 5.0.0). Other projects continue to use the central 5.3.0 version.
-         Remove these overrides once the local SDK ships with Roslyn >= 5.3.0. -->
-    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" VersionOverride="5.12.0" />
+    <!-- Microsoft.CodeAnalysis.CSharp comes from Directory.Packages.props, which pins 5.0.0, the compiler of
+         SDK 10.0.1xx. Analyzers only analyzes this project and adds no reference to the DLL. -->
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
     <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" VersionOverride="5.12.0">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
