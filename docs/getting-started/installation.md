@@ -27,7 +27,7 @@ dotnet add package ZeroAlloc.EventSourcing.Sql
 dotnet add package ZeroAlloc.EventSourcing.Generators
 ```
 
-The generators need the .NET 10 SDK 10.0.100 or later, or Visual Studio 2026 or later. They are built against Roslyn 5.0, and an older compiler skips them with warning CS9057, after which the generated event type registry and aggregate dispatch are missing. Version 2.0.0 was built against Roslyn 5.12 and loads only in the .NET 11 SDK; on .NET 10, use 2.0.1 or later. ZeroAlloc.Serialisation 2.11.1, a dependency, ships a generator built against Roslyn 5.9. That generator currently needs SDK 10.0.4xx, which runs Roslyn 5.9. On older .NET 10 SDKs the build warns with CS9057 and its generated methods, such as `AddOrderPlacedSerializer()` and `AddSerializerDispatcher()`, are missing. This is tracked in ZeroAlloc-Net/.github#77.
+The generators need the .NET 10 SDK 10.0.100 or later, or Visual Studio 2026 or later. They are built against Roslyn 5.0, and an older compiler skips them with warning CS9057, after which the generated event type registry and aggregate dispatch are missing. Version 2.0.0 was built against Roslyn 5.12 and loads only in the .NET 11 SDK; on .NET 10, use 2.0.2 or later. 2.0.1 still depended on ZeroAlloc.Serialisation 2.11.1 and other packages whose generators need SDK 10.0.4xx, so on older SDKs their generated methods, such as `AddOrderPlacedSerializer()` and `AddSerializerDispatcher()`, were missing. From 2.0.2 every generator in the dependency graph is built against Roslyn 5.0.
 
 **For source-generated, allocation-friendly serialization:**
 ```bash
@@ -65,7 +65,7 @@ services
     .UseInMemoryEventStore();   // swap for .UsePostgreSqlEventStore(cs) or .UseSqlServerEventStore(cs) in production
 ```
 
-`AddSerializerDispatcher()` is generated per assembly at compile time — no reflection, AOT-safe. The ZeroAlloc.Serialisation 2.11.1 generator currently needs SDK 10.0.4xx, which runs Roslyn 5.9. On older .NET 10 SDKs the build warns with CS9057 and the generated serializer methods are missing (ZeroAlloc-Net/.github#77).
+`AddSerializerDispatcher()` is generated per assembly at compile time — no reflection, AOT-safe.
 `AddEventSourcing()` wires `IEventSerializer` to the built-in `ZeroAllocEventSerializer` and returns
 an `EventSourcingBuilder`. Chain `.Use*()` calls on the builder to register the store adapter.
 
