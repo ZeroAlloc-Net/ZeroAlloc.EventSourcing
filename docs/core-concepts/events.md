@@ -295,10 +295,8 @@ services
 
 `AddSerializerDispatcher()` is emitted by the `ZeroAlloc.Serialisation` source generator: a
 compile-time switch over every `[ZeroAllocSerializable]` type in your assembly. AOT-safe, zero
-allocations on the dispatch path. The ZeroAlloc.Serialisation 2.11.1 generator currently needs SDK 10.0.4xx,
-which runs Roslyn 5.9. On older .NET 10 SDKs the build warns with CS9057 and the generated
-`Add{EventType}Serializer()` and `AddSerializerDispatcher()` methods are missing. This is tracked in
-ZeroAlloc-Net/.github#77.
+allocations on the dispatch path. Since EventSourcing 2.0.2 it depends on ZeroAlloc.Serialisation
+2.11.2, whose generator is built against Roslyn 5.0 and loads on every .NET 10 SDK.
 
 ### Custom: implementing IEventSerializer yourself
 

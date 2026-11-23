@@ -48,13 +48,17 @@ CI job `sdk10-consumer` needs a 10.0.1xx SDK; `tests/ZeroAlloc.EventSourcing.Sdk
 consumer of the packed packages with Roslyn 5.0:
 
 ```bash
-v=9.9.9-local.sha$(git rev-parse --short HEAD).$(date +%s).r$(od -An -N4 -tx4 /dev/urandom | tr -d " ")
-dotnet pack src/ZeroAlloc.EventSourcing -c Release -o artifacts -p:Version="$v"
-dotnet pack src/ZeroAlloc.EventSourcing.Aggregates -c Release -o artifacts -p:Version="$v"
-dotnet pack src/ZeroAlloc.EventSourcing.Generators -c Release -o artifacts -p:Version="$v"
+unset v; r=$(od -An -N4 -tx4 /dev/urandom | tr -d " ") && [ -n "$r" ] && v=9.9.9-local.sha$(git rev-parse --short HEAD).$(date +%s).r$r
+dotnet pack src/ZeroAlloc.EventSourcing -c Release -o artifacts -p:Version="${v:?no random suffix}"
+dotnet pack src/ZeroAlloc.EventSourcing.Aggregates -c Release -o artifacts -p:Version="${v:?no random suffix}"
+dotnet pack src/ZeroAlloc.EventSourcing.Generators -c Release -o artifacts -p:Version="${v:?no random suffix}"
 cd tests/ZeroAlloc.EventSourcing.Sdk10Smoke/Consumer
-dotnet run -c Release -p:ZeroAllocEventSourcingVersion="$v"
+dotnet run -c Release -p:ZeroAllocEventSourcingVersion="${v:?no random suffix}"
 ```
+
+Each step stops when the random suffix cannot be generated. Runs in one checkout share its `obj/` and
+`bin/` folders, so they must not overlap: give each concurrent run its own worktree. `CS9057` is an
+error in the consumer, so a generator from any package in its graph that this SDK skips fails it.
 
 CI job `roslyn-floor` calls the shared `roslyn-floor.yml` from ZeroAlloc-Net/.github: it packs the
 solution and fails when a packed DLL references Roslyn above 5.0.0.
@@ -66,12 +70,9 @@ solution and fails when a packed DLL references Roslyn above 5.0.0.
   `CS9057`, and nothing is generated. The shared Renovate preset holds it below 5.1. If a newer Roslyn API
   is needed, change the code; raise the floor only together with the minimum SDK. Test projects use the
   same version.
-- Several dependencies ship generators built against Roslyn 5.9 (`ZeroAlloc.Collections`,
-  `ZeroAlloc.ValueObjects`, `ZeroAlloc.Serialisation`, `ZeroAlloc.Telemetry`, `ZeroAlloc.StateMachine`,
-  `ZeroAlloc.AsyncEvents`, `ZeroAlloc.Mediator`). On a 10.0.1xx SDK those are skipped with `CS9057` until
-  the dependencies are raised to releases built against 5.0.0; the `sdk10-consumer` job keeps `CS9057` a
-  warning for that reason, and covers `ZeroAlloc.EventSourcing.Generators` only. The Mediator bridge
-  generator is not covered until `ZeroAlloc.Mediator` ships its patch. Tracked in ZeroAlloc-Net/.github#77.
+- The `sdk10-consumer` job covers `ZeroAlloc.EventSourcing.Generators` only. The Mediator bridge
+  generator is not in it, because its consumer also needs `ZeroAlloc.Mediator.Generator`, which is built
+  against Roslyn 5.0 from 6.7.3 on the 6.x line and from 7.0.1 on.
 - Warnings are errors. `RS0016` and `RS0017` are forced errors even if `TreatWarningsAsErrors` is turned
   off. A new public symbol goes in that package's `PublicAPI.Unshipped.txt`. Do not edit
   `PublicAPI.Shipped.txt` outside a release; the release PR moves entries (job `release-tracking`).
