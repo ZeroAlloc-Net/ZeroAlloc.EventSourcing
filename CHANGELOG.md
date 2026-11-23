@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.2](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/compare/ZeroAlloc.EventSourcing-v2.0.1...ZeroAlloc.EventSourcing-v2.0.2) (2026-11-23)
+
+
+### Bug Fixes
+
+* depend on maintenance patches whose generators load on SDK 10.0.1xx ([#651](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/issues/651)) ([517db5e](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/commit/517db5e817fe38397a9d6fbef136d7eb41933210))
+
 ## [2.0.1](https://github.com/ZeroAlloc-Net/ZeroAlloc.EventSourcing/compare/ZeroAlloc.EventSourcing-v2.0.0...ZeroAlloc.EventSourcing-v2.0.1) (2026-11-22)
 
 
